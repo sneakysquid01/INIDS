@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+
+# Local model artifacts
+models/*.pkl
+results/*.json
+web_app/static/*.png
+
+# Local captures
+captured_data/

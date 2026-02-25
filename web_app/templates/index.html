@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - Simple Demo</title>
+    <!-- Add Bootstrap CSS -->
+   <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+      body { background-color: #f9f9f9; }
+      .main-box { background: #fff; border-radius: 10px; padding: 2rem; margin-top: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-box mx-auto" style="max-width:480px;">
+            <h2 class="mb-4 text-center">INIDS - Live Prediction</h2>
+
+            <!-- Show error if any -->
+            {% if error %}
+                <div class="alert alert-danger" role="alert">
+                  {{ error }}
+                </div>
+            {% endif %}
+
+            <form method="post" autocomplete="off">
+                {% for feat in features %}
+                <div class="mb-3">
+                  <label class="form-label">{{ feat }}:</label>
+                  <input type="number" class="form-control" step="any" name="{{ feat }}" required>
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary w-100">Predict</button>
+            </form>
+
+            {% if prediction %}
+                <div class="alert alert-info mt-4">
+                  <h4 class="mb-0">Result: {{ prediction }}</h4>
+                </div>
+            {% endif %}
+        </div>
+        <footer class="mt-5 text-center text-muted small">
+            &copy; 2025 Intelligent Network Intrusion Detection System
+        </footer>
+    </div>
+</body>
+</html>
+

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - Live Capture</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">INIDS</a>
+            <a href="/" class="btn btn-outline-light btn-sm">Back to Home</a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Live Traffic Capture</h3>
+                <p class="card-text mb-2">
+                    Live packet capture is performed via the CLI tool:
+                    <code>python src/capture_live_traffic.py</code>
+                </p>
+                <p class="text-muted mb-0">
+                    Note: packet capture requires elevated OS privileges.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

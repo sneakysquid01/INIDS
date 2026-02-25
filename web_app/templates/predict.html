@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - Live Prediction</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body { background-color: #f8f9fa; }
+        .main-box { background: #fff; border-radius: 15px; padding: 2.5rem; 
+                   margin-top: 2rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05);}
+        .result-box { animation: fadeIn 0.5s; margin-top: 2rem; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .confidence-badge { font-size: 1.2rem; padding: 10px 20px; }
+        .input-summary { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .sample-btn-group { gap: 8px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+            <div>
+                <a href="/dashboard" class="btn btn-outline-light btn-sm">Dashboard</a>
+                <a href="/models" class="btn btn-outline-light btn-sm">Models</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="main-box mx-auto" style="max-width:650px;">
+            <h2 class="text-center mb-4">🎯 Live Intrusion Detection</h2>
+            
+            <!-- Quick Test Samples -->
+            <div class="alert alert-info mb-4">
+                <strong>📋 Quick Test Examples:</strong> Click to auto-fill sample data
+                <div class="d-flex flex-wrap sample-btn-group mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="fillNormal()">
+                        ✓ Normal Traffic
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="fillSuspicious()">
+                        ⚠️ Suspicious Pattern
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="fillHighLoad()">
+                        📊 High Load
+                    </button>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    <em>These pre-filled examples help demonstrate the system's detection capabilities</em>
+                </small>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger" role="alert">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="post" autocomplete="off">
+                {% for feat in features %}
+                <div class="mb-3">
+                    <label class="form-label fw-bold">{{ feat|replace('_', ' ')|title }}:</label>
+                    <input type="number" class="form-control" step="any" name="{{ feat }}" 
+                           placeholder="Enter {{ feat }}" 
+                           value="{{ request.form.get(feat, '') }}" required>
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary w-100 py-2 mt-3">
+                    🔍 Analyze Traffic
+                </button>
+            </form>
+
+            {% if prediction %}
+            <div class="result-box">
+                <div class="input-summary">
+                    <h5 class="mb-3">📝 Input Values:</h5>
+                    <div class="row">
+                        <div class="col-6">
+                            <small><strong>Duration:</strong> {{ request.form.get('duration') }}</small><br>
+                            <small><strong>Src Bytes:</strong> {{ request.form.get('src_bytes') }}</small><br>
+                            <small><strong>Dst Bytes:</strong> {{ request.form.get('dst_bytes') }}</small><br>
+                            <small><strong>Count:</strong> {{ request.form.get('count') }}</small>
+                        </div>
+                        <div class="col-6">
+                            <small><strong>Srv Count:</strong> {{ request.form.get('srv_count') }}</small><br>
+                            <small><strong>Serror Rate:</strong> {{ request.form.get('serror_rate') }}</small><br>
+                            <small><strong>Same Srv Rate:</strong> {{ request.form.get('same_srv_rate') }}</small>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if is_suspicious %}
+                <div class="alert alert-warning">
+                    <h4 class="mb-2">⚠️ Detection Result:</h4>
+                    <h3 class="mb-3 text-warning">SUSPICIOUS ACTIVITY</h3>
+                    <p><strong>Low Confidence Detection</strong></p>
+                    <p>The AI model is uncertain about this traffic pattern (confidence: <strong>{{ confidence }}%</strong>). 
+                    This could indicate unusual or potentially malicious behavior that requires further investigation by security personnel.</p>
+                    <div class="mt-3">
+                        <span class="badge bg-dark confidence-badge">
+                            Confidence: {{ confidence }}%
+                        </span>
+                        <span class="badge bg-warning text-dark ms-2">
+                            Action: Flag for Review
+                        </span>
+                    </div>
+                    <hr class="my-3">
+                    <small class="text-muted">
+                        <strong>Why low confidence?</strong> The model detects patterns that don't clearly match 
+                        normal traffic or known attack signatures. In real-world deployments, such cases are 
+                        escalated to security analysts for manual inspection.
+                    </small>
+                </div>
+                {% else %}
+                <div class="alert {% if prediction == 'Normal' %}alert-success{% else %}alert-danger{% endif %}">
+                    <h4 class="mb-2">Detection Result:</h4>
+                    <h3 class="mb-3">
+                        {% if prediction == 'Normal' %}
+                            ✅ {{ prediction }}
+                        {% else %}
+                            🚨 {{ prediction }}
+                        {% endif %}
+                    </h3>
+                    {% if confidence %}
+                    <div class="mt-3">
+                        <span class="badge {% if prediction == 'Normal' %}bg-success{% else %}bg-danger{% endif %} confidence-badge">
+                            Confidence: {{ confidence }}%
+                        </span>
+                        {% if prediction == 'Attack' %}
+                        <span class="badge bg-dark ms-2">
+                            Action: Block Traffic
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    <hr class="my-3">
+                    <small class="text-muted">
+                        {% if prediction == 'Normal' %}
+                            This traffic pattern matches typical legitimate network behavior. No security concerns detected.
+                        {% else %}
+                            This traffic pattern exhibits characteristics consistent with known cyber attack signatures. 
+                            Immediate action recommended.
+                        {% endif %}
+                    </small>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- JavaScript for Quick Fill Buttons -->
+    <script>
+        function fillNormal() {
+            document.getElementsByName('duration')[0].value = '0';
+            document.getElementsByName('src_bytes')[0].value = '181';
+            document.getElementsByName('dst_bytes')[0].value = '5450';
+            document.getElementsByName('count')[0].value = '8';
+            document.getElementsByName('srv_count')[0].value = '8';
+            document.getElementsByName('serror_rate')[0].value = '0';
+            document.getElementsByName('same_srv_rate')[0].value = '1';
+        }
+
+        function fillSuspicious() {
+            document.getElementsByName('duration')[0].value = '0';
+            document.getElementsByName('src_bytes')[0].value = '0';
+            document.getElementsByName('dst_bytes')[0].value = '0';
+            document.getElementsByName('count')[0].value = '123';
+            document.getElementsByName('srv_count')[0].value = '6';
+            document.getElementsByName('serror_rate')[0].value = '1';
+            document.getElementsByName('same_srv_rate')[0].value = '0.05';
+        }
+
+        function fillHighLoad() {
+            document.getElementsByName('duration')[0].value = '5';
+            document.getElementsByName('src_bytes')[0].value = '1500';
+            document.getElementsByName('dst_bytes')[0].value = '3200';
+            document.getElementsByName('count')[0].value = '15';
+            document.getElementsByName('srv_count')[0].value = '12';
+            document.getElementsByName('serror_rate')[0].value = '0.1';
+            document.getElementsByName('same_srv_rate')[0].value = '0.8';
+        }
+    </script>
+</body>
+</html>

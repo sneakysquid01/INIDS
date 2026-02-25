@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - About</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body { background-color: #f8f9fa; }
+        .main-box { background: #fff; border-radius: 15px; padding: 3rem; 
+                   margin: 2rem auto; box-shadow: 0 5px 20px rgba(0,0,0,0.05); max-width: 900px;}
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="main-box">
+            <h2 class="text-center mb-4">About INIDS</h2>
+            
+            <h4>Project Overview</h4>
+            <p>The Intelligent Network Intrusion Detection System (INIDS) is an advanced machine learning-based solution for detecting cyber attacks in network traffic. This system demonstrates the practical application of multiple ML algorithms in cybersecurity.</p>
+            
+            <h4 class="mt-4">Key Features</h4>
+            <ul>
+                <li>5+ Machine Learning Models (Random Forest, Gradient Boosting, Decision Tree, AdaBoost, MLP)</li>
+                <li>Binary and Multiclass Classification</li>
+                <li>Real-time Prediction with Confidence Scores</li>
+                <li>Comprehensive Analytics Dashboard</li>
+                <li>Batch Processing Capabilities</li>
+                <li>ROC Curve Analysis</li>
+                <li>Feature Importance Visualization</li>
+            </ul>
+            
+            <h4 class="mt-4">Dataset</h4>
+            <p><strong>NSL-KDD Dataset:</strong> An improved version of the KDD'99 dataset, widely used for network intrusion detection research. Contains 125,973 training samples and 22,544 test samples with 41 features.</p>
+            
+            <h4 class="mt-4">Attack Categories</h4>
+            <ul>
+                <li><strong>DoS:</strong> Denial of Service attacks</li>
+                <li><strong>Probe:</strong> Surveillance and probing</li>
+                <li><strong>R2L:</strong> Remote to Local attacks</li>
+                <li><strong>U2R:</strong> User to Root attacks</li>
+            </ul>
+            
+            <h4 class="mt-4">Technologies Used</h4>
+            <p>Python, Scikit-learn, Flask, Pandas, Matplotlib, Bootstrap, NumPy</p>
+            
+            <div class="text-center mt-5">
+                <a href="/" class="btn btn-primary">Return Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

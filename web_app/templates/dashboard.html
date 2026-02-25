@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS Analytics Dashboard</title>
+    <!-- Add Bootstrap CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+      body { background-color: #f9f9f9; }
+      .main-box { background: #fff; border-radius: 10px; padding: 2rem; margin-top: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);}
+      .pie-img {display:block; margin:auto;}
+    </style>
+</head>
+<body>
+  <div class="container">
+    <div class="main-box mx-auto" style="max-width:650px;">
+      <h2 class="text-center mb-4">INIDS Analytics Dashboard</h2>
+
+      <h5 class="mb-3">Model Metrics</h5>
+      <ul class="list-group mb-4">
+        <li class="list-group-item">Total samples: <strong>{{ total }}</strong></li>
+        <li class="list-group-item text-success">Normal predicted: <strong>{{ normal }}</strong></li>
+        <li class="list-group-item text-danger">Attack predicted: <strong>{{ attacks }}</strong></li>
+        <li class="list-group-item">Accuracy: <strong>{{ accuracy }}%</strong></li>
+      </ul>
+
+      <h5 class="mb-3">Prediction Distribution</h5>
+      <img class="pie-img mb-4" src="data:image/png;base64,{{ chart_data }}" alt="Pie Chart" width="350"/>
+
+      <h5 class="mb-3">First 20 Test Predictions</h5>
+      <table class="table table-bordered table-striped">
+        <thead>
+          <tr><th>Index</th><th>True Label</th><th>Predicted</th></tr>
+        </thead>
+        <tbody>
+          {% for row in results %}
+          <tr>
+            <td>{{ row.Index }}</td>
+            <td>{{ row.True }}</td>
+            <td>{{ row.Predicted }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="text-center">
+        <a class="btn btn-outline-primary mt-3" href="/">Return to main page</a>
+      </div>
+    </div>
+    <footer class="mt-5 text-center text-muted small">
+      &copy; 2025 Intelligent Network Intrusion Detection System
+    </footer>
+  </div>
+</body>
+</html>

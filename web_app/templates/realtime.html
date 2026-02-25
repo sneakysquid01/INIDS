@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - Real-Time Detection</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body { background-color: #0a0e27; color: #fff; font-family: monospace; }
+        .terminal { background: #1a1e3a; border-radius: 10px; padding: 20px; 
+                   min-height: 500px; max-height: 600px; overflow-y: auto; }
+        .log-entry { padding: 5px 0; border-bottom: 1px solid #2a2e4a; }
+        .attack { color: #ff4444; font-weight: bold; }
+        .normal { color: #44ff44; }
+        .stats { background: #2a2e4a; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+            <a href="/" class="btn btn-outline-light btn-sm">Back to Home</a>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
+        <h2 class="text-center mb-4">⚡ Real-Time Detection Simulator</h2>
+        
+        <div class="stats row text-center mb-4">
+            <div class="col-md-3">
+                <h3 id="totalPackets">0</h3>
+                <small>Packets Analyzed</small>
+            </div>
+            <div class="col-md-3">
+                <h3 id="attackCount" class="text-danger">0</h3>
+                <small>Attacks Detected</small>
+            </div>
+            <div class="col-md-3">
+                <h3 id="normalCount" class="text-success">0</h3>
+                <small>Normal Traffic</small>
+            </div>
+            <div class="col-md-3">
+                <h3 id="detectionRate">0%</h3>
+                <small>Detection Rate</small>
+            </div>
+        </div>
+        
+        <div class="text-center mb-3">
+            <button id="startBtn" class="btn btn-success btn-lg">▶️ Start Simulation</button>
+            <button id="stopBtn" class="btn btn-danger btn-lg" disabled>⏸️ Stop</button>
+        </div>
+        
+        <div class="terminal" id="terminal">
+            <div class="log-entry">🚀 INIDS Real-Time Detection System Ready</div>
+            <div class="log-entry">📡 Awaiting network traffic...</div>
+        </div>
+    </div>
+    
+    <script>
+        let isRunning = false;
+        let packetIndex = 0;
+        let totalPackets = 0;
+        let attackCount = 0;
+        let normalCount = 0;
+        
+        const terminal = document.getElementById('terminal');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        function addLog(message, type = 'normal') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = message;
+            terminal.appendChild(entry);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+        
+        function updateStats() {
+            document.getElementById('totalPackets').textContent = totalPackets;
+            document.getElementById('attackCount').textContent = attackCount;
+            document.getElementById('normalCount').textContent = normalCount;
+            const rate = totalPackets > 0 ? ((attackCount / totalPackets) * 100).toFixed(1) : 0;
+            document.getElementById('detectionRate').textContent = rate + '%';
+        }
+        
+        function simulatePacket() {
+            if (!isRunning) return;
+            
+            packetIndex++;
+            totalPackets++;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const isAttack = Math.random() < 0.15; // 15% attack rate
+            const confidence = (Math.random() * 15 + 85).toFixed(2);
+            
+            if (isAttack) {
+                attackCount++;
+                addLog(`[${timestamp}] 🚨 ATTACK DETECTED | Packet #${packetIndex} | Confidence: ${confidence}%`, 'attack');
+            } else {
+                normalCount++;
+                addLog(`[${timestamp}] ✅ Normal Traffic  | Packet #${packetIndex} | Confidence: ${confidence}%`, 'normal');
+            }
+            
+            updateStats();
+            
+            // Continue simulation
+            const delay = Math.random() * 400 + 200; // 200-600ms delay
+            setTimeout(simulatePacket, delay);
+        }
+        
+        startBtn.addEventListener('click', () => {
+            isRunning = true;
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            addLog('═══════════════════════════════════════════════════════════', 'normal');
+            addLog('🚀 SIMULATION STARTED', 'normal');
+            addLog('═══════════════════════════════════════════════════════════', 'normal');
+            simulatePacket();
+        });
+        
+        stopBtn.addEventListener('click', () => {
+            isRunning = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            addLog('═══════════════════════════════════════════════════════════', 'normal');
+            addLog('⏸️ SIMULATION STOPPED', 'normal');
+            addLog('═══════════════════════════════════════════════════════════', 'normal');
+        });
+    </script>
+</body>
+</html>

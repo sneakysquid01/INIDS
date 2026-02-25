@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+    <title>INIDS - Batch Processing</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body { background-color: #f8f9fa; }
+        .main-box { background: #fff; border-radius: 15px; padding: 2.5rem; 
+                   margin-top: 2rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05);}
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="main-box mx-auto" style="max-width:800px;">
+            <h2 class="text-center mb-4">📁 Batch Prediction</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="post" enctype="multipart/form-data" class="mb-4">
+                <div class="mb-3">
+                    <label class="form-label">Upload CSV File:</label>
+                    <input type="file" class="form-control" name="file" accept=".csv" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Process File</button>
+            </form>
+            
+            {% if results %}
+            <div class="alert alert-success">
+                Processed {{ total }} records. Showing first {{ shown }}.
+            </div>
+            <table class="table table-striped">
+                <thead><tr><th>Row</th><th>Prediction</th></tr></thead>
+                <tbody>
+                    {% for result in results %}
+                    <tr>
+                        <td>{{ result.row }}</td>
+                        <td><span class="badge {% if result.prediction == 'Normal' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ result.prediction }}
+                        </span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
