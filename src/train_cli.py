@@ -13,8 +13,11 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier
 
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 from src.model_registry import ModelRegistry
 
+=======
+>>>>>>> main
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -22,7 +25,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 REGISTRY_FILE = os.path.join(RESULTS_DIR, "model_registry.json")
+=======
+>>>>>>> main
 
 
 def _load_required_artifacts() -> tuple[dict, object]:
@@ -60,6 +66,7 @@ def train_one(model_name: str, clf, X_train, y_train, X_val, y_val, preprocessor
         joblib.dump(pipe, out_path)
 
         logging.info("✅ %s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
         ModelRegistry(REGISTRY_FILE).register(
             name=model_name,
             model_path=out_path,
@@ -67,6 +74,8 @@ def train_one(model_name: str, clf, X_train, y_train, X_val, y_val, preprocessor
             f1_score=f1,
             training_time=training_time,
         )
+=======
+>>>>>>> main
 
         if hasattr(pipe.named_steps["clf"], "feature_importances_"):
             try:

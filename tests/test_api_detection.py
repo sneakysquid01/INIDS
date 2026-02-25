@@ -1,8 +1,11 @@
 import web_app.app as app_module
 from src.ops_store import OpsStore
 import src.auth_service as auth_module
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.model_registry import ModelRegistry
+=======
+>>>>>>> main
 
 
 class FakeModel:
@@ -23,7 +26,10 @@ def _setup_app(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "all_models", {})
     monkeypatch.setattr(app_module, "load_models", lambda: None)
     monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops_test.db")))
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
     monkeypatch.setattr(app_module, "model_registry", ModelRegistry(str(tmp_path / "model_registry.json")))
+=======
+>>>>>>> main
     return app_module.app.test_client()
 
 
@@ -106,6 +112,7 @@ def test_api_metrics_endpoint(monkeypatch, tmp_path):
     body = metrics.get_data(as_text=True)
     assert "inids_requests_total" in body
     assert "inids_predictions_total" in body
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 
 
 def test_api_ingest_and_process(monkeypatch, tmp_path):
@@ -210,3 +217,5 @@ def test_api_model_registry_endpoint(monkeypatch, tmp_path):
     payload = out.get_json()
     assert payload["count"] >= 1
     assert payload["models"][0]["name"] == "rf"
+=======
+>>>>>>> main

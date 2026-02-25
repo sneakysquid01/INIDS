@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 from datetime import datetime, timezone
+=======
+>>>>>>> main
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +109,7 @@ class OpsStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+<<<<<<< codex/evaluate-repository-quality-hm1ro9
 
     def cleanup_expired_actions(self, now_iso: str | None = None) -> int:
         now_value = now_iso or datetime.now(timezone.utc).isoformat()
@@ -125,6 +129,8 @@ class OpsStore:
                 )
         return len(expired_ids)
 
+=======
+>>>>>>> main
     def add_audit(self, event_type: str, message: str, created_at: str) -> None:
         with self._connect() as conn:
             conn.execute(
