@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  inids-web:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install --no-cache-dir -r requirements.txt && python web_app/app.py"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../../:/app
+    env_file:
+      - ../../.env.example

@@ -42,5 +42,17 @@ class MetricsService:
                 "# HELP inids_unauthorized_total Unauthorized API access attempts",
                 "# TYPE inids_unauthorized_total counter",
                 f"inids_unauthorized_total {self._counters.get('unauthorized_total', 0)}",
+                "# HELP inids_ingested_total Total records accepted into ingestion queue",
+                "# TYPE inids_ingested_total counter",
+                f"inids_ingested_total {self._counters.get('ingested_total', 0)}",
+                "# HELP inids_processed_ingestion_total Total ingestion records processed",
+                "# TYPE inids_processed_ingestion_total counter",
+                f"inids_processed_ingestion_total {self._counters.get('processed_ingestion_total', 0)}",
+                "# HELP inids_expired_actions_cleaned_total Total expired actions removed by cleanup",
+                "# TYPE inids_expired_actions_cleaned_total counter",
+                f"inids_expired_actions_cleaned_total {self._counters.get('expired_actions_cleaned_total', 0)}",
+                "# HELP inids_rate_limited_total Requests rejected by rate limiter",
+                "# TYPE inids_rate_limited_total counter",
+                f"inids_rate_limited_total {self._counters.get('rate_limited_total', 0)}",
             ]
         return "\n".join(lines) + "\n"

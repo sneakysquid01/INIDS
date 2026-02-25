@@ -122,3 +122,33 @@ class DetectionService:
         if confidence < threshold:
             return "medium"
         return "low"
+
+
+    @staticmethod
+    def explain_features(features: dict[str, Any], top_k: int = 5) -> list[dict[str, Any]]:
+        """Simple heuristic explanation using distance from default feature values."""
+        row = DEFAULT_FEATURE_ROW.copy()
+        for key, value in features.items():
+            if key in FEATURE_COLUMNS:
+                row[key] = value
+
+        contributions: list[dict[str, Any]] = []
+        for key in FEATURE_COLUMNS:
+            current = row[key]
+            base = DEFAULT_FEATURE_ROW[key]
+            if isinstance(base, (int, float)):
+                try:
+                    score = abs(float(current) - float(base))
+                except Exception:
+                    score = 0.0
+            else:
+                score = 0.0 if str(current) == str(base) else 1.0
+            contributions.append({
+                "feature": key,
+                "current": current,
+                "baseline": base,
+                "contribution": round(float(score), 6),
+            })
+
+        contributions.sort(key=lambda x: x["contribution"], reverse=True)
+        return contributions[:max(1, top_k)]
