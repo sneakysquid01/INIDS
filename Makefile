@@ -1,11 +1,12 @@
-PYTHON ?= python
-PIP ?= pip
+﻿ifeq ($(OS),Windows_NT)
+PYTHON ?= .\venv\Scripts\python.exe
+PIP ?= .\venv\Scripts\python.exe -m pip
+else
+PYTHON ?= python3
+PIP ?= pip3
+endif
 
-<<<<<<< codex/evaluate-repository-quality-hm1ro9
 .PHONY: setup test lint preprocess train train-all demo demo-api drift-report web conflict-check clean
-=======
-.PHONY: setup test lint preprocess train train-all demo web clean
->>>>>>> main
 
 setup:
 	$(PIP) install -r requirements.txt
@@ -34,7 +35,6 @@ train-all:
 demo:
 	$(PYTHON) src/run_demo.py
 
-<<<<<<< codex/evaluate-repository-quality-hm1ro9
 # Run API-based end-to-end demo flow (requires running web app)
 demo-api:
 	$(PYTHON) src/run_end_to_end_demo.py
@@ -43,19 +43,20 @@ demo-api:
 drift-report:
 	$(PYTHON) src/drift_monitor.py
 
-=======
->>>>>>> main
 # Start web application
 web:
 	$(PYTHON) web_app/app.py
 
-<<<<<<< codex/evaluate-repository-quality-hm1ro9
 # Detect unresolved Git merge conflict markers in tracked source/docs files
 conflict-check:
-	rg -n "^(<<<<<<<|=======|>>>>>>>)" -g '!*.map' src tests web_app docs .env.example Makefile pyproject.toml requirements.txt || true
+	-rg -n "^(<<<<<<<|=======|>>>>>>>)" -g "!*.map" src tests web_app docs .env.example Makefile pyproject.toml requirements.txt
 
-=======
->>>>>>> main
+ifeq ($(OS),Windows_NT)
+clean:
+	powershell -NoProfile -Command "Get-ChildItem -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
+	powershell -NoProfile -Command "Get-ChildItem -Recurse -File -Filter '*.pyc' | Remove-Item -Force -ErrorAction SilentlyContinue"
+else
 clean:
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete
+endif
