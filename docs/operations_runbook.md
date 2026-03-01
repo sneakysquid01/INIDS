@@ -3,7 +3,7 @@
 ## 1. Start locally
 1. Install dependencies: `pip install -r requirements.txt`
 2. Copy env template: `cp .env.example .env` (or set env vars in shell)
-3. Run app: `python web_app/app.py`
+3. Run app: `python -m web_app.app`
 
 ## 2. Health checks
 - `GET /api/health`

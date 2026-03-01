@@ -7,120 +7,129 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        body { 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-            min-height: 100vh; 
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             margin: 0;
         }
-        .hero { 
-            color: white; 
-            padding: 80px 0 60px 0; 
-            text-align: center; 
+        .hero {
+            color: white;
+            padding: 80px 0 60px 0;
+            text-align: center;
         }
-        .hero h1 { 
-            font-size: 3.5rem; 
-            font-weight: 700; 
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
             margin-bottom: 20px;
             letter-spacing: -0.5px;
         }
-        .hero .lead { 
-            font-size: 1.4rem; 
-            font-weight: 400; 
+        .hero .lead {
+            font-size: 1.4rem;
+            font-weight: 400;
             opacity: 0.95;
         }
-        
-        /* Stats Bar - Enhanced */
         .stats-container {
             background: rgba(255, 255, 255, 0.12);
             backdrop-filter: blur(10px);
             border-radius: 20px;
             padding: 40px 20px;
-            margin: -30px auto 50px auto;
+            margin: -30px auto 20px auto;
             box-shadow: 0 8px 32px rgba(0,0,0,0.1);
             border: 1px solid rgba(255,255,255,0.18);
         }
-        .stat-box { 
-            color: #fff; 
+        .stat-box {
+            color: #fff;
             padding: 20px 15px;
             text-align: center;
         }
-        .stat-box h2 { 
-            font-size: 3rem; 
-            font-weight: 700; 
+        .stat-box h2 {
+            font-size: 3rem;
+            font-weight: 700;
             margin-bottom: 8px;
             text-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
-        .stat-box span { 
-            font-size: 0.95rem; 
-            font-weight: 500; 
-            text-transform: uppercase; 
+        .stat-box span {
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-transform: uppercase;
             letter-spacing: 1px;
             opacity: 0.9;
         }
-        .stat-box .accuracy { 
-            color: #4ade80; 
+        .stat-box .accuracy {
+            color: #4ade80;
             text-shadow: 0 0 20px rgba(74,222,128,0.5);
         }
-        
-        /* Feature Cards - Enhanced */
-        .card-custom { 
-            border-radius: 16px; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        .runtime-strip {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.18);
+            padding: 16px;
+            margin-bottom: 28px;
+            color: #eef3ff;
+        }
+        .runtime-strip .badge {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 6px;
+            margin-bottom: 4px;
+        }
+        .card-custom {
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             margin-bottom: 25px;
             border: none;
             background: #fff;
             overflow: hidden;
         }
-        .card-custom:hover { 
-            transform: translateY(-8px); 
+        .card-custom:hover {
+            transform: translateY(-8px);
             box-shadow: 0 12px 40px rgba(0,0,0,0.15);
         }
-        .card-custom .card-body {
-            padding: 35px 25px;
+        .card-custom .card-body { padding: 35px 25px; }
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            margin: 0 auto 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
         }
-        .feature-icon { 
-            font-size: 3.5rem; 
-            margin-bottom: 20px;
-            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
-        }
-        .card-custom h3 { 
-            font-size: 1.4rem; 
-            font-weight: 600; 
+        .icon-blue { background: #2563eb; }
+        .icon-green { background: #16a34a; }
+        .icon-cyan { background: #0891b2; }
+        .icon-orange { background: #f59e0b; }
+        .icon-red { background: #dc2626; }
+        .icon-gray { background: #4b5563; }
+        .card-custom h3 {
+            font-size: 1.35rem;
+            font-weight: 600;
             margin-bottom: 12px;
             color: #1e293b;
         }
-        .card-custom p { 
-            color: #64748b; 
-            font-size: 0.95rem; 
+        .card-custom p {
+            color: #64748b;
+            font-size: 0.95rem;
             margin-bottom: 20px;
             line-height: 1.6;
         }
         .card-custom .btn {
             border-radius: 10px;
-            padding: 12px 28px;
+            padding: 12px 24px;
             font-weight: 600;
             font-size: 0.95rem;
-            text-transform: none;
             transition: all 0.3s;
             border: none;
         }
-        .card-custom .btn:hover {
-            transform: scale(1.05);
-        }
-        
-        /* Navbar Enhancement */
-        .navbar {
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .navbar-brand {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        
-        /* Responsive */
+        .card-custom .btn:hover { transform: scale(1.04); }
+        .navbar { box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .navbar-brand { font-size: 1.5rem; font-weight: 700; }
         @media (max-width: 768px) {
-            .hero h1 { font-size: 2.5rem; }
+            .hero h1 { font-size: 2.45rem; }
             .stat-box h2 { font-size: 2.2rem; }
             .stats-container { padding: 30px 15px; }
         }
@@ -129,18 +138,22 @@
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container">
-            <span class="navbar-brand mb-0 h1">🛡️ INIDS</span>
+            <span class="navbar-brand mb-0 h1">INIDS</span>
+            <div class="d-flex gap-2">
+                <a href="/predict" class="btn btn-outline-light btn-sm">Predict</a>
+                <a href="/dashboard" class="btn btn-outline-light btn-sm">Dashboard</a>
+                <a href="/models" class="btn btn-outline-light btn-sm">Models</a>
+            </div>
         </div>
     </nav>
-    
+
     <div class="hero">
         <div class="container">
             <h1>Intelligent Network Intrusion Detection System</h1>
-            <p class="lead">Advanced Machine Learning for Cybersecurity</p>
+            <p class="lead">Advanced machine learning for practical security operations</p>
         </div>
     </div>
-    
-    <!-- Enhanced Stats Bar -->
+
     <div class="container">
         <div class="stats-container">
             <div class="row">
@@ -162,17 +175,33 @@
                 </div>
             </div>
         </div>
+
+        <div class="runtime-strip">
+            <div class="d-flex flex-wrap justify-content-between align-items-center">
+                <div class="mb-2 mb-md-0">
+                    <span class="badge {{ 'bg-success' if model_ready else 'bg-warning text-dark' }}">
+                        Model {{ 'Ready' if model_ready else 'Missing' }}
+                    </span>
+                    <span class="badge bg-primary">Loaded Models: {{ loaded_models_count }}</span>
+                    <span class="badge bg-info text-dark">Queue: {{ queue_size }}</span>
+                    <span class="badge bg-secondary text-capitalize">Firewall: {{ firewall_adapter }}</span>
+                    <span class="badge {{ 'bg-success' if auth_enabled else 'bg-dark' }}">
+                        Auth {{ 'Enabled' if auth_enabled else 'Disabled' }}
+                    </span>
+                </div>
+                <a href="/dashboard" class="btn btn-light btn-sm">View Full Ops Dashboard</a>
+            </div>
+        </div>
     </div>
-    
-    <!-- Feature Cards -->
+
     <div class="container pb-5">
         <div class="row">
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">🎯</div>
+                        <div class="feature-icon icon-blue">PR</div>
                         <h3>Live Prediction</h3>
-                        <p>Real-time intrusion detection with confidence scores</p>
+                        <p>Run single-record intrusion checks with confidence scoring.</p>
                         <a href="/predict" class="btn btn-primary w-100">Start Predicting</a>
                     </div>
                 </div>
@@ -180,9 +209,9 @@
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">📊</div>
+                        <div class="feature-icon icon-green">DB</div>
                         <h3>Analytics Dashboard</h3>
-                        <p>Comprehensive metrics and visualizations</p>
+                        <p>Track model outcomes plus live operations signals.</p>
                         <a href="/dashboard" class="btn btn-success w-100">View Dashboard</a>
                     </div>
                 </div>
@@ -190,9 +219,9 @@
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">🤖</div>
+                        <div class="feature-icon icon-cyan">ML</div>
                         <h3>Model Comparison</h3>
-                        <p>Compare 5+ ML algorithms performance</p>
+                        <p>Compare training metrics and visual model artifacts.</p>
                         <a href="/models" class="btn btn-info w-100">Compare Models</a>
                     </div>
                 </div>
@@ -200,9 +229,9 @@
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">📁</div>
+                        <div class="feature-icon icon-orange">BT</div>
                         <h3>Batch Processing</h3>
-                        <p>Upload CSV for bulk predictions</p>
+                        <p>Upload CSV files and process predictions in bulk.</p>
                         <a href="/batch" class="btn btn-warning w-100">Upload File</a>
                     </div>
                 </div>
@@ -210,9 +239,9 @@
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">⚡</div>
+                        <div class="feature-icon icon-red">RT</div>
                         <h3>Real-Time Detection</h3>
-                        <p>Simulate live network monitoring</p>
+                        <p>Review simulated monitoring and response behavior.</p>
                         <a href="/realtime" class="btn btn-danger w-100">View Simulation</a>
                     </div>
                 </div>
@@ -220,10 +249,13 @@
             <div class="col-md-4">
                 <div class="card card-custom">
                     <div class="card-body text-center">
-                        <div class="feature-icon">ℹ️</div>
-                        <h3>About Project</h3>
-                        <p>Learn about methodology and datasets</p>
-                        <a href="/about" class="btn btn-secondary w-100">Learn More</a>
+                        <div class="feature-icon icon-gray">IN</div>
+                        <h3>Capture and About</h3>
+                        <p>Use traffic capture tools and review project details.</p>
+                        <div class="d-grid gap-2">
+                            <a href="/capture" class="btn btn-secondary">Capture</a>
+                            <a href="/about" class="btn btn-outline-secondary">About</a>
+                        </div>
                     </div>
                 </div>
             </div>

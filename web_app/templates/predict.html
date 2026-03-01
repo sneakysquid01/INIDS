@@ -5,49 +5,66 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
     <style>
         body { background-color: #f8f9fa; }
-        .main-box { background: #fff; border-radius: 15px; padding: 2.5rem; 
-                   margin-top: 2rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05);}
+        .main-box {
+            background: #fff;
+            border-radius: 15px;
+            padding: 2.5rem;
+            margin-top: 2rem;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+        }
         .result-box { animation: fadeIn 0.5s; margin-top: 2rem; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .confidence-badge { font-size: 1.2rem; padding: 10px 20px; }
         .input-summary { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
         .sample-btn-group { gap: 8px; }
+        .status-bar {
+            border-radius: 10px;
+            border: 1px solid #dee2e6;
+            background: #f7f9fc;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+        }
+        @media (max-width: 768px) {
+            .main-box { padding: 1.35rem; }
+        }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+            <a class="navbar-brand" href="/">INIDS</a>
             <div>
                 <a href="/dashboard" class="btn btn-outline-light btn-sm">Dashboard</a>
                 <a href="/models" class="btn btn-outline-light btn-sm">Models</a>
             </div>
         </div>
     </nav>
-    
+
     <div class="container">
-        <div class="main-box mx-auto" style="max-width:650px;">
-            <h2 class="text-center mb-4">🎯 Live Intrusion Detection</h2>
-            
-            <!-- Quick Test Samples -->
-            <div class="alert alert-info mb-4">
-                <strong>📋 Quick Test Examples:</strong> Click to auto-fill sample data
-                <div class="d-flex flex-wrap sample-btn-group mt-2">
-                    <button type="button" class="btn btn-sm btn-outline-success" onclick="fillNormal()">
-                        ✓ Normal Traffic
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="fillSuspicious()">
-                        ⚠️ Suspicious Pattern
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-info" onclick="fillHighLoad()">
-                        📊 High Load
-                    </button>
+        <div class="main-box mx-auto" style="max-width:760px;">
+            <h2 class="text-center mb-4">Live Intrusion Detection</h2>
+
+            <div class="status-bar d-flex flex-wrap justify-content-between align-items-center">
+                <div>
+                    <strong>Model Status:</strong>
+                    {% if model_ready %}
+                    <span class="badge bg-success">Ready</span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark">Missing</span>
+                    {% endif %}
                 </div>
-                <small class="text-muted d-block mt-2">
-                    <em>These pre-filled examples help demonstrate the system's detection capabilities</em>
-                </small>
+                <small class="text-muted">Use quick examples to test expected behaviors.</small>
             </div>
-            
+
+            <div class="alert alert-info mb-4">
+                <strong>Quick Test Examples:</strong> click to auto-fill sample data.
+                <div class="d-flex flex-wrap sample-btn-group mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="fillNormal()">Normal Traffic</button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="fillSuspicious()">Suspicious Pattern</button>
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="fillHighLoad()">High Load</button>
+                </div>
+            </div>
+
             {% if error %}
             <div class="alert alert-danger" role="alert">
                 <strong>Error:</strong> {{ error }}
@@ -55,23 +72,33 @@
             {% endif %}
 
             <form method="post" autocomplete="off">
-                {% for feat in features %}
-                <div class="mb-3">
-                    <label class="form-label fw-bold">{{ feat|replace('_', ' ')|title }}:</label>
-                    <input type="number" class="form-control" step="any" name="{{ feat }}" 
-                           placeholder="Enter {{ feat }}" 
-                           value="{{ request.form.get(feat, '') }}" required>
+                <div class="row">
+                    {% for feat in features %}
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">{{ feat|replace('_', ' ')|title }}:</label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            step="any"
+                            name="{{ feat }}"
+                            placeholder="Enter {{ feat }}"
+                            value="{{ request.form.get(feat, '') }}"
+                            required
+                            {% if not model_ready %}disabled{% endif %}
+                        >
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
-                <button type="submit" class="btn btn-primary w-100 py-2 mt-3">
-                    🔍 Analyze Traffic
+
+                <button type="submit" class="btn btn-primary w-100 py-2 mt-2" {% if not model_ready %}disabled{% endif %}>
+                    Analyze Traffic
                 </button>
             </form>
 
             {% if prediction %}
             <div class="result-box">
                 <div class="input-summary">
-                    <h5 class="mb-3">📝 Input Values:</h5>
+                    <h5 class="mb-3">Input Values</h5>
                     <div class="row">
                         <div class="col-6">
                             <small><strong>Duration:</strong> {{ request.form.get('duration') }}</small><br>
@@ -86,58 +113,41 @@
                         </div>
                     </div>
                 </div>
-                
+
                 {% if is_suspicious %}
                 <div class="alert alert-warning">
-                    <h4 class="mb-2">⚠️ Detection Result:</h4>
+                    <h4 class="mb-2">Detection Result</h4>
                     <h3 class="mb-3 text-warning">SUSPICIOUS ACTIVITY</h3>
                     <p><strong>Low Confidence Detection</strong></p>
-                    <p>The AI model is uncertain about this traffic pattern (confidence: <strong>{{ confidence }}%</strong>). 
-                    This could indicate unusual or potentially malicious behavior that requires further investigation by security personnel.</p>
+                    <p>
+                        The model is uncertain about this pattern (confidence:
+                        <strong>{{ confidence }}%</strong>). This may need analyst review.
+                    </p>
                     <div class="mt-3">
-                        <span class="badge bg-dark confidence-badge">
-                            Confidence: {{ confidence }}%
-                        </span>
-                        <span class="badge bg-warning text-dark ms-2">
-                            Action: Flag for Review
-                        </span>
+                        <span class="badge bg-dark confidence-badge">Confidence: {{ confidence }}%</span>
+                        <span class="badge bg-warning text-dark ms-2">Action: Flag for Review</span>
                     </div>
-                    <hr class="my-3">
-                    <small class="text-muted">
-                        <strong>Why low confidence?</strong> The model detects patterns that don't clearly match 
-                        normal traffic or known attack signatures. In real-world deployments, such cases are 
-                        escalated to security analysts for manual inspection.
-                    </small>
                 </div>
                 {% else %}
                 <div class="alert {% if prediction == 'Normal' %}alert-success{% else %}alert-danger{% endif %}">
-                    <h4 class="mb-2">Detection Result:</h4>
-                    <h3 class="mb-3">
-                        {% if prediction == 'Normal' %}
-                            ✅ {{ prediction }}
-                        {% else %}
-                            🚨 {{ prediction }}
-                        {% endif %}
-                    </h3>
+                    <h4 class="mb-2">Detection Result</h4>
+                    <h3 class="mb-3">{{ prediction }}</h3>
                     {% if confidence %}
                     <div class="mt-3">
                         <span class="badge {% if prediction == 'Normal' %}bg-success{% else %}bg-danger{% endif %} confidence-badge">
                             Confidence: {{ confidence }}%
                         </span>
                         {% if prediction == 'Attack' %}
-                        <span class="badge bg-dark ms-2">
-                            Action: Block Traffic
-                        </span>
+                        <span class="badge bg-dark ms-2">Action: Block Traffic</span>
                         {% endif %}
                     </div>
                     {% endif %}
                     <hr class="my-3">
                     <small class="text-muted">
                         {% if prediction == 'Normal' %}
-                            This traffic pattern matches typical legitimate network behavior. No security concerns detected.
+                        This traffic pattern matches typical legitimate behavior.
                         {% else %}
-                            This traffic pattern exhibits characteristics consistent with known cyber attack signatures. 
-                            Immediate action recommended.
+                        This pattern matches known malicious signatures and should be handled.
                         {% endif %}
                     </small>
                 </div>
@@ -147,7 +157,6 @@
         </div>
     </div>
 
-    <!-- JavaScript for Quick Fill Buttons -->
     <script>
         function fillNormal() {
             document.getElementsByName('duration')[0].value = '0';

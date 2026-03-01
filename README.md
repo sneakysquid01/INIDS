@@ -1,27 +1,76 @@
-# 🛡️ Intelligent Network Intrusion Detection System (INIDS)
+# Intelligent Network Intrusion Detection System (INIDS)
 
-## 📋 Project Overview
+INIDS is a machine-learning based intrusion detection project built around the NSL-KDD dataset. It includes:
+- Model training and comparison utilities
+- A Flask web app for live and batch prediction
+- Operational APIs for alerts, policy, actions, audit, metrics, and ingestion
+- Tests for core services and API behavior
 
-INIDS is an advanced machine learning-based network intrusion detection system that employs multiple classification algorithms to identify and categorize cyber attacks with high accuracy. This system demonstrates practical cybersecurity applications using the NSL-KDD dataset.
+## Project layout
+- `src/`: training, detection, ingestion, operations, and utility services
+- `web_app/`: Flask app, templates, and static assets
+- `tests/`: pytest suite
+- `data/`: NSL-KDD input files
+- `models/`: trained models and preprocessing artifacts
+- `results/`: training outputs and registry data
 
-## ✨ Key Features
+## Requirements
+- Python 3.10+
+- pip
+- Optional: `make` for shortcut commands
 
-- **5+ ML Models**: Random Forest, Gradient Boosting, Decision Tree, AdaBoost, MLP Neural Network
-- **Dual Classification**: Binary (Normal/Attack) and Multiclass (DoS, Probe, R2L, U2R)
-- **Real-time Detection**: Live prediction with confidence scores
-- **Batch Processing**: CSV upload for bulk predictions
-- **Advanced Analytics**: ROC curves, confusion matrices, feature importance
-- **Interactive Dashboard**: Comprehensive visualization and metrics
-- **Production-Ready**: Error handling, logging, validation
+## Quick start
+1. Create and activate a virtual environment.
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+3. Run tests:
+```bash
+python -m pytest -q
+```
+4. Start the web app:
+```bash
+python -m web_app.app
+```
+5. Open:
+- `http://127.0.0.1:5000/`
 
-## 📊 Performance Metrics
+## Make targets
+If `make` is available:
 
-| Model | Accuracy | F1-Score | Training Time |
-|-------|----------|----------|---------------|
-| Random Forest | 99.89% | 0.9989 | ~6s |
-| Gradient Boosting | 99.85% | 0.9985 | ~45s |
-| Decision Tree | 99.54% | 0.9954 | ~3s |
-| AdaBoost | 98.72% | 0.9872 | ~25s |
-| MLP Neural Network | 99.31% | 0.9931 | ~120s |
+```bash
+make setup
+make test
+make lint
+make preprocess
+make train
+make train-all
+make web
+make conflict-check
+```
 
-## 🗂️ Project Structure
+## Key API endpoints
+- `GET /api/health`
+- `POST /api/predict`
+- `GET /api/alerts`
+- `GET|POST /api/policy`
+- `GET /api/actions`
+- `POST /api/actions/cleanup`
+- `GET /api/audit`
+- `GET /api/metrics`
+- `POST /api/ingest`
+- `POST /api/ingest/log`
+- `POST /api/ingest/process`
+
+## Environment configuration
+Copy `.env.example` to `.env` and adjust values as needed:
+- host/port/debug
+- API key roles
+- rate limits
+- firewall adapter
+- operations DB path
+
+## Notes
+- Use module mode (`python -m web_app.app`) for reliable startup across platforms.
+- Auth is disabled unless API keys are configured in environment variables.

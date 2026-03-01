@@ -1,4 +1,4 @@
-﻿ifeq ($(OS),Windows_NT)
+ifeq ($(OS),Windows_NT)
 PYTHON ?= .\venv\Scripts\python.exe
 PIP ?= .\venv\Scripts\python.exe -m pip
 else
@@ -45,7 +45,7 @@ drift-report:
 
 # Start web application
 web:
-	$(PYTHON) web_app/app.py
+	$(PYTHON) -m web_app.app
 
 # Detect unresolved Git merge conflict markers in tracked source/docs files
 conflict-check:

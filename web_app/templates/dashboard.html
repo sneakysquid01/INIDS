@@ -2,53 +2,314 @@
 <html>
 <head>
     <title>INIDS Analytics Dashboard</title>
-    <!-- Add Bootstrap CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
     <style>
-      body { background-color: #f9f9f9; }
-      .main-box { background: #fff; border-radius: 10px; padding: 2rem; margin-top: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);}
-      .pie-img {display:block; margin:auto;}
+      body { background-color: #f8f9fa; }
+      .main-box {
+        background: #fff;
+        border-radius: 15px;
+        padding: 2rem;
+        margin: 2rem 0;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+      }
+      .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.9rem;
+      }
+      .metric-card {
+        border-radius: 10px;
+        border: 1px solid #e7ebf0;
+        background: #fff;
+        padding: 1rem;
+        height: 100%;
+      }
+      .metric-label {
+        font-size: 0.78rem;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: #6c757d;
+      }
+      .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .table-wrap {
+        max-height: 270px;
+        overflow: auto;
+      }
+      .soft-box {
+        border-radius: 10px;
+        background: #f8f9fb;
+        border: 1px solid #e6ecf3;
+        padding: 0.9rem;
+      }
     </style>
 </head>
 <body>
-  <div class="container">
-    <div class="main-box mx-auto" style="max-width:650px;">
-      <h2 class="text-center mb-4">INIDS Analytics Dashboard</h2>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">INIDS</a>
+            <div>
+                <a href="/predict" class="btn btn-outline-light btn-sm">Predict</a>
+                <a href="/models" class="btn btn-outline-light btn-sm">Models</a>
+            </div>
+        </div>
+    </nav>
 
-      <h5 class="mb-3">Model Metrics</h5>
-      <ul class="list-group mb-4">
-        <li class="list-group-item">Total samples: <strong>{{ total }}</strong></li>
-        <li class="list-group-item text-success">Normal predicted: <strong>{{ normal }}</strong></li>
-        <li class="list-group-item text-danger">Attack predicted: <strong>{{ attacks }}</strong></li>
-        <li class="list-group-item">Accuracy: <strong>{{ accuracy }}%</strong></li>
-      </ul>
+    <div class="container">
+        <div class="main-box">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+                <h2 class="mb-0">Analytics Dashboard</h2>
+                <small class="text-muted">Generated: {{ generated_at }}</small>
+            </div>
 
-      <h5 class="mb-3">Prediction Distribution</h5>
-      <img class="pie-img mb-4" src="data:image/png;base64,{{ chart_data }}" alt="Pie Chart" width="350"/>
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-label">Auth</div>
+                        <div class="metric-value">{{ "On" if auth_info.enabled else "Off" }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-label">Queue Size</div>
+                        <div class="metric-value">{{ queue_size }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-label">Rate Limit</div>
+                        <div class="metric-value">{{ rate_limit_requests }}</div>
+                        <small class="text-muted">per {{ rate_limit_window_seconds }}s</small>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-label">Firewall</div>
+                        <div class="metric-value text-capitalize">{{ firewall_adapter }}</div>
+                    </div>
+                </div>
+            </div>
 
-      <h5 class="mb-3">First 20 Test Predictions</h5>
-      <table class="table table-bordered table-striped">
-        <thead>
-          <tr><th>Index</th><th>True Label</th><th>Predicted</th></tr>
-        </thead>
-        <tbody>
-          {% for row in results %}
-          <tr>
-            <td>{{ row.Index }}</td>
-            <td>{{ row.True }}</td>
-            <td>{{ row.Predicted }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            <div class="row g-3 mb-4">
+                <div class="col-lg-8">
+                    <div class="soft-box h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="section-title mb-0">Model Analytics</div>
+                            {% if model_stats.available %}
+                            <span class="badge bg-success">Ready</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Unavailable</span>
+                            {% endif %}
+                        </div>
 
-      <div class="text-center">
-        <a class="btn btn-outline-primary mt-3" href="/">Return to main page</a>
-      </div>
+                        {% if model_stats.available %}
+                        <div class="row g-2 mb-3">
+                            <div class="col-6 col-md-3">
+                                <div class="metric-card p-2">
+                                    <div class="metric-label">Samples</div>
+                                    <div class="h5 mb-0">{{ model_stats.total }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="metric-card p-2">
+                                    <div class="metric-label">Normal</div>
+                                    <div class="h5 text-success mb-0">{{ model_stats.normal }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="metric-card p-2">
+                                    <div class="metric-label">Attack</div>
+                                    <div class="h5 text-danger mb-0">{{ model_stats.attacks }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="metric-card p-2">
+                                    <div class="metric-label">Accuracy</div>
+                                    <div class="h5 mb-0">{{ model_stats.accuracy }}%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-center mb-3">
+                            <img class="img-fluid rounded border" style="max-height: 320px;" src="data:image/png;base64,{{ model_stats.chart_data }}" alt="Prediction distribution chart">
+                        </div>
+
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                  <tr>
+                                    <th>Index</th>
+                                    <th>True</th>
+                                    <th>Predicted</th>
+                                    <th>Match</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {% for row in model_stats.results %}
+                                  <tr>
+                                    <td>{{ row.Index }}</td>
+                                    <td>{{ row.True }}</td>
+                                    <td>{{ row.Predicted }}</td>
+                                    <td>
+                                      {% if row.Match == "OK" %}
+                                      <span class="badge bg-success">OK</span>
+                                      {% else %}
+                                      <span class="badge bg-danger">MISS</span>
+                                      {% endif %}
+                                    </td>
+                                  </tr>
+                                  {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mb-0">{{ model_stats.error }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="soft-box mb-3">
+                        <div class="section-title">Policy and Access</div>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between"><span>Mode</span><strong class="text-capitalize">{{ policy.mode }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Dry Run</span><strong>{{ "Yes" if policy.dry_run else "No" }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Block TTL</span><strong>{{ policy.block_ttl_seconds }}s</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Threshold</span><strong>{{ policy.confidence_block_threshold }}%</strong></li>
+                            <li class="list-group-item"><span class="text-muted">Roles:</span>
+                                {% if auth_info.configured_roles %}
+                                  {{ auth_info.configured_roles|join(", ") }}
+                                {% else %}
+                                  none
+                                {% endif %}
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="soft-box">
+                        <div class="section-title">Metrics Counters</div>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between"><span>API Requests</span><strong>{{ metrics_snapshot.requests_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Predictions</span><strong>{{ metrics_snapshot.predictions_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Alerts</span><strong>{{ metrics_snapshot.alerts_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Prevention Actions</span><strong>{{ metrics_snapshot.prevention_actions_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Ingested</span><strong>{{ metrics_snapshot.ingested_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Processed</span><strong>{{ metrics_snapshot.processed_ingestion_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Rate Limited</span><strong>{{ metrics_snapshot.rate_limited_total }}</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Unauthorized</span><strong>{{ metrics_snapshot.unauthorized_total }}</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Recent Alerts</div>
+                        {% if recent_alerts %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>ID</th><th>Severity</th><th>Prediction</th><th>Confidence</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for alert in recent_alerts %}
+                                    <tr>
+                                        <td>{{ alert.id }}</td>
+                                        <td class="text-capitalize">{{ alert.severity }}</td>
+                                        <td>{{ alert.prediction }}</td>
+                                        <td>{{ alert.confidence }}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No alerts captured yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Recent Prevention Actions</div>
+                        {% if recent_actions %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>Action</th><th>Target</th><th>Reason</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for action in recent_actions %}
+                                    <tr>
+                                        <td class="text-capitalize">{{ action.action }}</td>
+                                        <td>{{ action.target }}</td>
+                                        <td class="text-truncate" style="max-width: 220px;">{{ action.reason }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No prevention actions yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Recent Audit Events</div>
+                        {% if recent_audits %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>Event</th><th>Message</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for audit in recent_audits %}
+                                    <tr>
+                                        <td>{{ audit.event_type }}</td>
+                                        <td class="text-truncate" style="max-width: 340px;">{{ audit.message }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No audit records yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Model Registry</div>
+                        {% if recent_registry %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>Name</th><th>Accuracy</th><th>F1</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in recent_registry %}
+                                    <tr>
+                                        <td>{{ item.name }}</td>
+                                        <td>{{ "%.2f"|format(item.accuracy * 100) }}%</td>
+                                        <td>{{ "%.4f"|format(item.f1_score) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No models registered yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <footer class="mt-5 text-center text-muted small">
-      &copy; 2025 Intelligent Network Intrusion Detection System
-    </footer>
-  </div>
 </body>
 </html>

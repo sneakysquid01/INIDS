@@ -4,6 +4,7 @@ import os
 import sys
 import pandas as pd
 import matplotlib
+from werkzeug.exceptions import HTTPException
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -13,21 +14,23 @@ import logging
 import json
 from datetime import datetime, timezone
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from src.settings import load_settings
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS = load_settings()
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
+STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
 
 from src.detection_service import DetectionService, InMemoryAlertStore
 from src.prevention_service import PreventionService
@@ -81,6 +84,16 @@ MODEL_INPUT_COLUMNS = FEATURE_COLUMNS
 NUMERIC_MODEL_COLUMNS = NUMERIC_FEATURES
 
 
+def _parse_bounded_int(value, *, name: str, default: int, minimum: int, maximum: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"'{name}' must be an integer") from exc
+    return max(minimum, min(parsed, maximum))
+
+
 def ensure_model_loaded() -> None:
     """Lazily load models if not available in memory."""
     global model
@@ -117,7 +130,7 @@ def load_models():
         if os.path.exists(path):
             model_name = model_file.replace('.pkl', '')
             all_models[model_name] = joblib.load(path)
-            logging.info(f"✅ Loaded {model_name}")
+            logging.info("Loaded model %s", model_name)
     if 'rf_nsl_kdd' in all_models:
         model = all_models['rf_nsl_kdd']
         detection_service = DetectionService(model=model, alert_store=alert_store)
@@ -151,7 +164,16 @@ def _after_request_metrics(response):
 @app.route("/")
 def home():
     """Landing page with navigation."""
-    return render_template("home.html")
+    ensure_model_loaded()
+    auth_info = auth_status()
+    return render_template(
+        "home.html",
+        model_ready=model is not None,
+        loaded_models_count=len(all_models),
+        queue_size=ingestion_queue.size(),
+        auth_enabled=auth_info["enabled"],
+        firewall_adapter=SETTINGS.firewall_adapter,
+    )
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -161,13 +183,11 @@ def predict():
     error_message = None
     confidence = None
     is_suspicious = False
+    model_ready = ensure_detection_service()
+    if not model_ready:
+        error_message = "No trained model found. Please train and load a model first."
 
-    if not ensure_detection_service():
-        return render_template("predict.html", features=INPUT_FEATURES,
-                               prediction=None, error="No trained model found. Please train and load a model first.",
-                               confidence=None, is_suspicious=False)
-
-    if request.method == "POST":
+    if model_ready and request.method == "POST":
         try:
             values = []
             for feat in INPUT_FEATURES:
@@ -194,79 +214,175 @@ def predict():
             logging.error(f"Prediction error: {e}")
             error_message = f"Error: {e}"
 
-    return render_template("predict.html", features=INPUT_FEATURES,
-                           prediction=prediction, error=error_message,
-                           confidence=confidence, is_suspicious=is_suspicious)
+    return render_template(
+        "predict.html",
+        features=INPUT_FEATURES,
+        prediction=prediction,
+        error=error_message,
+        confidence=confidence,
+        is_suspicious=is_suspicious,
+        model_ready=model_ready,
+    )
 
 
 @app.route("/dashboard")
 def dashboard():
-    """Visual dashboard of system predictions and accuracy."""
+    """Visual dashboard for model performance and operational state."""
     ensure_model_loaded()
-    try:
-        if model is None:
-            raise FileNotFoundError("No trained model found. Please train and load a model first.")
 
-        if not os.path.exists(TEST_FILE):
-            raise FileNotFoundError("Test data file not found!")
+    model_stats = {
+        "available": False,
+        "error": None,
+        "total": 0,
+        "attacks": 0,
+        "normal": 0,
+        "accuracy": 0.0,
+        "chart_data": None,
+        "results": [],
+    }
 
-        df_test = pd.read_csv(TEST_FILE, names=COLUMNS)
-        X_test = df_test.drop(columns=LABEL_COLUMNS)
-        y_test = df_test["label"].apply(lambda x: 0 if _normalize_label(x) == "normal" else 1)
-        y_pred = model.predict(X_test)
+    if model is None:
+        model_stats["error"] = "No trained model found. Train a model to unlock analytics."
+    elif not os.path.exists(TEST_FILE):
+        model_stats["error"] = f"Test data file not found: {TEST_FILE}"
+    else:
+        try:
+            df_test = pd.read_csv(TEST_FILE, names=COLUMNS)
+            X_test = df_test.drop(columns=LABEL_COLUMNS)
+            y_test = df_test["label"].apply(lambda x: 0 if _normalize_label(x) == "normal" else 1)
+            y_pred = model.predict(X_test)
 
-        total = len(y_test)
-        attacks = int(sum(y_pred))
-        normal = total - attacks
-        accuracy = round(float(sum(y_pred == y_test)) / total * 100, 2)
+            total = len(y_test)
+            attacks = int(sum(y_pred))
+            normal = total - attacks
+            accuracy = round(float(sum(y_pred == y_test)) / total * 100, 2)
 
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.pie([normal, attacks], labels=['Normal', 'Attack'], autopct='%1.1f%%',
-               colors=['#28a745', '#dc3545'], startangle=90)
-        ax.set_title("Test Data Predictions Distribution")
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-        chart_data = base64.b64encode(buf.getvalue()).decode()
-        buf.close()
-        plt.close(fig)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.pie(
+                [normal, attacks],
+                labels=["Normal", "Attack"],
+                autopct="%1.1f%%",
+                colors=["#198754", "#dc3545"],
+                startangle=90,
+            )
+            ax.set_title("Test Data Predictions Distribution")
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+            chart_data = base64.b64encode(buf.getvalue()).decode()
+            buf.close()
+            plt.close(fig)
 
-        results = []
-        for i in range(min(20, len(y_test))):
-            results.append({
-                "Index": i,
-                "True": "Normal" if y_test.iloc[i] == 0 else "Attack",
-                "Predicted": "Normal" if y_pred[i] == 0 else "Attack",
-                "Match": "✓" if y_test.iloc[i] == y_pred[i] else "✗"
-            })
+            rows = []
+            for i in range(min(20, len(y_test))):
+                rows.append(
+                    {
+                        "Index": i,
+                        "True": "Normal" if y_test.iloc[i] == 0 else "Attack",
+                        "Predicted": "Normal" if y_pred[i] == 0 else "Attack",
+                        "Match": "OK" if y_test.iloc[i] == y_pred[i] else "MISS",
+                    }
+                )
 
-        return render_template("dashboard.html", total=total, attacks=attacks,
-                               normal=normal, accuracy=accuracy,
-                               chart_data=chart_data, results=results)
+            model_stats.update(
+                {
+                    "available": True,
+                    "total": total,
+                    "attacks": attacks,
+                    "normal": normal,
+                    "accuracy": accuracy,
+                    "chart_data": chart_data,
+                    "results": rows,
+                }
+            )
+        except Exception as exc:
+            model_stats["error"] = f"Unable to build model analytics: {exc}"
+            logging.error("Dashboard model analytics error: %s", exc)
 
-    except Exception as e:
-        logging.error(f"Dashboard error: {e}")
-        return render_template("error.html", error=str(e)), 500
+    recent_alerts = ops_store.list_alerts(limit=8)
+    recent_actions = ops_store.list_actions(limit=8)
+    recent_audits = ops_store.list_audits(limit=8)
+    recent_registry = model_registry.list_entries(limit=8)
+    policy = prevention_service.policy.to_dict()
+
+    metrics_snapshot = {
+        "requests_total": metrics_service.get("requests_total"),
+        "predictions_total": metrics_service.get("predictions_total"),
+        "alerts_total": metrics_service.get("alerts_total"),
+        "prevention_actions_total": metrics_service.get("prevention_actions_total"),
+        "rate_limited_total": metrics_service.get("rate_limited_total"),
+        "unauthorized_total": metrics_service.get("unauthorized_total"),
+        "ingested_total": metrics_service.get("ingested_total"),
+        "processed_ingestion_total": metrics_service.get("processed_ingestion_total"),
+    }
+
+    return render_template(
+        "dashboard.html",
+        model_stats=model_stats,
+        recent_alerts=recent_alerts,
+        recent_actions=recent_actions,
+        recent_audits=recent_audits,
+        recent_registry=recent_registry,
+        policy=policy,
+        metrics_snapshot=metrics_snapshot,
+        auth_info=auth_status(),
+        queue_size=ingestion_queue.size(),
+        firewall_adapter=SETTINGS.firewall_adapter,
+        rate_limit_requests=SETTINGS.rate_limit_requests,
+        rate_limit_window_seconds=SETTINGS.rate_limit_window_seconds,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+    )
 
 
 @app.route("/models")
 def models_page():
     """Comparison page of all trained models and their metrics."""
     try:
-        if not os.path.exists(RESULTS_DIR):
-            return render_template("models.html", models=[], has_data=False)
+        model_results: list[dict] = []
+        latest_results = None
+        if os.path.exists(RESULTS_DIR):
+            results_files = [
+                f
+                for f in os.listdir(RESULTS_DIR)
+                if f.startswith("model_results_") and f.endswith(".json")
+            ]
+            if results_files:
+                latest_results = sorted(results_files)[-1]
+                with open(os.path.join(RESULTS_DIR, latest_results), "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, list):
+                    model_results = [r for r in loaded if isinstance(r, dict)]
 
-        results_files = [f for f in os.listdir(RESULTS_DIR) if f.endswith('.json')]
-        if not results_files:
-            return render_template("models.html", models=[], has_data=False)
-
-        latest_results = sorted(results_files)[-1]
-        with open(os.path.join(RESULTS_DIR, latest_results), 'r', encoding='utf-8') as f:
-            model_results = json.load(f)
         model_results = sorted(model_results, key=lambda x: x.get("accuracy", 0), reverse=True)
-        return render_template("models.html", models=model_results, has_data=True)
+        chart_files = {
+            "model_comparison": os.path.exists(os.path.join(STATIC_DIR, "model_comparison.png")),
+            "training_time_comparison": os.path.exists(
+                os.path.join(STATIC_DIR, "training_time_comparison.png")
+            ),
+            "roc_curves": os.path.exists(os.path.join(STATIC_DIR, "roc_curves.png")),
+        }
+
+        return render_template(
+            "models.html",
+            models=model_results,
+            has_data=bool(model_results),
+            latest_results=latest_results,
+            chart_files=chart_files,
+            registry_entries=model_registry.list_entries(limit=12),
+        )
     except Exception as e:
         logging.error(f"Models page error: {e}")
-        return render_template("models.html", models=[], has_data=False)
+        return render_template(
+            "models.html",
+            models=[],
+            has_data=False,
+            latest_results=None,
+            chart_files={
+                "model_comparison": False,
+                "training_time_comparison": False,
+                "roc_curves": False,
+            },
+            registry_entries=[],
+        )
 
 
 @app.route("/batch", methods=["GET", "POST"])
@@ -425,7 +541,10 @@ def api_actions():
 def api_actions_cleanup():
     payload = request.get_json(silent=True) or {}
     now_iso = payload.get("now")
-    removed = ops_store.cleanup_expired_actions(now_iso=now_iso)
+    try:
+        removed = ops_store.cleanup_expired_actions(now_iso=now_iso)
+    except ValueError:
+        return jsonify({"error": "'now' must be an ISO-8601 datetime string"}), 400
     if removed:
         ops_store.add_audit(
             event_type="actions_cleanup",
@@ -449,8 +568,16 @@ def api_audit():
 def api_explain():
     payload = request.get_json(silent=True) or {}
     features = payload.get("features", {})
-    top_k = int(payload.get("top_k", 5))
-    top_k = max(1, min(top_k, 20))
+    try:
+        top_k = _parse_bounded_int(
+            payload.get("top_k"),
+            name="top_k",
+            default=5,
+            minimum=1,
+            maximum=20,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not isinstance(features, dict) or not features:
         return jsonify({"error": "'features' must be a non-empty object"}), 400
@@ -534,8 +661,16 @@ def api_ingest_process():
         return jsonify({"error": "No trained model found"}), 503
 
     payload = request.get_json(silent=True) or {}
-    max_items = int(payload.get("max_items", 50))
-    max_items = max(1, min(max_items, 500))
+    try:
+        max_items = _parse_bounded_int(
+            payload.get("max_items"),
+            name="max_items",
+            default=50,
+            minimum=1,
+            maximum=500,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     def _handler(features, source):
         result = detection_service.predict_from_features(features, profile="balanced")
@@ -582,12 +717,18 @@ def capture():
 
 @app.errorhandler(404)
 def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "not_found"}), 404
     return render_template("404.html"), 404
 
 
 @app.errorhandler(Exception)
 def handle_error(e):
-    logging.error(str(e))
+    if isinstance(e, HTTPException):
+        return e
+    logging.exception("Unhandled application error")
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_server_error"}), 500
     return render_template("error.html", error=str(e)), 500
 
 

@@ -1,4 +1,4 @@
-﻿import web_app.app as app_module
+import web_app.app as app_module
 from src.ops_store import OpsStore
 import src.auth_service as auth_module
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
@@ -209,3 +209,44 @@ def test_api_model_registry_endpoint(monkeypatch, tmp_path):
     payload = out.get_json()
     assert payload["count"] >= 1
     assert payload["models"][0]["name"] == "rf"
+
+
+def test_api_explain_rejects_invalid_top_k(monkeypatch, tmp_path):
+    client = _setup_app(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/explain",
+        json={"features": {"duration": 1}, "top_k": "invalid"},
+    )
+    assert response.status_code == 400
+    assert "top_k" in response.get_json()["error"]
+
+
+def test_api_ingest_process_rejects_invalid_max_items(monkeypatch, tmp_path):
+    client = _setup_app(monkeypatch, tmp_path)
+    response = client.post("/api/ingest/process", json={"max_items": "not-a-number"})
+    assert response.status_code == 400
+    assert "max_items" in response.get_json()["error"]
+
+
+def test_api_not_found_returns_json(monkeypatch, tmp_path):
+    client = _setup_app(monkeypatch, tmp_path)
+    response = client.get("/api/does-not-exist")
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
+def test_api_actions_cleanup_rejects_invalid_now(monkeypatch, tmp_path):
+    client = _setup_app(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        auth_module._auth_service,
+        "principals",
+        {"admin-token": auth_module.Principal(role="admin", token="admin-token")},
+    )
+    response = client.post(
+        "/api/actions/cleanup",
+        headers={"X-API-Key": "admin-token"},
+        json={"now": "not-a-timestamp"},
+    )
+    assert response.status_code == 400
+    assert "now" in response.get_json()["error"]
+    monkeypatch.setattr(auth_module._auth_service, "principals", {})

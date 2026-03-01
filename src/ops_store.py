@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
@@ -106,17 +106,34 @@ class OpsStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    @staticmethod
+    def _parse_iso8601(value: str) -> datetime:
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
     def cleanup_expired_actions(self, now_iso: str | None = None) -> int:
-        now_value = now_iso or datetime.now(timezone.utc).isoformat()
+        now_dt = self._parse_iso8601(now_iso) if now_iso else datetime.now(timezone.utc)
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id FROM actions
-                WHERE expires_at IS NOT NULL AND expires_at <= ?
-                """,
-                (now_value,),
+                SELECT id, expires_at FROM actions
+                WHERE expires_at IS NOT NULL
+                """
             ).fetchall()
-            expired_ids = [r["id"] for r in rows]
+            expired_ids: list[int] = []
+            for row in rows:
+                expires_at = row["expires_at"]
+                if not expires_at:
+                    continue
+                try:
+                    expires_dt = self._parse_iso8601(expires_at)
+                except ValueError:
+                    continue
+                if expires_dt <= now_dt:
+                    expired_ids.append(row["id"])
             if expired_ids:
                 conn.executemany(
                     "DELETE FROM actions WHERE id = ?",
