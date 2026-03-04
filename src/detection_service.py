@@ -7,6 +7,7 @@ import uuid
 
 import pandas as pd
 
+from src.core.event_bus import DetectionEvent, EventBus
 from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS
 
 
@@ -67,11 +68,18 @@ class InMemoryAlertStore:
 
 
 class DetectionService:
-    def __init__(self, model, alert_store: InMemoryAlertStore):
+    def __init__(self, model, alert_store: InMemoryAlertStore, event_bus: EventBus | None = None):
         self.model = model
         self.alert_store = alert_store
+        self.event_bus = event_bus
 
-    def predict_from_features(self, features: dict[str, Any], profile: str = "balanced") -> PredictionResult:
+    def predict_from_features(
+        self,
+        features: dict[str, Any],
+        profile: str = "balanced",
+        source_ip: str = "unknown",
+        attack_type: str | None = None,
+    ) -> PredictionResult:
         threshold = THRESHOLD_PROFILES.get(profile, THRESHOLD_PROFILES["balanced"])
         normalized_profile = profile if profile in THRESHOLD_PROFILES else "balanced"
 
@@ -88,10 +96,10 @@ class DetectionService:
         suspicious = confidence < threshold
         prediction = "Attack" if pred == 1 else "Normal"
         reason = "below_confidence_threshold" if suspicious else "model_prediction"
+        severity = self._severity(prediction, confidence, threshold)
 
         alert = None
         if suspicious or prediction == "Attack":
-            severity = self._severity(prediction, confidence, threshold)
             alert = Alert(
                 id=f"al_{uuid.uuid4().hex[:10]}",
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -103,7 +111,7 @@ class DetectionService:
             )
             self.alert_store.add(alert)
 
-        return PredictionResult(
+        result = PredictionResult(
             prediction=prediction,
             confidence=confidence,
             profile=normalized_profile,
@@ -112,6 +120,47 @@ class DetectionService:
             reason=reason,
             alert=alert,
         )
+        self._emit_detection_event(
+            source_ip=source_ip,
+            prediction=prediction,
+            confidence=confidence,
+            profile=normalized_profile,
+            severity=severity,
+            suspicious=suspicious,
+            reason=reason,
+            features=row,
+            attack_type=attack_type,
+        )
+        return result
+
+    def _emit_detection_event(
+        self,
+        *,
+        source_ip: str,
+        prediction: str,
+        confidence: float,
+        profile: str,
+        severity: str,
+        suspicious: bool,
+        reason: str,
+        features: dict[str, Any],
+        attack_type: str | None,
+    ) -> None:
+        if self.event_bus is None:
+            return
+        derived_attack_type = attack_type or ("attack" if prediction == "Attack" else "normal")
+        event = DetectionEvent(
+            source_ip=str(source_ip or "unknown"),
+            prediction=prediction,
+            confidence=confidence,
+            features=features,
+            attack_type=str(derived_attack_type),
+            profile=profile,
+            severity=severity,
+            suspicious=suspicious,
+            reason=reason,
+        )
+        self.event_bus.publish(event)
 
     @staticmethod
     def _severity(prediction: str, confidence: float, threshold: float) -> str:

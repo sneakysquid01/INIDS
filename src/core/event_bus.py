@@ -13,17 +13,26 @@ def utc_now_iso() -> str:
 
 @dataclass
 class DetectionEvent:
-    source: str
+    source_ip: str
     prediction: str
     confidence: float
+    features: dict[str, Any] = field(default_factory=dict)
+    attack_type: str = "unknown"
     profile: str = "balanced"
     severity: str = "low"
     suspicious: bool = False
     reason: str = "model_prediction"
     timestamp: str = field(default_factory=utc_now_iso)
 
+    @property
+    def source(self) -> str:
+        # Backward-compatible alias for existing risk/action modules.
+        return self.source_ip
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["source"] = self.source_ip
+        return payload
 
 
 @dataclass
@@ -101,4 +110,3 @@ class EventBus:
             handlers = list(self._handlers.get(type(event), []))
         for handler in handlers:
             handler(event)
-

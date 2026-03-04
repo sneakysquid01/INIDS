@@ -16,7 +16,17 @@ from datetime import datetime, timezone
 from src.settings import load_settings
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
+from src.core.event_bus import ActionEvent, DetectionEvent, EventBus, PolicyDecisionEvent, RiskScoreEvent
 from src.logging_config import configure_logging
+from src.ips.action_executor import ActionExecutor
+from src.ips.policy_engine import PolicyEngine
+from src.ips.risk_engine import RiskEngine
+from src.ips.scheduler import PreventionScheduler
+
+try:
+    from flask_socketio import SocketIO
+except Exception:
+    SocketIO = None
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -50,6 +60,20 @@ from src.schema import (
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
+if SocketIO is not None:
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+    SOCKETIO_ENABLED = True
+else:
+    SOCKETIO_ENABLED = False
+
+    class _NoopSocketIO:
+        def emit(self, *args, **kwargs):
+            return None
+
+        def run(self, flask_app, **kwargs):
+            flask_app.run(**kwargs)
+
+    socketio = _NoopSocketIO()
 
 
 def _build_firewall_adapter():
@@ -63,6 +87,7 @@ def _build_firewall_adapter():
 
 model = None
 all_models = {}
+event_bus = EventBus()
 alert_store = InMemoryAlertStore(max_items=1000)
 detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
@@ -74,6 +99,18 @@ model_registry = ModelRegistry(os.path.join(RESULTS_DIR, "model_registry.json"))
 rate_limiter = InMemoryRateLimiter(
     RateLimitConfig(requests=SETTINGS.rate_limit_requests, window_seconds=SETTINGS.rate_limit_window_seconds)
 )
+risk_engine = RiskEngine()
+policy_engine = PolicyEngine()
+action_executor = ActionExecutor(
+    adapter=prevention_service.adapter,
+    adapter_name=SETTINGS.firewall_adapter,
+    ops_store=ops_store,
+    event_bus=event_bus,
+)
+prevention_scheduler = PreventionScheduler(
+    action_executor,
+    interval_seconds=30,
+)
 
 INPUT_FEATURES = [
     "duration", "src_bytes", "dst_bytes", "count",
@@ -82,6 +119,102 @@ INPUT_FEATURES = [
 
 MODEL_INPUT_COLUMNS = FEATURE_COLUMNS
 NUMERIC_MODEL_COLUMNS = NUMERIC_FEATURES
+
+
+def _on_detection_event(event: DetectionEvent) -> None:
+    risk_event = risk_engine.calculate(event)
+    event_bus.publish(risk_event)
+    try:
+        ops_store.add_audit(
+            event_type="risk_score",
+            message=json.dumps(
+                {
+                    "source_ip": event.source_ip,
+                    "prediction": event.prediction,
+                    "attack_type": event.attack_type,
+                    "risk_score": risk_event.risk_score,
+                    "components": risk_event.components,
+                },
+                separators=(",", ":"),
+            ),
+            created_at=risk_event.timestamp,
+        )
+    except Exception:
+        logger.exception("Failed to persist risk score")
+
+
+def _on_risk_event(event: RiskScoreEvent) -> None:
+    decision_event = policy_engine.decide(event, prevention_service.policy)
+    event_bus.publish(decision_event)
+    try:
+        ops_store.add_audit(
+            event_type="policy_decision",
+            message=json.dumps(
+                {
+                    "source_ip": event.detection.source_ip,
+                    "prediction": event.detection.prediction,
+                    "risk_score": event.risk_score,
+                    "decision": decision_event.decision,
+                    "reason": decision_event.reason,
+                    "ttl_seconds": decision_event.ttl_seconds,
+                },
+                separators=(",", ":"),
+            ),
+            created_at=decision_event.timestamp,
+        )
+    except Exception:
+        logger.exception("Failed to persist policy decision")
+
+
+def _on_policy_decision_event(event: PolicyDecisionEvent) -> None:
+    if str(event.decision).strip().upper() not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
+        return
+    action = action_executor.execute(event, prevention_service.policy)
+    if action is not None:
+        event_bus.publish(action)
+
+
+def _emit_realtime(event_name: str, payload: dict) -> None:
+    if not SOCKETIO_ENABLED:
+        return
+    try:
+        socketio.emit(event_name, payload, namespace="/events")
+    except Exception:
+        logger.exception("Failed to emit websocket event '%s'", event_name)
+
+
+def _on_detection_realtime(event: DetectionEvent) -> None:
+    _emit_realtime("DetectionEvent", event.to_dict())
+
+
+def _on_risk_realtime(event: RiskScoreEvent) -> None:
+    _emit_realtime("RiskScoreEvent", event.to_dict())
+
+
+def _on_action_realtime(event: ActionEvent) -> None:
+    _emit_realtime("ActionEvent", event.to_dict())
+
+
+event_bus.subscribe(DetectionEvent, _on_detection_event)
+event_bus.subscribe(RiskScoreEvent, _on_risk_event)
+event_bus.subscribe(PolicyDecisionEvent, _on_policy_decision_event)
+event_bus.subscribe(DetectionEvent, _on_detection_realtime)
+event_bus.subscribe(RiskScoreEvent, _on_risk_realtime)
+event_bus.subscribe(ActionEvent, _on_action_realtime)
+
+
+def _ensure_scheduler_started() -> None:
+    if getattr(app, "_prevention_scheduler_started", False):
+        return
+    prevention_scheduler.start()
+    app._prevention_scheduler_started = True
+
+
+def _validate_runtime_security() -> None:
+    if SETTINGS.require_secret_key and not os.getenv("SECRET_KEY", "").strip():
+        raise RuntimeError("SECRET_KEY environment variable is required")
+    if SETTINGS.require_api_keys and not auth_status().get("enabled", False):
+        raise RuntimeError("API keys are required for protected endpoints")
 
 
 def ensure_model_loaded() -> None:
@@ -98,7 +231,7 @@ def ensure_detection_service() -> bool:
     if model is None:
         return False
     if detection_service is None:
-        detection_service = DetectionService(model=model, alert_store=alert_store)
+        detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
     return True
 
 
@@ -123,7 +256,7 @@ def load_models():
             logger.info("Loaded model %s", model_name)
     if 'rf_nsl_kdd' in all_models:
         model = all_models['rf_nsl_kdd']
-        detection_service = DetectionService(model=model, alert_store=alert_store)
+        detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
 
 
 def _model_stats() -> dict:
@@ -213,6 +346,7 @@ def _action_status(expires_at: str | None, now: datetime) -> str:
 
 @app.before_request
 def _before_request_metrics():
+    _ensure_scheduler_started()
     if request.path.startswith('/api/'):
         metrics_service.inc('requests_total')
 
@@ -272,7 +406,11 @@ def predict():
                 "serror_rate": values[5],
                 "same_srv_rate": values[6],
             })
-            result = detection_service.predict_from_features(row, profile="balanced")
+            result = detection_service.predict_from_features(
+                row,
+                profile="balanced",
+                source_ip=request.remote_addr or "unknown",
+            )
             confidence = result.confidence
             is_suspicious = result.suspicious
             prediction = "SUSPICIOUS - Low Confidence" if result.suspicious else result.prediction
@@ -509,13 +647,18 @@ def api_predict():
         for col in NUMERIC_MODEL_COLUMNS:
             if col in features:
                 features[col] = float(features[col])
+        source = payload.get("source", "unknown")
         metrics_service.inc("predictions_total")
-        result = detection_service.predict_from_features(features, profile=profile)
+        result = detection_service.predict_from_features(
+            features,
+            profile=profile,
+            source_ip=source,
+            attack_type=payload.get("attack_type"),
+        )
         if result.alert:
             ops_store.save_alert(result.alert.to_dict())
             metrics_service.inc("alerts_total")
 
-        source = payload.get("source", "unknown")
         action = prevention_service.evaluate(result.prediction, result.confidence, source=source)
         if action:
             ops_store.save_action(action.to_dict())
@@ -697,7 +840,11 @@ def api_ingest_process():
     max_items = max(1, min(max_items, 500))
 
     def _handler(features, source):
-        result = detection_service.predict_from_features(features, profile="balanced")
+        result = detection_service.predict_from_features(
+            features,
+            profile="balanced",
+            source_ip=source,
+        )
         if result.alert:
             ops_store.save_alert(result.alert.to_dict())
             metrics_service.inc("alerts_total")
@@ -731,7 +878,7 @@ def about():
 
 @app.route("/realtime")
 def realtime():
-    return render_template("realtime.html")
+    return render_template("realtime.html", socketio_enabled=SOCKETIO_ENABLED)
 
 
 @app.route("/capture")
@@ -747,12 +894,17 @@ def not_found(e):
 @app.errorhandler(Exception)
 def handle_error(e):
     logger.error("Unhandled error: %s", e)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_error"}), 500
     return render_template("error.html", error="Unexpected internal error."), 500
 
 
 if __name__ == "__main__":
+    _validate_runtime_security()
     load_models()
-    app.run(
+    _ensure_scheduler_started()
+    socketio.run(
+        app,
         debug=SETTINGS.debug,
         host=SETTINGS.host,
         port=SETTINGS.port,

@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol, Callable
+from typing import Callable
 import ipaddress
 import subprocess
 
 
-class FirewallAdapter(Protocol):
-    def block(self, target: str, ttl_seconds: int) -> bool:
-        ...
+class FirewallAdapter(ABC):
+    @abstractmethod
+    def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
+        raise NotImplementedError
 
-    def unblock(self, target: str) -> bool:
-        ...
+    @abstractmethod
+    def unblock(self, ip: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_rules(self) -> list[str]:
+        raise NotImplementedError
 
 
 def _validate_target_ip(target: str) -> str:
@@ -20,7 +27,7 @@ def _validate_target_ip(target: str) -> str:
 
 
 @dataclass
-class MockFirewallAdapter:
+class MockFirewallAdapter(FirewallAdapter):
     """In-memory firewall adapter for local demos/tests."""
 
     blocked_targets: dict[str, int] | None = None
@@ -29,68 +36,128 @@ class MockFirewallAdapter:
         if self.blocked_targets is None:
             self.blocked_targets = {}
 
-    def block(self, target: str, ttl_seconds: int) -> bool:
-        target = _validate_target_ip(target)
-        self.blocked_targets[target] = ttl_seconds
-        return True
+    def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+            self.blocked_targets[target] = int(ttl_seconds or 0)
+            return True
+        except Exception:
+            return False
 
-    def unblock(self, target: str) -> bool:
-        target = _validate_target_ip(target)
-        return self.blocked_targets.pop(target, None) is not None
+    def unblock(self, ip: str) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+            return self.blocked_targets.pop(target, None) is not None
+        except Exception:
+            return False
+
+    def list_rules(self) -> list[str]:
+        return sorted(self.blocked_targets.keys())
 
 
 @dataclass
-class UfwFirewallAdapter:
+class UfwFirewallAdapter(FirewallAdapter):
     """UFW-backed firewall adapter. Requires ufw and appropriate permissions."""
 
     run_cmd: Callable[..., subprocess.CompletedProcess] = subprocess.run
 
-    def block(self, target: str, ttl_seconds: int) -> bool:
-        # ttl_seconds is tracked by scheduler/cleanup; ufw itself doesn't do TTL.
-        target = _validate_target_ip(target)
-        result = self.run_cmd(["ufw", "deny", "from", target], capture_output=True, text=True)
-        return result.returncode == 0
+    def _run(self, args: list[str]) -> tuple[bool, str]:
+        try:
+            result = self.run_cmd(args, capture_output=True, text=True)
+            return result.returncode == 0, str(getattr(result, "stdout", "") or "")
+        except Exception:
+            return False, ""
 
-    def unblock(self, target: str) -> bool:
-        target = _validate_target_ip(target)
-        result = self.run_cmd(["ufw", "delete", "deny", "from", target], capture_output=True, text=True)
-        return result.returncode == 0
+    def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        ok, _ = self._run(["ufw", "deny", "from", target])
+        return ok
+
+    def unblock(self, ip: str) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        ok, _ = self._run(["ufw", "delete", "deny", "from", target])
+        return ok
+
+    def list_rules(self) -> list[str]:
+        ok, out = self._run(["ufw", "status"])
+        if not ok:
+            return []
+        rules: list[str] = []
+        for line in out.splitlines():
+            parts = line.strip().split()
+            if not parts:
+                continue
+            if parts[0].count(".") == 3:
+                try:
+                    rules.append(_validate_target_ip(parts[0]))
+                except Exception:
+                    continue
+        return sorted(set(rules))
 
 
 @dataclass
-class NftablesFirewallAdapter:
+class NftablesFirewallAdapter(FirewallAdapter):
     """nftables-backed adapter that inserts/deletes source-IP drop rules in inet filter input."""
 
     run_cmd: Callable[..., subprocess.CompletedProcess] = subprocess.run
 
-    def block(self, target: str, ttl_seconds: int) -> bool:
-        target = _validate_target_ip(target)
-        result = self.run_cmd(
-            ["nft", "add", "rule", "inet", "filter", "input", "ip", "saddr", target, "drop"],
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
+    def _run(self, args: list[str]) -> tuple[bool, str]:
+        try:
+            result = self.run_cmd(args, capture_output=True, text=True)
+            return result.returncode == 0, str(getattr(result, "stdout", "") or "")
+        except Exception:
+            return False, ""
 
-    def unblock(self, target: str) -> bool:
-        target = _validate_target_ip(target)
-        # Conservative approach: list ruleset and delete matching handles.
-        list_result = self.run_cmd(["nft", "-a", "list", "chain", "inet", "filter", "input"], capture_output=True, text=True)
-        if list_result.returncode != 0:
+    def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        ok, _ = self._run(["nft", "add", "rule", "inet", "filter", "input", "ip", "saddr", target, "drop"])
+        return ok
+
+    def unblock(self, ip: str) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        ok, out = self._run(["nft", "-a", "list", "chain", "inet", "filter", "input"])
+        if not ok:
             return False
 
         handles: list[str] = []
-        for line in list_result.stdout.splitlines():
+        for line in out.splitlines():
             if f"ip saddr {target} drop" in line and "# handle" in line:
-                handle = line.split("# handle")[-1].strip()
-                handles.append(handle)
+                handles.append(line.split("# handle")[-1].strip())
 
-        ok = True
+        if not handles:
+            return True
+
         for handle in handles:
-            del_result = self.run_cmd(
-                ["nft", "delete", "rule", "inet", "filter", "input", "handle", handle],
-                capture_output=True,
-                text=True,
-            )
-            ok = ok and del_result.returncode == 0
-        return ok
+            deleted, _ = self._run(["nft", "delete", "rule", "inet", "filter", "input", "handle", handle])
+            if not deleted:
+                return False
+        return True
+
+    def list_rules(self) -> list[str]:
+        ok, out = self._run(["nft", "-a", "list", "chain", "inet", "filter", "input"])
+        if not ok:
+            return []
+        rules: list[str] = []
+        for line in out.splitlines():
+            marker = "ip saddr "
+            if marker not in line or " drop" not in line:
+                continue
+            fragment = line.split(marker, 1)[1]
+            ip_part = fragment.split(" ", 1)[0].strip()
+            try:
+                rules.append(_validate_target_ip(ip_part))
+            except Exception:
+                continue
+        return sorted(set(rules))

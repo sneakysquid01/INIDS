@@ -14,7 +14,7 @@ class PreventionScheduler:
         self,
         executor: ActionExecutor,
         *,
-        interval_seconds: int = 15,
+        interval_seconds: int = 30,
         reconcile_every: int = 20,
     ):
         self.executor = executor
@@ -50,4 +50,3 @@ class PreventionScheduler:
             except Exception:
                 self.logger.exception("scheduler loop failed")
             sleep(self.interval_seconds)
-

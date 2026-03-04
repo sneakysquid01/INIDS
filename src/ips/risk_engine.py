@@ -34,7 +34,16 @@ class RiskEngine:
         self._events_by_source: dict[str, deque[float]] = defaultdict(deque)
         self._lock = Lock()
 
-    def map_attack_severity(self, prediction: str, severity: str) -> float:
+    ATTACK_TYPE_SEVERITY: dict[str, float] = {
+        "u2r": 1.0,
+        "r2l": 0.95,
+        "dos": 0.85,
+        "probe": 0.7,
+        "attack": 0.8,
+        "normal": 0.1,
+    }
+
+    def map_attack_severity(self, prediction: str, severity: str, attack_type: str | None = None) -> float:
         explicit = str(severity or "").strip().lower()
         if explicit == "critical":
             return 1.0
@@ -44,6 +53,9 @@ class RiskEngine:
             return 0.6
         if explicit == "low":
             return 0.25
+        normalized_attack_type = str(attack_type or "").strip().lower()
+        if normalized_attack_type in self.ATTACK_TYPE_SEVERITY:
+            return self.ATTACK_TYPE_SEVERITY[normalized_attack_type]
         return 0.8 if str(prediction).lower() == "attack" else 0.1
 
     def recent_activity_score(self, source_ip: str) -> float:
@@ -62,8 +74,13 @@ class RiskEngine:
         return _clamp(count / self.frequency_high_watermark)
 
     def calculate(self, detection_event: DetectionEvent) -> RiskScoreEvent:
-        confidence_score = _clamp(float(detection_event.confidence) / 100.0)
-        severity_score = self.map_attack_severity(detection_event.prediction, detection_event.severity)
+        raw_confidence = float(detection_event.confidence)
+        confidence_score = _clamp(raw_confidence / 100.0 if raw_confidence > 1.0 else raw_confidence)
+        severity_score = self.map_attack_severity(
+            detection_event.prediction,
+            detection_event.severity,
+            getattr(detection_event, "attack_type", None),
+        )
         frequency_score = self.recent_activity_score(detection_event.source)
 
         risk = (
@@ -81,4 +98,3 @@ class RiskEngine:
             risk_score=round(_clamp(risk), 6),
             components=components,
         )
-

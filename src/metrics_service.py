@@ -21,6 +21,11 @@ class MetricsService:
         with self._lock:
             return self._counters.get(key, 0)
 
+    def observe_risk_score(self, score: float) -> None:
+        with self._lock:
+            self._counters["risk_score_count"] += 1
+            self._counters["risk_score_sum"] += float(score)
+
     def as_prometheus(self) -> str:
         with self._lock:
             lines = [
@@ -54,5 +59,17 @@ class MetricsService:
                 "# HELP inids_rate_limited_total Requests rejected by rate limiter",
                 "# TYPE inids_rate_limited_total counter",
                 f"inids_rate_limited_total {self._counters.get('rate_limited_total', 0)}",
+                "# HELP inids_detection_events_total Total detection events published",
+                "# TYPE inids_detection_events_total counter",
+                f"inids_detection_events_total {self._counters.get('detection_events_total', 0)}",
+                "# HELP inids_action_events_total Total action events published",
+                "# TYPE inids_action_events_total counter",
+                f"inids_action_events_total {self._counters.get('action_events_total', 0)}",
+                "# HELP inids_risk_score_sum Sum of risk scores",
+                "# TYPE inids_risk_score_sum counter",
+                f"inids_risk_score_sum {self._counters.get('risk_score_sum', 0)}",
+                "# HELP inids_risk_score_count Number of risk-score observations",
+                "# TYPE inids_risk_score_count counter",
+                f"inids_risk_score_count {self._counters.get('risk_score_count', 0)}",
             ]
         return "\n".join(lines) + "\n"

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -13,6 +14,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier
 
+from src.model_registry import ModelRegistry
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -20,6 +23,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+TRAIN_DATA_FILE = os.path.join(DATA_DIR, "KDDTrain+.txt")
+REGISTRY_FILE = os.path.join(RESULTS_DIR, "model_registry.json")
 
 
 def _load_required_artifacts() -> tuple[dict, object]:
@@ -38,6 +44,34 @@ def _available_model_builders() -> dict[str, callable]:
         "ab_nsl_kdd": lambda: AdaBoostClassifier(n_estimators=50, random_state=42),
         "mlp_nsl_kdd": lambda: MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=100, random_state=42),
     }
+
+
+def _sha256_file(path: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _compute_drift_alert() -> str | None:
+    try:
+        from src.drift_monitor import compute_drift_report
+
+        report = compute_drift_report()
+        summary = report.get("summary", {})
+        high = int(summary.get("high_drift", 0))
+        moderate = int(summary.get("moderate_drift", 0))
+        if high > 0:
+            return f"HIGH_DRIFT detected in {high} feature(s)"
+        if moderate > 0:
+            return f"MODERATE_DRIFT detected in {moderate} feature(s)"
+        return None
+    except Exception as exc:
+        logging.warning("Drift monitoring skipped: %s", exc)
+        return "DRIFT_MONITOR_UNAVAILABLE"
 
 
 def train_one(model_name: str, clf, X_train, y_train, X_val, y_val, preprocessor) -> dict | None:
@@ -182,6 +216,28 @@ def main() -> None:
         with open(results_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
         logging.info("Saved comparison metrics to %s", results_path)
+
+        registry = ModelRegistry(REGISTRY_FILE)
+        training_date = datetime.utcnow().date().isoformat()
+        dataset_hash = _sha256_file(TRAIN_DATA_FILE)
+        drift_alert = _compute_drift_alert()
+        if drift_alert:
+            logging.warning("Drift alert: %s", drift_alert)
+
+        for row in results:
+            model_name = str(row.get("name", "model"))
+            version_suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            registry.register(
+                name=model_name,
+                model_path=str(row.get("model_path", "")),
+                accuracy=float(row.get("accuracy", 0.0)),
+                f1_score=float(row.get("f1_score", 0.0)),
+                training_time=float(row.get("training_time", 0.0)),
+                model_version=f"{model_name}-{version_suffix}",
+                training_date=training_date,
+                dataset_hash=dataset_hash,
+                drift_alert=drift_alert,
+            )
 
     if args.include_multiclass:
         multi_splits_path = os.path.join(MODELS_DIR, "train_splits_multiclass.pkl")
