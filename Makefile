@@ -1,27 +1,7 @@
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-ifeq ($(OS),Windows_NT)
-PYTHON ?= .\venv\Scripts\python.exe
-PIP ?= .\venv\Scripts\python.exe -m pip
-else
-PYTHON ?= python3
-PIP ?= pip3
-endif
-=======
 PYTHON ?= python
 PIP ?= pip
->>>>>>> theirs
-=======
-PYTHON ?= python
-PIP ?= pip
->>>>>>> theirs
-=======
-PYTHON ?= python
-PIP ?= pip
->>>>>>> theirs
 
-.PHONY: setup test lint preprocess train train-all demo demo-api drift-report web conflict-check clean
+.PHONY: setup test lint preprocess train train-all demo web clean
 
 setup:
 	$(PIP) install -r requirements.txt
@@ -50,52 +30,10 @@ train-all:
 demo:
 	$(PYTHON) src/run_demo.py
 
-# Run API-based end-to-end demo flow (requires running web app)
-demo-api:
-	$(PYTHON) src/run_end_to_end_demo.py
-
-# Generate drift report from baseline vs current dataset
-drift-report:
-	$(PYTHON) src/drift_monitor.py
-
 # Start web application
 web:
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-	$(PYTHON) -m web_app.app
-
-# Detect unresolved Git merge conflict markers in tracked source/docs files
-conflict-check:
-	-rg -n "^(<<<<<<<|=======|>>>>>>>)" -g "!*.map" src tests web_app docs .env.example Makefile pyproject.toml requirements.txt
-
-ifeq ($(OS),Windows_NT)
-clean:
-	powershell -NoProfile -Command "Get-ChildItem -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
-	powershell -NoProfile -Command "Get-ChildItem -Recurse -File -Filter '*.pyc' | Remove-Item -Force -ErrorAction SilentlyContinue"
-else
-clean:
-	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
-	find . -type f -name '*.pyc' -delete
-endif
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
 	$(PYTHON) web_app/app.py
 
-# Detect unresolved Git merge conflict markers in tracked source/docs files
-conflict-check:
-	rg -n "^(<<<<<<<|=======|>>>>>>>)" -g '!*.map' src tests web_app docs .env.example Makefile pyproject.toml requirements.txt || true
-
 clean:
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
