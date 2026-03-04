@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from threading import Lock
 from typing import Callable, Protocol
+=======
+from typing import Protocol, Callable
+>>>>>>> theirs
 =======
 from typing import Protocol, Callable
 >>>>>>> theirs
@@ -24,9 +28,12 @@ class FirewallAdapter(Protocol):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     def list_rules(self) -> list[str]:
         ...
 
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -48,6 +55,7 @@ class MockFirewallAdapter:
             self.blocked_targets = {}
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         self._lock = Lock()
 
     def block(self, target: str, ttl_seconds: int) -> bool:
@@ -57,11 +65,16 @@ class MockFirewallAdapter:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
     def block(self, target: str, ttl_seconds: int) -> bool:
         target = _validate_target_ip(target)
         self.blocked_targets[target] = ttl_seconds
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -69,6 +82,7 @@ class MockFirewallAdapter:
 
     def unblock(self, target: str) -> bool:
         target = _validate_target_ip(target)
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         with self._lock:
@@ -168,6 +182,9 @@ class PfFirewallAdapter:
 =======
         return self.blocked_targets.pop(target, None) is not None
 >>>>>>> theirs
+=======
+        return self.blocked_targets.pop(target, None) is not None
+>>>>>>> theirs
 
 
 @dataclass
@@ -189,6 +206,7 @@ class UfwFirewallAdapter:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     def list_rules(self) -> list[str]:
         result = self.run_cmd(["ufw", "status", "numbered"], capture_output=True, text=True)
         if result.returncode != 0:
@@ -205,6 +223,8 @@ class UfwFirewallAdapter:
                     continue
         return sorted(set(rules))
 
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -249,6 +269,7 @@ class NftablesFirewallAdapter:
         return ok
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 
     def list_rules(self) -> list[str]:
         list_result = self.run_cmd(["nft", "-a", "list", "chain", "inet", "filter", "input"], capture_output=True, text=True)
@@ -265,6 +286,8 @@ class NftablesFirewallAdapter:
             except (IndexError, ValueError):
                 continue
         return sorted(set(rules))
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======

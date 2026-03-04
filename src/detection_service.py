@@ -4,7 +4,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from threading import Lock
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -61,6 +64,7 @@ class InMemoryAlertStore:
         self._alerts: list[Alert] = []
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         self._lock = Lock()
 
     def add(self, alert: Alert) -> None:
@@ -75,6 +79,8 @@ class InMemoryAlertStore:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
     def add(self, alert: Alert) -> None:
         self._alerts.insert(0, alert)
@@ -84,6 +90,9 @@ class InMemoryAlertStore:
     def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[Alert]:
         alerts = self._alerts
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

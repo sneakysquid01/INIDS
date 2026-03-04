@@ -5,7 +5,11 @@
 2. Copy env template: `cp .env.example .env` (or set env vars in shell)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 3. Run app: `python -m web_app.app`
+=======
+3. Run app: `python web_app/app.py`
+>>>>>>> theirs
 =======
 3. Run app: `python web_app/app.py`
 >>>>>>> theirs

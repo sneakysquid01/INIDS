@@ -12,6 +12,7 @@ class Settings:
     ops_db_path: str = "data/inids_ops.db"
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     flask_secret_key: str = ""
     rate_limit_requests: int = 120
     rate_limit_window_seconds: int = 60
@@ -34,11 +35,16 @@ def _require_env(names: tuple[str, ...], label: str) -> str:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     flask_secret_key: str = "dev-inids-secret"
     rate_limit_requests: int = 120
     rate_limit_window_seconds: int = 60
     firewall_adapter: str = "mock"
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -49,6 +55,7 @@ def load_settings() -> Settings:
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
     ops_db_path = os.getenv("OPS_DB_PATH", "data/inids_ops.db")
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
     secret = _require_env(("SECRET_KEY", "FLASK_SECRET_KEY"), "Flask secret key")
@@ -65,11 +72,16 @@ def load_settings() -> Settings:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     secret = os.getenv("FLASK_SECRET_KEY", "dev-inids-secret")
     rate_reqs = int(os.getenv("RATE_LIMIT_REQUESTS", "120"))
     rate_window = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
     firewall_adapter = os.getenv("FIREWALL_ADAPTER", "mock").strip().lower()
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -83,6 +95,7 @@ def load_settings() -> Settings:
         rate_limit_window_seconds=rate_window,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         rate_limit_max_keys=rate_max_keys,
         firewall_adapter=firewall_adapter,
         admin_api_key=admin_api_key,
@@ -91,6 +104,9 @@ def load_settings() -> Settings:
         enable_ips_scheduler=enable_scheduler,
         scheduler_interval_seconds=scheduler_interval_seconds,
         scheduler_reconcile_every=scheduler_reconcile_every,
+=======
+        firewall_adapter=firewall_adapter,
+>>>>>>> theirs
 =======
         firewall_adapter=firewall_adapter,
 >>>>>>> theirs

@@ -4,7 +4,10 @@ from collections import deque
 from dataclasses import dataclass
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from threading import Lock
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -28,6 +31,7 @@ class InMemoryIngestionQueue:
         self._queue: deque[IngestionRecord] = deque()
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         self._lock = Lock()
 
     def enqueue(self, record: IngestionRecord) -> None:
@@ -48,6 +52,8 @@ class InMemoryIngestionQueue:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
     def enqueue(self, record: IngestionRecord) -> None:
         self._queue.append(record)
@@ -62,6 +68,9 @@ class InMemoryIngestionQueue:
     def size(self) -> int:
         return len(self._queue)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

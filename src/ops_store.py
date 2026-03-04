@@ -50,11 +50,15 @@ class OpsStore:
                     expires_at TEXT,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
                     created_at TEXT NOT NULL,
                     executed INTEGER NOT NULL DEFAULT 0,
                     dry_run INTEGER NOT NULL DEFAULT 1,
                     status TEXT NOT NULL DEFAULT 'active',
                     adapter TEXT NOT NULL DEFAULT 'mock'
+=======
+                    created_at TEXT NOT NULL
+>>>>>>> theirs
 =======
                     created_at TEXT NOT NULL
 >>>>>>> theirs
@@ -76,6 +80,7 @@ class OpsStore:
             )
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
             self._ensure_actions_columns(conn)
 
     @staticmethod
@@ -93,6 +98,8 @@ class OpsStore:
         for column, ddl in migrations:
             if column not in existing:
                 conn.execute(ddl)
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -123,6 +130,7 @@ class OpsStore:
     def save_action(self, payload: dict[str, Any]) -> None:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         row = {
             "action": payload.get("action"),
             "target": payload.get("target"),
@@ -144,6 +152,8 @@ class OpsStore:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         with self._connect() as conn:
             conn.execute(
                 """
@@ -152,6 +162,9 @@ class OpsStore:
                 """,
                 payload,
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -163,7 +176,11 @@ class OpsStore:
                 """
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
                 SELECT action, target, reason, expires_at, created_at, executed, dry_run, status, adapter
+=======
+                SELECT action, target, reason, expires_at, created_at
+>>>>>>> theirs
 =======
                 SELECT action, target, reason, expires_at, created_at
 >>>>>>> theirs
@@ -174,6 +191,7 @@ class OpsStore:
                 """,
                 (limit,),
             ).fetchall()
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         payload = [dict(r) for r in rows]
@@ -262,6 +280,8 @@ class OpsStore:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         return [dict(r) for r in rows]
 
 
@@ -283,6 +303,9 @@ class OpsStore:
                 )
         return len(expired_ids)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

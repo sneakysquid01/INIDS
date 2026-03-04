@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from functools import wraps
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+=======
+import os
+>>>>>>> theirs
 =======
 import os
 >>>>>>> theirs
@@ -25,7 +29,10 @@ ROLE_RANK = {
     "viewer": 1,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     "sensor": 2,
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -38,6 +45,7 @@ ROLE_RANK = {
 class AuthService:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     def __init__(self, principals: dict[str, Principal]):
         self.principals: dict[str, Principal] = {}
         for token, principal in principals.items():
@@ -47,6 +55,8 @@ class AuthService:
         if not self.principals:
             raise RuntimeError("AuthService requires at least one configured principal")
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     def __init__(self):
@@ -65,6 +75,9 @@ class AuthService:
         if viewer:
             self.principals[viewer] = Principal(role="viewer", token=viewer)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -76,6 +89,7 @@ class AuthService:
     def authorize(self, required_role: str) -> tuple[bool, str]:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         normalized_role = "sensor" if required_role == "analyst" else required_role
         if normalized_role not in ROLE_RANK:
             return False, "unknown_role"
@@ -84,11 +98,16 @@ class AuthService:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         if required_role not in ROLE_RANK:
             return False, "unknown_role"
         if not self.enabled:
             return True, "auth_disabled"
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -103,7 +122,11 @@ class AuthService:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         if ROLE_RANK[principal.role] < ROLE_RANK[normalized_role]:
+=======
+        if ROLE_RANK[principal.role] < ROLE_RANK[required_role]:
+>>>>>>> theirs
 =======
         if ROLE_RANK[principal.role] < ROLE_RANK[required_role]:
 >>>>>>> theirs
@@ -114,6 +137,7 @@ class AuthService:
         return True, principal.role
 
 
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 _auth_service: AuthService | None = None
@@ -153,6 +177,9 @@ _auth_service = AuthService()
 =======
 _auth_service = AuthService()
 >>>>>>> theirs
+=======
+_auth_service = AuthService()
+>>>>>>> theirs
 
 
 def require_role(required_role: str) -> Callable:
@@ -161,10 +188,16 @@ def require_role(required_role: str) -> Callable:
         def wrapper(*args, **kwargs):
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
             ok, reason = authorize_request(required_role)
             if not ok:
                 status = 500 if reason == "auth_unconfigured" else 401
                 return jsonify({"error": "unauthorized", "reason": reason}), status
+=======
+            ok, reason = _auth_service.authorize(required_role)
+            if not ok:
+                return jsonify({"error": "unauthorized", "reason": reason}), 401
+>>>>>>> theirs
 =======
             ok, reason = _auth_service.authorize(required_role)
             if not ok:
@@ -185,6 +218,7 @@ def require_role(required_role: str) -> Callable:
 def auth_status() -> dict[str, str | bool]:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     if _auth_service is None:
         return {
             "enabled": False,
@@ -195,6 +229,11 @@ def auth_status() -> dict[str, str | bool]:
         "enabled": _auth_service.enabled,
         "configured_roles": sorted({p.role for p in _auth_service.principals.values()}),
         "required_roles": ["admin", "sensor", "viewer"],
+=======
+    return {
+        "enabled": _auth_service.enabled,
+        "configured_roles": sorted({p.role for p in _auth_service.principals.values()}),
+>>>>>>> theirs
 =======
     return {
         "enabled": _auth_service.enabled,

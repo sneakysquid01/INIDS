@@ -1,5 +1,6 @@
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from __future__ import annotations
 
 import atexit
@@ -8,6 +9,8 @@ import io
 import json
 import logging
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 from flask import Flask, Response, jsonify, render_template, request
@@ -26,10 +29,13 @@ import joblib
 import matplotlib
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 import pandas as pd
 from flask import Flask, Response, current_app, g, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 
@@ -45,21 +51,28 @@ import logging
 import json
 from datetime import datetime, timezone
 <<<<<<< ours
+<<<<<<< ours
 =======
-
-from src.settings import load_settings
-from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
-from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
+=======
 >>>>>>> theirs
 
 from src.settings import load_settings
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
+<<<<<<< ours
+>>>>>>> theirs
+
+from src.settings import load_settings
+from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
+from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,6 +88,8 @@ from src.firewall_adapters import (
     PfFirewallAdapter,
     UfwFirewallAdapter,
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 SETTINGS = load_settings()
@@ -177,6 +192,7 @@ MODEL_INPUT_COLUMNS = FEATURE_COLUMNS
 NUMERIC_MODEL_COLUMNS = NUMERIC_FEATURES
 
 
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 @dataclass
@@ -346,6 +362,8 @@ def _parse_bounded_int(value, *, name: str, default: int, minimum: int, maximum:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 def ensure_model_loaded() -> None:
     """Lazily load models if not available in memory."""
     global model
@@ -376,12 +394,24 @@ def ensure_detection_service() -> bool:
     return True
 
 
+def ensure_detection_service() -> bool:
+    """Ensure detection service is initialized with loaded model."""
+    global detection_service
+    ensure_model_loaded()
+    if model is None:
+        return False
+    if detection_service is None:
+        detection_service = DetectionService(model=model, alert_store=alert_store)
+    return True
+
+
 def _normalize_label(value) -> str:
     if pd.isna(value):
         return ""
     return str(value).strip().lower().rstrip(".")
 
 
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 def load_models() -> None:
@@ -547,6 +577,8 @@ def _after_request(response):
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 def load_models():
     """Load all available models into memory for live or selectable prediction."""
     global model, all_models, detection_service
@@ -588,6 +620,9 @@ def _after_request_metrics(response):
     if request.path.startswith('/api/') and response.status_code == 401:
         metrics_service.inc('unauthorized_total')
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -611,12 +646,16 @@ def home():
 
 
 
+
 @app.route("/predict", methods=["GET", "POST"])
 def predict():
 <<<<<<< ours
 =======
     """Live prediction page with suspicious activity logic."""
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -630,9 +669,12 @@ def predict():
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     if model_ready and request.method == "POST":
         services = _services()
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     if not ensure_detection_service():
@@ -704,6 +746,9 @@ def predict():
                            confidence=confidence, is_suspicious=is_suspicious)
 
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -813,6 +858,10 @@ def dashboard():
                                normal=normal, accuracy=accuracy,
                                chart_data=chart_data, results=results)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+
+=======
 >>>>>>> theirs
 
 =======
@@ -824,6 +873,7 @@ def dashboard():
 def models_page():
     services = _services()
     try:
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         model_results: list[dict] = []
@@ -839,6 +889,8 @@ def models_page():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         if not os.path.exists(RESULTS_DIR):
             return render_template("models.html", models=[], has_data=False)
 
@@ -850,6 +902,9 @@ def models_page():
         with open(os.path.join(RESULTS_DIR, latest_results), 'r', encoding='utf-8') as f:
             model_results = json.load(f)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -877,6 +932,7 @@ def models_page():
             chart_files={"model_comparison": False, "training_time_comparison": False, "roc_curves": False},
             registry_entries=[],
         )
+
 
 
 
@@ -911,6 +967,9 @@ def batch_predict():
                 return render_template("batch.html", error=f"CSV too large ({len(df)} rows). Max allowed is {max_rows}.")
 
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -949,6 +1008,7 @@ def batch_predict():
 def api_health():
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     services = _services()
     model_ready = ensure_detection_service()
     return jsonify(
@@ -982,6 +1042,8 @@ def api_predict():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     model_ready = ensure_detection_service()
     return jsonify({
         "status": "ok",
@@ -1007,6 +1069,9 @@ def api_predict():
     if not ensure_detection_service():
         return jsonify({"error": "No trained model found"}), 503
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1016,6 +1081,7 @@ def api_predict():
     profile = payload.get("profile", "balanced")
 
     if not isinstance(features, dict) or not features:
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         return _api_error(400, "invalid_request", "'features' must be a non-empty object")
@@ -1108,6 +1174,8 @@ def api_actions():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         return jsonify({"error": "'features' must be a non-empty object"}), 400
 
     try:
@@ -1183,6 +1251,9 @@ def api_actions():
 
 
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1191,6 +1262,7 @@ def api_actions():
 @app.route("/api/actions/cleanup", methods=["POST"])
 @require_role("admin")
 def api_actions_cleanup():
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
     services = _services()
@@ -1206,12 +1278,17 @@ def api_actions_cleanup():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     payload = request.get_json(silent=True) or {}
     now_iso = payload.get("now")
     removed = ops_store.cleanup_expired_actions(now_iso=now_iso)
     if removed:
         ops_store.add_audit(
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1219,6 +1296,7 @@ def api_actions_cleanup():
             message=f"removed_expired_actions={removed}",
             created_at=datetime.now(timezone.utc).isoformat(),
         )
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
     return jsonify({"removed": removed, "request_id": _request_id()})
@@ -1238,11 +1316,16 @@ def api_actions_reconcile():
         metrics_service.inc("expired_actions_cleaned_total", amount=removed)
     return jsonify({"removed": removed})
 >>>>>>> theirs
+=======
+        metrics_service.inc("expired_actions_cleaned_total", amount=removed)
+    return jsonify({"removed": removed})
+>>>>>>> theirs
 
 
 @app.route("/api/audit", methods=["GET"])
 @require_role("admin")
 def api_audit():
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
     services = _services()
@@ -1295,6 +1378,8 @@ def api_ingest():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     limit = request.args.get("limit", default=100, type=int)
     audits = ops_store.list_audits(limit=max(1, min(limit, 500)))
     return jsonify({"count": len(audits), "audits": audits})
@@ -1336,6 +1421,9 @@ def api_metrics():
 @require_role("analyst")
 def api_ingest():
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1346,6 +1434,7 @@ def api_ingest():
     try:
         if isinstance(rows, list):
             if not rows:
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
                 return _api_error(400, "invalid_request", "rows cannot be empty")
@@ -1373,6 +1462,8 @@ def api_ingest_log():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
                 return jsonify({"error": "rows cannot be empty"}), 400
             added = ingestion_service.enqueue_batch(rows, source=source)
         else:
@@ -1392,6 +1483,9 @@ def api_ingest_log():
 @require_role("analyst")
 def api_ingest_log():
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1401,7 +1495,11 @@ def api_ingest_log():
     if not isinstance(records, list) or not records:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         return _api_error(400, "invalid_request", "'records' must be a non-empty list")
+=======
+        return jsonify({"error": "'records' must be a non-empty list"}), 400
+>>>>>>> theirs
 =======
         return jsonify({"error": "'records' must be a non-empty list"}), 400
 >>>>>>> theirs
@@ -1417,6 +1515,7 @@ def api_ingest_log():
             elif source_type == "suricata":
                 transformed.append(parse_suricata_eve_flow(rec))
             else:
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
                 return _api_error(400, "invalid_request", "type must be 'zeek' or 'suricata'")
@@ -1477,6 +1576,8 @@ def api_ingest_process():
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
                 return jsonify({"error": "type must be 'zeek' or 'suricata'"}), 400
 
         added = ingestion_service.enqueue_batch(transformed, source=f"{source_type}_log")
@@ -1523,6 +1624,9 @@ def api_ingest_process():
         "results": processed,
     })
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -1560,6 +1664,7 @@ def handle_error(e):
     if request.path.startswith("/api/"):
         return _api_error(500, "internal_error")
     return render_template("error.html", error="An unexpected error occurred."), 500
+
 
 
 

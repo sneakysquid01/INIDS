@@ -5,6 +5,7 @@ import src.auth_service as auth_module
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 def _configure():
     auth_module.configure_auth(
         admin_api_key="admin-token",
@@ -26,6 +27,8 @@ def test_auth_enabled_enforces_role(monkeypatch):
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 def test_auth_disabled_allows_access(monkeypatch):
     monkeypatch.setattr(auth_module._auth_service, "principals", {})
     ok, reason = auth_module._auth_service.authorize("admin")
@@ -35,6 +38,9 @@ def test_auth_disabled_allows_access(monkeypatch):
 
 def test_auth_enabled_enforces_role(monkeypatch):
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

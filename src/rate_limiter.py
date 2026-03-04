@@ -2,9 +2,14 @@ from __future__ import annotations
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from threading import Lock
+=======
+from collections import deque, defaultdict
+from dataclasses import dataclass
+>>>>>>> theirs
 =======
 from collections import deque, defaultdict
 from dataclasses import dataclass
@@ -22,7 +27,10 @@ class RateLimitConfig:
     window_seconds: int = 60
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     max_keys: int = 10000
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -34,8 +42,12 @@ class InMemoryRateLimiter:
         self.config = config or RateLimitConfig()
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         self._events: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = Lock()
+=======
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+>>>>>>> theirs
 =======
         self._events: dict[str, deque[float]] = defaultdict(deque)
 >>>>>>> theirs
@@ -46,6 +58,7 @@ class InMemoryRateLimiter:
     def allow(self, key: str) -> tuple[bool, int]:
         now = time()
         window_start = now - self.config.window_seconds
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         with self._lock:
@@ -72,6 +85,8 @@ class InMemoryRateLimiter:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         q = self._events[key]
         while q and q[0] < window_start:
             q.popleft()
@@ -80,6 +95,9 @@ class InMemoryRateLimiter:
             return False, retry_after
         q.append(now)
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

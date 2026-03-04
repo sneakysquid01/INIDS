@@ -1,10 +1,13 @@
 import web_app.app as app_module
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from src.model_registry import ModelRegistry
 from src.ops_store import OpsStore
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 from src.ops_store import OpsStore
@@ -12,6 +15,9 @@ import src.auth_service as auth_module
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.model_registry import ModelRegistry
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -31,6 +37,7 @@ class FakeModel:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 def _headers(role: str) -> dict[str, str]:
     tokens = {
         "admin": "admin-token",
@@ -40,6 +47,8 @@ def _headers(role: str) -> dict[str, str]:
     return {"X-API-Key": tokens[role]}
 
 
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -65,7 +74,10 @@ def test_api_health_and_predict(monkeypatch, tmp_path):
         "/api/predict",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("sensor"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -82,9 +94,15 @@ def test_api_alerts_endpoint(monkeypatch, tmp_path):
     client = _setup_app(monkeypatch, tmp_path)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     client.post("/api/predict", headers=_headers("sensor"), json={"features": {"duration": 1}})
 
     alerts = client.get("/api/alerts?limit=10", headers=_headers("viewer"))
+=======
+    client.post("/api/predict", json={"features": {"duration": 1}})
+
+    alerts = client.get("/api/alerts?limit=10")
+>>>>>>> theirs
 =======
     client.post("/api/predict", json={"features": {"duration": 1}})
 
@@ -107,7 +125,10 @@ def test_api_policy_actions_and_audit(monkeypatch, tmp_path):
         "/api/policy",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("admin"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -121,7 +142,10 @@ def test_api_policy_actions_and_audit(monkeypatch, tmp_path):
         "/api/predict",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("sensor"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -133,6 +157,7 @@ def test_api_policy_actions_and_audit(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     actions = client.get("/api/actions?limit=10", headers=_headers("viewer"))
     assert actions.status_code == 200
     assert actions.get_json()["count"] >= 1
@@ -141,12 +166,17 @@ def test_api_policy_actions_and_audit(monkeypatch, tmp_path):
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     actions = client.get("/api/actions?limit=10")
     assert actions.status_code == 200
     assert actions.get_json()["count"] >= 1
 
     audit = client.get("/api/audit?limit=10")
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -156,9 +186,12 @@ def test_api_policy_actions_and_audit(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 def test_api_requires_key(monkeypatch, tmp_path):
     client = _setup_app(monkeypatch, tmp_path)
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 def test_api_requires_key_when_auth_enabled(monkeypatch, tmp_path):
@@ -169,6 +202,9 @@ def test_api_requires_key_when_auth_enabled(monkeypatch, tmp_path):
         {"admin-token": auth_module.Principal(role="admin", token="admin-token")},
     )
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -178,10 +214,13 @@ def test_api_requires_key_when_auth_enabled(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     authorized = client.get("/api/audit", headers=_headers("admin"))
     assert authorized.status_code == 200
 
 =======
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     authorized = client.get("/api/audit", headers={"X-API-Key": "admin-token"})
@@ -190,6 +229,9 @@ def test_api_requires_key_when_auth_enabled(monkeypatch, tmp_path):
     monkeypatch.setattr(auth_module._auth_service, "principals", {})
 
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -199,8 +241,13 @@ def test_api_metrics_endpoint(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     client.post("/api/predict", headers=_headers("sensor"), json={"features": {"duration": 1}})
     metrics = client.get("/api/metrics", headers=_headers("viewer"))
+=======
+    client.post("/api/predict", json={"features": {"duration": 1}})
+    metrics = client.get("/api/metrics")
+>>>>>>> theirs
 =======
     client.post("/api/predict", json={"features": {"duration": 1}})
     metrics = client.get("/api/metrics")
@@ -222,7 +269,10 @@ def test_api_ingest_and_process(monkeypatch, tmp_path):
         "/api/ingest",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("sensor"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -234,7 +284,11 @@ def test_api_ingest_and_process(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     processed = client.post("/api/ingest/process", headers=_headers("sensor"), json={"max_items": 10})
+=======
+    processed = client.post("/api/ingest/process", json={"max_items": 10})
+>>>>>>> theirs
 =======
     processed = client.post("/api/ingest/process", json={"max_items": 10})
 >>>>>>> theirs
@@ -249,6 +303,7 @@ def test_api_ingest_and_process(monkeypatch, tmp_path):
 
 def test_api_actions_cleanup(monkeypatch, tmp_path):
     client = _setup_app(monkeypatch, tmp_path)
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 
@@ -269,6 +324,8 @@ def test_api_actions_cleanup(monkeypatch, tmp_path):
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     monkeypatch.setattr(
         auth_module._auth_service,
         "principals",
@@ -287,6 +344,9 @@ def test_api_actions_cleanup(monkeypatch, tmp_path):
         "/api/actions/cleanup",
         headers={"X-API-Key": "admin-token"},
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -297,6 +357,11 @@ def test_api_actions_cleanup(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+=======
+    monkeypatch.setattr(auth_module._auth_service, "principals", {})
+
+>>>>>>> theirs
 =======
     monkeypatch.setattr(auth_module._auth_service, "principals", {})
 
@@ -313,7 +378,10 @@ def test_api_explain_endpoint(monkeypatch, tmp_path):
         "/api/explain",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("viewer"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -330,6 +398,7 @@ def test_api_rate_limit(monkeypatch, tmp_path):
     client = _setup_app(monkeypatch, tmp_path)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     monkeypatch.setattr(
         app_module,
         "rate_limiter",
@@ -343,6 +412,8 @@ def test_api_rate_limit(monkeypatch, tmp_path):
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     monkeypatch.setattr(app_module, "rate_limiter", InMemoryRateLimiter(RateLimitConfig(requests=1, window_seconds=60)))
 
     first = client.post("/api/predict", json={"features": {"duration": 1}})
@@ -350,6 +421,9 @@ def test_api_rate_limit(monkeypatch, tmp_path):
 
     second = client.post("/api/predict", json={"features": {"duration": 1}})
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -364,7 +438,10 @@ def test_api_ingest_log_endpoint(monkeypatch, tmp_path):
         "/api/ingest/log",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("sensor"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -381,7 +458,10 @@ def test_api_ingest_log_endpoint(monkeypatch, tmp_path):
         "/api/ingest/log",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         headers=_headers("sensor"),
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -401,7 +481,11 @@ def test_api_model_registry_endpoint(monkeypatch, tmp_path):
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     out = client.get("/api/models/registry?limit=5", headers=_headers("viewer"))
+=======
+    out = client.get("/api/models/registry?limit=5")
+>>>>>>> theirs
 =======
     out = client.get("/api/models/registry?limit=5")
 >>>>>>> theirs
@@ -412,6 +496,7 @@ def test_api_model_registry_endpoint(monkeypatch, tmp_path):
     payload = out.get_json()
     assert payload["count"] >= 1
     assert payload["models"][0]["name"] == "rf"
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 
@@ -450,6 +535,8 @@ def test_api_actions_cleanup_rejects_invalid_now(monkeypatch, tmp_path):
     )
     assert response.status_code == 400
     assert response.get_json()["error"] == "invalid_request"
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======

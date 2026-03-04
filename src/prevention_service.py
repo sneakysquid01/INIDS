@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 from threading import Lock
 from typing import Any
 
@@ -14,11 +15,16 @@ from src.ips.risk_engine import RiskEngine
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.firewall_adapters import FirewallAdapter, MockFirewallAdapter
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -32,9 +38,12 @@ class PolicyConfig:
     dry_run: bool = True
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     risk_alert_threshold: float = 0.4
     risk_rate_limit_threshold: float = 0.95
     risk_block_threshold: float = 0.7
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -55,9 +64,12 @@ class PreventionAction:
     executed: bool
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
     status: str
     adapter: str
     risk_score: float | None = None
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -72,6 +84,7 @@ class InMemoryPreventionStore:
         self.actions: list[PreventionAction] = []
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         self._lock = Lock()
 
     def add_action(self, action: PreventionAction) -> None:
@@ -84,6 +97,8 @@ class InMemoryPreventionStore:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
     def add_action(self, action: PreventionAction) -> None:
         self.actions.insert(0, action)
@@ -91,6 +106,9 @@ class InMemoryPreventionStore:
     def list_actions(self, limit: int = 50) -> list[PreventionAction]:
         return self.actions[:limit]
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -104,6 +122,7 @@ class PreventionService:
         adapter: FirewallAdapter | None = None,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         ops_store=None,
         event_bus: EventBus | None = None,
         risk_engine: RiskEngine | None = None,
@@ -113,10 +132,13 @@ class PreventionService:
 >>>>>>> theirs
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
     ):
         self.policy = policy or PolicyConfig()
         self.store = store or InMemoryPreventionStore()
         self.adapter = adapter or MockFirewallAdapter()
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         self.event_bus = event_bus or EventBus()
@@ -132,6 +154,8 @@ class PreventionService:
 >>>>>>> theirs
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
     def set_policy(
         self,
@@ -141,9 +165,12 @@ class PreventionService:
         dry_run: bool | None = None,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         risk_alert_threshold: float | None = None,
         risk_rate_limit_threshold: float | None = None,
         risk_block_threshold: float | None = None,
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -164,6 +191,7 @@ class PreventionService:
             self.policy.confidence_block_threshold = float(confidence_block_threshold)
         if dry_run is not None:
             self.policy.dry_run = bool(dry_run)
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
         if risk_alert_threshold is not None:
@@ -227,6 +255,8 @@ class PreventionService:
 =======
 =======
 >>>>>>> theirs
+=======
+>>>>>>> theirs
         return self.policy
 
     def evaluate(self, prediction: str, confidence: float, source: str = "unknown") -> PreventionAction | None:
@@ -256,6 +286,9 @@ class PreventionService:
         self.store.add_action(action)
         return action
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

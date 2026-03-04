@@ -17,6 +17,10 @@ from src.model_registry import ModelRegistry
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+=======
+
+>>>>>>> theirs
 =======
 
 >>>>>>> theirs
@@ -68,7 +72,11 @@ def train_one(model_name: str, clf, X_train, y_train, X_val, y_val, preprocessor
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         logging.info("%s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+=======
+        logging.info("✅ %s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+>>>>>>> theirs
 =======
         logging.info("✅ %s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
 >>>>>>> theirs

@@ -6,7 +6,11 @@ services:
     command: >
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
       sh -lc "pip install --no-cache-dir -r requirements.txt && python -m web_app.app"
+=======
+      bash -lc "pip install --no-cache-dir -r requirements.txt && python web_app/app.py"
+>>>>>>> theirs
 =======
       bash -lc "pip install --no-cache-dir -r requirements.txt && python web_app/app.py"
 >>>>>>> theirs
@@ -20,7 +24,11 @@ services:
     env_file:
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
       - ../../.env
+=======
+      - ../../.env.example
+>>>>>>> theirs
 =======
       - ../../.env.example
 >>>>>>> theirs
