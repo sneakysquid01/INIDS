@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+<<<<<<< ours
+<<<<<<< ours
+from threading import Lock
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 from typing import Any
 import uuid
 
@@ -52,6 +59,22 @@ class InMemoryAlertStore:
     def __init__(self, max_items: int = 1000):
         self.max_items = max_items
         self._alerts: list[Alert] = []
+<<<<<<< ours
+<<<<<<< ours
+        self._lock = Lock()
+
+    def add(self, alert: Alert) -> None:
+        with self._lock:
+            self._alerts.insert(0, alert)
+            if len(self._alerts) > self.max_items:
+                self._alerts = self._alerts[: self.max_items]
+
+    def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[Alert]:
+        with self._lock:
+            alerts = list(self._alerts)
+=======
+=======
+>>>>>>> theirs
 
     def add(self, alert: Alert) -> None:
         self._alerts.insert(0, alert)
@@ -60,6 +83,10 @@ class InMemoryAlertStore:
 
     def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[Alert]:
         alerts = self._alerts
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
         if severity:
             normalized = severity.strip().lower()
             alerts = [a for a in alerts if a.severity.lower() == normalized]

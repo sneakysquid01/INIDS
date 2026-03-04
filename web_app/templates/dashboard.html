@@ -308,6 +308,70 @@
                         {% endif %}
                     </div>
                 </div>
+
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Active Blocks</div>
+                        {% if active_blocks %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>Target</th><th>Status</th><th>Expires</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for block in active_blocks %}
+                                    <tr>
+                                        <td>{{ block.target }}</td>
+                                        <td class="text-capitalize">{{ block.status }}</td>
+                                        <td>{{ block.expires_at or "-" }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No active blocks.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="soft-box h-100">
+                        <div class="section-title">Action Timeline</div>
+                        {% if action_timeline %}
+                        <div class="table-wrap">
+                            <table class="table table-sm table-striped table-bordered mb-0">
+                                <thead>
+                                    <tr><th>Time</th><th>Type</th><th>Message</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in action_timeline %}
+                                    <tr>
+                                        <td>{{ item.when }}</td>
+                                        <td class="text-capitalize">{{ item.type }}</td>
+                                        <td class="text-truncate" style="max-width: 320px;">{{ item.message }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No timeline events available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="soft-box">
+                        <div class="section-title">Prevention Reconciliation</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-md-3"><strong>DB Active:</strong> {{ reconcile_summary.db_active }}</div>
+                            <div class="col-6 col-md-3"><strong>Firewall Rules:</strong> {{ reconcile_summary.firewall_rules }}</div>
+                            <div class="col-6 col-md-3"><strong>Missing in FW:</strong> {{ reconcile_summary.missing_in_firewall }}</div>
+                            <div class="col-6 col-md-3"><strong>Orphan FW Rules:</strong> {{ reconcile_summary.orphan_firewall_rules }}</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

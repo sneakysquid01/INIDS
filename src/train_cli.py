@@ -15,6 +15,14 @@ from sklearn.tree import DecisionTreeClassifier
 
 from src.model_registry import ModelRegistry
 
+<<<<<<< ours
+<<<<<<< ours
+=======
+
+>>>>>>> theirs
+=======
+
+>>>>>>> theirs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,7 +66,15 @@ def train_one(model_name: str, clf, X_train, y_train, X_val, y_val, preprocessor
         out_path = os.path.join(MODELS_DIR, f"{model_name}.pkl")
         joblib.dump(pipe, out_path)
 
+<<<<<<< ours
+<<<<<<< ours
         logging.info("%s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+=======
+        logging.info("✅ %s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+>>>>>>> theirs
+=======
+        logging.info("✅ %s - Accuracy: %.4f, F1: %.4f", model_name, accuracy, f1)
+>>>>>>> theirs
         ModelRegistry(REGISTRY_FILE).register(
             name=model_name,
             model_path=out_path,

@@ -3,6 +3,29 @@ from flask import Flask
 import src.auth_service as auth_module
 
 
+<<<<<<< ours
+<<<<<<< ours
+def _configure():
+    auth_module.configure_auth(
+        admin_api_key="admin-token",
+        sensor_api_key="sensor-token",
+        viewer_api_key="viewer-token",
+    )
+
+
+def test_auth_unconfigured_denies_access(monkeypatch):
+    _configure()
+    monkeypatch.setattr(auth_module._auth_service, "principals", {})
+    ok, reason = auth_module._auth_service.authorize("admin")
+    assert ok is False
+    assert reason == "auth_unconfigured"
+
+
+def test_auth_enabled_enforces_role(monkeypatch):
+    _configure()
+=======
+=======
+>>>>>>> theirs
 def test_auth_disabled_allows_access(monkeypatch):
     monkeypatch.setattr(auth_module._auth_service, "principals", {})
     ok, reason = auth_module._auth_service.authorize("admin")
@@ -11,6 +34,10 @@ def test_auth_disabled_allows_access(monkeypatch):
 
 
 def test_auth_enabled_enforces_role(monkeypatch):
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
     monkeypatch.setattr(
         auth_module._auth_service,
         "principals",

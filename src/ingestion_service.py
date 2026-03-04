@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+<<<<<<< ours
+<<<<<<< ours
+from threading import Lock
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 from typing import Any
 
 import pandas as pd
@@ -19,6 +26,28 @@ class InMemoryIngestionQueue:
     def __init__(self, max_items: int = 10000):
         self.max_items = max_items
         self._queue: deque[IngestionRecord] = deque()
+<<<<<<< ours
+<<<<<<< ours
+        self._lock = Lock()
+
+    def enqueue(self, record: IngestionRecord) -> None:
+        with self._lock:
+            self._queue.append(record)
+            while len(self._queue) > self.max_items:
+                self._queue.popleft()
+
+    def dequeue(self) -> IngestionRecord | None:
+        with self._lock:
+            if not self._queue:
+                return None
+            return self._queue.popleft()
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._queue)
+=======
+=======
+>>>>>>> theirs
 
     def enqueue(self, record: IngestionRecord) -> None:
         self._queue.append(record)
@@ -32,6 +61,10 @@ class InMemoryIngestionQueue:
 
     def size(self) -> int:
         return len(self._queue)
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 
 
 class IngestionService:

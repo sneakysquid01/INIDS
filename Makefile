@@ -1,3 +1,5 @@
+<<<<<<< ours
+<<<<<<< ours
 ifeq ($(OS),Windows_NT)
 PYTHON ?= .\venv\Scripts\python.exe
 PIP ?= .\venv\Scripts\python.exe -m pip
@@ -5,6 +7,14 @@ else
 PYTHON ?= python3
 PIP ?= pip3
 endif
+=======
+PYTHON ?= python
+PIP ?= pip
+>>>>>>> theirs
+=======
+PYTHON ?= python
+PIP ?= pip
+>>>>>>> theirs
 
 .PHONY: setup test lint preprocess train train-all demo demo-api drift-report web conflict-check clean
 
@@ -45,6 +55,8 @@ drift-report:
 
 # Start web application
 web:
+<<<<<<< ours
+<<<<<<< ours
 	$(PYTHON) -m web_app.app
 
 # Detect unresolved Git merge conflict markers in tracked source/docs files
@@ -60,3 +72,19 @@ clean:
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete
 endif
+=======
+=======
+>>>>>>> theirs
+	$(PYTHON) web_app/app.py
+
+# Detect unresolved Git merge conflict markers in tracked source/docs files
+conflict-check:
+	rg -n "^(<<<<<<<|=======|>>>>>>>)" -g '!*.map' src tests web_app docs .env.example Makefile pyproject.toml requirements.txt || true
+
+clean:
+	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+	find . -type f -name '*.pyc' -delete
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
