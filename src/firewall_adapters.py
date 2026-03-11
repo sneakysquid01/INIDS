@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 import ipaddress
+import json
+import logging
 import subprocess
+import urllib.request
+
+logger = logging.getLogger(__name__)
 
 
 class FirewallAdapter(ABC):
@@ -161,3 +166,57 @@ class NftablesFirewallAdapter(FirewallAdapter):
             except Exception:
                 continue
         return sorted(set(rules))
+
+
+@dataclass
+class WebhookFirewallAdapter(FirewallAdapter):
+    """Sends block/unblock commands via HTTP POST to an external webhook.
+
+    Designed for integration with third-party firewalls, SOAR platforms, or
+    cloud security groups that expose a REST API.
+    """
+
+    webhook_url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+    timeout_seconds: int = 10
+    blocked_targets: dict[str, int] = field(default_factory=dict)
+
+    def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        payload = {"action": "block", "target": target, "ttl_seconds": ttl_seconds}
+        ok = self._post(payload)
+        if ok:
+            self.blocked_targets[target] = int(ttl_seconds or 0)
+        return ok
+
+    def unblock(self, ip: str) -> bool:
+        try:
+            target = _validate_target_ip(ip)
+        except Exception:
+            return False
+        payload = {"action": "unblock", "target": target}
+        ok = self._post(payload)
+        if ok:
+            self.blocked_targets.pop(target, None)
+        return ok
+
+    def list_rules(self) -> list[str]:
+        return sorted(self.blocked_targets.keys())
+
+    def _post(self, payload: dict) -> bool:
+        if not self.webhook_url:
+            logger.warning("WebhookFirewallAdapter: no webhook_url configured")
+            return False
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            headers.update(self.headers)
+            req = urllib.request.Request(self.webhook_url, data=data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                return resp.status < 400
+        except Exception:
+            logger.exception("Webhook POST failed to %s", self.webhook_url)
+            return False

@@ -57,6 +57,12 @@ from src.schema import (
     NUMERIC_FEATURES,
     DEFAULT_FEATURE_ROW,
 )
+from src.detection.engine_registry import EngineRegistry
+from src.detection.aggregator import EngineAggregator, AggregationStrategy
+from src.detection.engines.ml_engine import MLEngine
+from src.detection.engines.signature_engine import SignatureEngine
+from src.detection.engines.anomaly_engine import AnomalyEngine
+from src.detection.engines.threshold_engine import ThresholdEngine
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
@@ -99,6 +105,19 @@ model_registry = ModelRegistry(os.path.join(RESULTS_DIR, "model_registry.json"))
 rate_limiter = InMemoryRateLimiter(
     RateLimitConfig(requests=SETTINGS.rate_limit_requests, window_seconds=SETTINGS.rate_limit_window_seconds)
 )
+
+# --- Multi-engine detection framework ---
+engine_registry = EngineRegistry()
+engine_aggregator = EngineAggregator(AggregationStrategy.ANY_TRIGGER)
+RULES_PATH = os.path.join(BASE_DIR, "rules", "default_rules.yaml")
+signature_engine = SignatureEngine(RULES_PATH if os.path.exists(RULES_PATH) else None)
+threshold_engine = ThresholdEngine()
+anomaly_engine = AnomalyEngine()
+
+engine_registry.register(signature_engine)
+engine_registry.register(threshold_engine)
+engine_registry.register(anomaly_engine, enabled=False)  # enabled after fit()
+
 risk_engine = RiskEngine()
 policy_engine = PolicyEngine()
 action_executor = ActionExecutor(
@@ -257,6 +276,9 @@ def load_models():
     if 'rf_nsl_kdd' in all_models:
         model = all_models['rf_nsl_kdd']
         detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
+        # Register the primary ML model as a detection engine.
+        ml_engine = MLEngine(model, engine_id="ml_primary")
+        engine_registry.register(ml_engine)
 
 
 def _model_stats() -> dict:
@@ -632,6 +654,7 @@ def api_health():
             "window_seconds": SETTINGS.rate_limit_window_seconds,
         },
         "firewall_adapter": SETTINGS.firewall_adapter,
+        "detection_engines": engine_registry.list_engines(),
     })
 
 
@@ -688,6 +711,61 @@ def api_alerts():
     severity = request.args.get("severity", default=None, type=str)
     alerts = ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity)
     return jsonify({"count": len(alerts), "alerts": alerts})
+
+
+@app.route("/api/detect", methods=["POST"])
+@require_role("analyst")
+def api_detect():
+    """Multi-engine detection endpoint.
+
+    Runs all enabled detection engines against the submitted features and
+    returns the aggregated verdict along with per-engine results.
+    """
+    payload = request.get_json(silent=True) or {}
+    features = payload.get("features", {})
+    if not isinstance(features, dict) or not features:
+        return jsonify({"error": "'features' must be a non-empty object"}), 400
+
+    try:
+        for col in NUMERIC_MODEL_COLUMNS:
+            if col in features:
+                features[col] = float(features[col])
+
+        source_ip = payload.get("source", "unknown")
+        features["source_ip"] = source_ip
+
+        metrics_service.inc("predictions_total")
+        results = engine_registry.evaluate_all(features)
+        aggregated = engine_aggregator.aggregate(results)
+
+        if aggregated.verdict in ("attack", "suspicious"):
+            metrics_service.inc("alerts_total")
+
+        return jsonify(aggregated.to_dict())
+    except Exception as exc:
+        logger.error("Multi-engine detect error: %s", exc)
+        return jsonify({"error": "invalid_request"}), 400
+
+
+@app.route("/api/engines", methods=["GET"])
+@require_role("analyst")
+def api_engines():
+    """List all registered detection engines and their status."""
+    return jsonify({"engines": engine_registry.list_engines()})
+
+
+@app.route("/api/engines/<engine_id>/toggle", methods=["POST"])
+@require_role("admin")
+def api_toggle_engine(engine_id: str):
+    """Enable or disable a detection engine at runtime."""
+    payload = request.get_json(silent=True) or {}
+    enabled = payload.get("enabled")
+    if enabled is None:
+        return jsonify({"error": "'enabled' is required"}), 400
+    ok = engine_registry.set_enabled(engine_id, bool(enabled))
+    if not ok:
+        return jsonify({"error": f"engine '{engine_id}' not found"}), 404
+    return jsonify({"engine_id": engine_id, "enabled": bool(enabled)})
 
 
 

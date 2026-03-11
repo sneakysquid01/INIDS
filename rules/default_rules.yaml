@@ -1,0 +1,137 @@
+# Default signature rules for INIDS
+# Rules are evaluated in order — first match wins.
+# Conditions are ANDed within a single rule.
+
+rules:
+  # --- DoS / DDoS patterns ---
+  - id: SIG-001
+    name: SYN Flood Indicator
+    severity: critical
+    attack_type: dos
+    confidence: 95
+    conditions:
+      - field: serror_rate
+        op: ">"
+        value: 0.8
+      - field: count
+        op: ">"
+        value: 150
+
+  - id: SIG-002
+    name: Land Attack
+    severity: high
+    attack_type: dos
+    confidence: 98
+    conditions:
+      - field: land
+        op: "=="
+        value: 1
+
+  - id: SIG-003
+    name: Teardrop / Fragment Attack
+    severity: high
+    attack_type: dos
+    confidence: 90
+    conditions:
+      - field: wrong_fragment
+        op: ">"
+        value: 1
+
+  # --- Probe / Reconnaissance ---
+  - id: SIG-004
+    name: Port Scan Indicator
+    severity: high
+    attack_type: probe
+    confidence: 85
+    conditions:
+      - field: srv_diff_host_rate
+        op: ">"
+        value: 0.5
+      - field: dst_host_srv_count
+        op: ">"
+        value: 30
+
+  - id: SIG-005
+    name: Host Scan
+    severity: medium
+    attack_type: probe
+    confidence: 80
+    conditions:
+      - field: dst_host_same_src_port_rate
+        op: ">"
+        value: 0.8
+      - field: count
+        op: ">"
+        value: 100
+
+  # --- R2L (Remote to Local) ---
+  - id: SIG-006
+    name: Brute Force Login Attempt
+    severity: high
+    attack_type: r2l
+    confidence: 90
+    conditions:
+      - field: num_failed_logins
+        op: ">"
+        value: 3
+
+  - id: SIG-007
+    name: Guest Login Activity
+    severity: medium
+    attack_type: r2l
+    confidence: 75
+    conditions:
+      - field: is_guest_login
+        op: "=="
+        value: 1
+      - field: hot
+        op: ">"
+        value: 2
+
+  # --- U2R (User to Root) ---
+  - id: SIG-008
+    name: Root Shell Obtained
+    severity: critical
+    attack_type: u2r
+    confidence: 98
+    conditions:
+      - field: root_shell
+        op: "=="
+        value: 1
+
+  - id: SIG-009
+    name: SU Attempted
+    severity: high
+    attack_type: u2r
+    confidence: 85
+    conditions:
+      - field: su_attempted
+        op: ">"
+        value: 0
+      - field: num_root
+        op: ">"
+        value: 0
+
+  # --- High error rate patterns ---
+  - id: SIG-010
+    name: High Connection Error Rate
+    severity: medium
+    attack_type: dos
+    confidence: 75
+    conditions:
+      - field: rerror_rate
+        op: ">"
+        value: 0.7
+
+  - id: SIG-011
+    name: Service-specific Error Flood
+    severity: high
+    attack_type: dos
+    confidence: 80
+    conditions:
+      - field: srv_serror_rate
+        op: ">"
+        value: 0.85
+      - field: srv_count
+        op: ">"
+        value: 50

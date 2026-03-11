@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 from threading import Lock
 
 
 class MetricsService:
-    """In-memory counters exposed in Prometheus text format."""
+    """In-memory counters, gauges, and histograms exposed in Prometheus text format."""
 
     def __init__(self):
         self._counters = defaultdict(int)
+        self._gauges: dict[str, float] = {}
+        self._histograms: dict[str, list[float]] = defaultdict(list)
         self._lock = Lock()
+
+    # ------------------------------------------------------------------
+    # Counters
+    # ------------------------------------------------------------------
 
     def inc(self, key: str, amount: int = 1) -> None:
         if amount <= 0:
@@ -21,10 +28,43 @@ class MetricsService:
         with self._lock:
             return self._counters.get(key, 0)
 
+    # ------------------------------------------------------------------
+    # Gauges
+    # ------------------------------------------------------------------
+
+    def set_gauge(self, key: str, value: float) -> None:
+        with self._lock:
+            self._gauges[key] = value
+
+    def get_gauge(self, key: str) -> float:
+        with self._lock:
+            return self._gauges.get(key, 0.0)
+
+    # ------------------------------------------------------------------
+    # Histograms (observation-based)
+    # ------------------------------------------------------------------
+
+    def observe(self, key: str, value: float) -> None:
+        with self._lock:
+            bucket = self._histograms[key]
+            bucket.append(value)
+            if len(bucket) > 10_000:
+                self._histograms[key] = bucket[-5_000:]
+
     def observe_risk_score(self, score: float) -> None:
+        self.observe("risk_score", score)
         with self._lock:
             self._counters["risk_score_count"] += 1
             self._counters["risk_score_sum"] += float(score)
+
+    def observe_latency(self, key: str, start_time: float) -> None:
+        """Record elapsed time since ``start_time`` (seconds via time.monotonic)."""
+        elapsed = time.monotonic() - start_time
+        self.observe(key, elapsed)
+
+    # ------------------------------------------------------------------
+    # Prometheus export
+    # ------------------------------------------------------------------
 
     def as_prometheus(self) -> str:
         with self._lock:
@@ -71,5 +111,16 @@ class MetricsService:
                 "# HELP inids_risk_score_count Number of risk-score observations",
                 "# TYPE inids_risk_score_count counter",
                 f"inids_risk_score_count {self._counters.get('risk_score_count', 0)}",
+                "# HELP inids_engine_evaluations_total Multi-engine evaluations",
+                "# TYPE inids_engine_evaluations_total counter",
+                f"inids_engine_evaluations_total {self._counters.get('engine_evaluations_total', 0)}",
+                "# HELP inids_engine_attacks_total Multi-engine attack verdicts",
+                "# TYPE inids_engine_attacks_total counter",
+                f"inids_engine_attacks_total {self._counters.get('engine_attacks_total', 0)}",
             ]
+
+            # Append gauge lines
+            for gk, gv in sorted(self._gauges.items()):
+                lines.append(f"# TYPE inids_{gk} gauge")
+                lines.append(f"inids_{gk} {gv}")
         return "\n".join(lines) + "\n"

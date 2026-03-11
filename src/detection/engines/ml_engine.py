@@ -1,0 +1,79 @@
+"""ML Detection Engine — wraps the existing DetectionService as a pluggable engine."""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import pandas as pd
+
+from src.detection.engine_base import DetectionEngine, EngineResult
+from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS
+
+logger = logging.getLogger(__name__)
+
+
+class MLEngine(DetectionEngine):
+    """Wraps a trained scikit-learn model as a DetectionEngine.
+
+    This is a thin adapter around the existing model inference logic from
+    ``DetectionService`` so that the ML model participates in the multi-engine
+    pipeline on equal footing with signature / anomaly / threshold engines.
+    """
+
+    def __init__(self, model: Any, *, engine_id: str = "ml_primary") -> None:
+        self._model = model
+        self._engine_id = engine_id
+
+    # ------------------------------------------------------------------
+    # DetectionEngine interface
+    # ------------------------------------------------------------------
+
+    @property
+    def engine_id(self) -> str:
+        return self._engine_id
+
+    @property
+    def engine_type(self) -> str:
+        return "ml"
+
+    def is_ready(self) -> bool:
+        return self._model is not None and hasattr(self._model, "predict")
+
+    def evaluate(self, features: dict[str, Any]) -> EngineResult:
+        row = DEFAULT_FEATURE_ROW.copy()
+        for key, value in features.items():
+            if key in FEATURE_COLUMNS:
+                row[key] = value
+
+        df = pd.DataFrame([row], columns=FEATURE_COLUMNS)
+        pred = int(self._model.predict(df)[0])
+        proba = self._model.predict_proba(df)[0]
+        confidence = round(float(max(proba)) * 100, 2)
+
+        verdict = "attack" if pred == 1 else "normal"
+        attack_type = features.get("attack_type", "unknown") if pred == 1 else "normal"
+        severity = self._compute_severity(verdict, confidence)
+
+        return EngineResult(
+            engine_id=self._engine_id,
+            engine_type=self.engine_type,
+            verdict=verdict,
+            confidence=confidence,
+            severity=severity,
+            attack_type=str(attack_type),
+            metadata={"model_class": type(self._model).__name__},
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_severity(verdict: str, confidence: float) -> str:
+        if verdict == "attack" and confidence >= 90:
+            return "critical"
+        if verdict == "attack":
+            return "high"
+        if confidence < 60:
+            return "medium"
+        return "low"
