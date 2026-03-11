@@ -18,8 +18,18 @@ class Settings:
     require_secret_key: bool = False
 
 
+def _safe_int(env_key: str, default: int) -> int:
+    raw = os.getenv(env_key, "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def load_settings() -> Settings:
-    port = int(os.getenv("PORT", "5000"))
+    port = _safe_int("PORT", 5000)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
     ops_db_path = os.getenv("OPS_DB_PATH", "data/inids_ops.db")
@@ -31,8 +41,8 @@ def load_settings() -> Settings:
     if not secret:
         # Backward-compatible dev fallback. Use INIDS_REQUIRE_SECRET_KEY=1 in production.
         secret = "dev-inids-secret"
-    rate_reqs = int(os.getenv("RATE_LIMIT_REQUESTS", "120"))
-    rate_window = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+    rate_reqs = _safe_int("RATE_LIMIT_REQUESTS", 120)
+    rate_window = _safe_int("RATE_LIMIT_WINDOW_SECONDS", 60)
     firewall_adapter = os.getenv("FIREWALL_ADAPTER", "mock").strip().lower()
     return Settings(
         host=host,

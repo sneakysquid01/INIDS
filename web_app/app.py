@@ -337,6 +337,8 @@ def _action_status(expires_at: str | None, now: datetime) -> str:
         return "active"
     try:
         expires = datetime.fromisoformat(expires_at)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
         return "expired" if expires <= now else "active"
     except (TypeError, ValueError):
         return "unknown"
@@ -578,6 +580,8 @@ def batch_predict():
             file = request.files.get('file')
             if not file:
                 return render_template("batch.html", error="No file uploaded")
+            if not file.filename or not file.filename.lower().endswith('.csv'):
+                return render_template("batch.html", error="Only .csv files are accepted.")
             df = pd.read_csv(file)
             if df.empty:
                 return render_template("batch.html", error="Uploaded CSV is empty.")
@@ -859,9 +863,9 @@ def api_ingest_process():
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
         metrics_service.inc("processed_ingestion_total")
-        payload = result.to_dict()
-        payload["prevention_action"] = action.to_dict() if action else None
-        return payload
+        result_payload = result.to_dict()
+        result_payload["prevention_action"] = action.to_dict() if action else None
+        return result_payload
 
     processed = ingestion_service.process_all(_handler, max_items=max_items)
     return jsonify({

@@ -70,7 +70,10 @@ class RiskEngine:
             count = len(q)
             # Bound in-memory source cardinality.
             if len(self._events_by_source) > 50000:
-                self._events_by_source.pop(next(iter(self._events_by_source)))
+                excess = len(self._events_by_source) - 40000
+                keys_to_remove = list(self._events_by_source)[:excess]
+                for k in keys_to_remove:
+                    del self._events_by_source[k]
         return _clamp(count / self.frequency_high_watermark)
 
     def calculate(self, detection_event: DetectionEvent) -> RiskScoreEvent:

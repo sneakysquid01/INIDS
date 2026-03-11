@@ -424,7 +424,7 @@ class OpsStore:
 
     def cleanup_expired_actions(self, now_iso: str | None = None) -> int:
         if not now_iso:
-            now_iso = "9999-12-31T23:59:59+00:00"
+            now_iso = self._utc_now_iso()
         expired = self.list_expired_actions(now_iso=now_iso, limit=100000)
         ids = [int(row["id"]) for row in expired]
         return self.delete_actions(ids)

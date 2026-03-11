@@ -109,4 +109,10 @@ class EventBus:
         with self._lock:
             handlers = list(self._handlers.get(type(event), []))
         for handler in handlers:
-            handler(event)
+            try:
+                handler(event)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "EventBus handler %s failed for %s", handler.__name__, type(event).__name__
+                )
