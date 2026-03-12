@@ -113,6 +113,16 @@ class OpsStore:
                 )
                 """
             )
+            self._execute(
+                """
+                CREATE TABLE IF NOT EXISTS allowlist (
+                    id BIGSERIAL PRIMARY KEY,
+                    entry TEXT UNIQUE NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
         else:
             with self._connect() as conn:
                 conn.execute(
@@ -154,6 +164,16 @@ class OpsStore:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         event_type TEXT NOT NULL,
                         message TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS allowlist (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        entry TEXT UNIQUE NOT NULL,
+                        reason TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL
                     )
                     """
@@ -446,3 +466,58 @@ class OpsStore:
             """,
             {"limit": int(limit)},
         )
+
+    # ------------------------------------------------------------------
+    # Allowlist
+    # ------------------------------------------------------------------
+
+    def list_allowlist(self) -> list[dict[str, Any]]:
+        return self._fetchall(
+            "SELECT id, entry, reason, created_at FROM allowlist ORDER BY created_at DESC"
+        )
+
+    def add_allowlist_entry(self, entry: str, *, reason: str = "") -> bool:
+        payload = {"entry": entry, "reason": reason, "created_at": self._utc_now_iso()}
+        try:
+            if self._is_postgres:
+                self._execute(
+                    """
+                    INSERT INTO allowlist (entry, reason, created_at)
+                    VALUES (:entry, :reason, :created_at)
+                    ON CONFLICT (entry) DO NOTHING
+                    """,
+                    payload,
+                )
+            else:
+                self._execute(
+                    """
+                    INSERT OR IGNORE INTO allowlist (entry, reason, created_at)
+                    VALUES (:entry, :reason, :created_at)
+                    """,
+                    payload,
+                )
+            return True
+        except Exception:
+            return False
+
+    def remove_allowlist_entry(self, entry: str) -> bool:
+        cursor = self._execute(
+            "DELETE FROM allowlist WHERE entry = :entry",
+            {"entry": entry},
+        )
+        return bool(getattr(cursor, "rowcount", 0))
+
+    def has_active_block(self, ip: str) -> bool:
+        """Return True if ``ip`` already has an active block/rate-limit record."""
+        rows = self._fetchall(
+            """
+            SELECT 1 FROM actions
+            WHERE lower(COALESCE(action_type, action, '')) IN ('block', 'temp_block', 'rate_limit')
+              AND lower(COALESCE(status, '')) IN ('active', 'executed', 'enforced')
+              AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now_iso)
+              AND target = :target
+            LIMIT 1
+            """,
+            {"now_iso": self._utc_now_iso(), "target": ip},
+        )
+        return bool(rows)

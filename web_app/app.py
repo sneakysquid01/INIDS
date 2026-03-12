@@ -1,3 +1,5 @@
+import atexit
+
 from flask import Flask, Response, jsonify, render_template, request
 import joblib
 import os
@@ -11,17 +13,29 @@ import io
 import base64
 import logging
 import json
+import time
+import threading
 from datetime import datetime, timezone
+
+# Support both `python -m web_app.app` and direct script runs (`python web_app/app.py`).
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from src.settings import load_settings
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
 from src.core.event_bus import ActionEvent, DetectionEvent, EventBus, PolicyDecisionEvent, RiskScoreEvent
 from src.logging_config import configure_logging
+from src.observability.json_logging import configure_json_logging
+from src.observability.siem_exporter import SiemExporter
 from src.ips.action_executor import ActionExecutor
 from src.ips.policy_engine import PolicyEngine
 from src.ips.risk_engine import RiskEngine
 from src.ips.scheduler import PreventionScheduler
+from src.policy.policy_store import PolicyStore
+from src.ha.health_check import HealthCheck
+from src.ha.leader_election import LeaderElection
 
 try:
     from flask_socketio import SocketIO
@@ -31,8 +45,9 @@ except Exception:
 configure_logging()
 logger = logging.getLogger(__name__)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS = load_settings()
+if SETTINGS.json_logging and not SETTINGS.debug:
+    configure_json_logging(service_name="inids")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
@@ -48,6 +63,12 @@ from src.ops_store import OpsStore
 from src.auth_service import require_role, auth_status
 from src.metrics_service import MetricsService
 from src.ingestion_service import InMemoryIngestionQueue, IngestionService
+from src.prevention.allowlist import Allowlist
+from src.prevention.escalation_tracker import EscalationTracker
+from src.prevention.false_positive_manager import FalsePositiveManager
+from src.threat_intel.feed_manager import ThreatIntelManager
+from src.threat_intel.ti_engine import TIEngine
+from src.feature_engineering import enrich_single_row
 from src.log_parsers import parse_zeek_conn_log, parse_suricata_eve_flow
 from src.model_registry import ModelRegistry
 from src.schema import (
@@ -63,6 +84,9 @@ from src.detection.engines.ml_engine import MLEngine
 from src.detection.engines.signature_engine import SignatureEngine
 from src.detection.engines.anomaly_engine import AnomalyEngine
 from src.detection.engines.threshold_engine import ThresholdEngine
+from src.pipeline.backpressure import BackpressureController, BackpressureLevel
+from src.pipeline.stream_processor import StreamProcessor
+from src.pipeline.worker import PipelineWorker
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
@@ -81,6 +105,13 @@ else:
 
     socketio = _NoopSocketIO()
 
+app._pipeline_worker = None
+app._pipeline_backpressure = None
+app._pipeline_processor = None
+app._pipeline_worker_started = False
+app._redis_client = None
+app._redis_client_initialized = False
+
 
 def _build_firewall_adapter():
     adapter_name = SETTINGS.firewall_adapter
@@ -98,7 +129,11 @@ alert_store = InMemoryAlertStore(max_items=1000)
 detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
+allowlist = Allowlist(ops_store)
+escalation_tracker = EscalationTracker(cooldown_seconds=300.0)
+fp_manager = FalsePositiveManager()
 metrics_service = MetricsService()
+siem_exporter = SiemExporter()
 ingestion_queue = InMemoryIngestionQueue(max_items=10000)
 ingestion_service = IngestionService(queue=ingestion_queue)
 model_registry = ModelRegistry(os.path.join(RESULTS_DIR, "model_registry.json"))
@@ -118,8 +153,15 @@ engine_registry.register(signature_engine)
 engine_registry.register(threshold_engine)
 engine_registry.register(anomaly_engine, enabled=False)  # enabled after fit()
 
+# Threat intelligence engine — starts disabled until feeds are loaded.
+# is_ready() returns True automatically once ti_manager.cache.size() > 0.
+ti_manager = ThreatIntelManager()
+ti_engine = TIEngine(ti_manager)
+engine_registry.register(ti_engine)  # enabled=True; gated by is_ready() returning False when cache is empty
+
 risk_engine = RiskEngine()
 policy_engine = PolicyEngine()
+policy_store = PolicyStore(initial_config=prevention_service.policy.to_dict())
 action_executor = ActionExecutor(
     adapter=prevention_service.adapter,
     adapter_name=SETTINGS.firewall_adapter,
@@ -129,7 +171,10 @@ action_executor = ActionExecutor(
 prevention_scheduler = PreventionScheduler(
     action_executor,
     interval_seconds=30,
+    is_leader_fn=lambda: leader_election.is_leader,
 )
+leader_election = LeaderElection(redis_client=None, instance_id=f"inids-{os.getpid()}")
+health_check = HealthCheck()
 
 INPUT_FEATURES = [
     "duration", "src_bytes", "dst_bytes", "count",
@@ -140,7 +185,200 @@ MODEL_INPUT_COLUMNS = FEATURE_COLUMNS
 NUMERIC_MODEL_COLUMNS = NUMERIC_FEATURES
 
 
+def _get_redis_client():
+    if getattr(app, "_redis_client_initialized", False):
+        return getattr(app, "_redis_client", None)
+
+    app._redis_client_initialized = True
+    if not SETTINGS.redis_url:
+        app._redis_client = None
+        return None
+
+    try:
+        import redis as redis_lib
+    except ImportError:
+        logger.warning("Pipeline enabled but redis package is not installed")
+        app._redis_client = None
+        return None
+
+    try:
+        client = redis_lib.from_url(SETTINGS.redis_url, decode_responses=False)
+        client.ping()
+        app._redis_client = client
+        return client
+    except Exception:
+        logger.warning("Redis unavailable for pipeline runtime; continuing without streaming", exc_info=True)
+        app._redis_client = None
+        return None
+
+
+def _close_redis_client() -> None:
+    client = getattr(app, "_redis_client", None)
+    app._redis_client = None
+    app._redis_client_initialized = False
+    if client is None:
+        return
+    close_fn = getattr(client, "close", None)
+    if callable(close_fn):
+        try:
+            close_fn()
+        except Exception:
+            logger.exception("Failed to close Redis client")
+
+
+def _stream_source_ip(features: dict) -> str:
+    for key in ("source_ip", "src_ip", "client_ip"):
+        value = features.get(key)
+        if value:
+            return str(value)
+    return "unknown"
+
+
+def _stream_result_callback(aggregated, features: dict) -> None:
+    verdict = str(aggregated.verdict or "unknown").strip().lower()
+    prediction = {
+        "attack": "Attack",
+        "normal": "Normal",
+        "suspicious": "Suspicious",
+    }.get(verdict, verdict.title() or "Unknown")
+    event = DetectionEvent(
+        source_ip=_stream_source_ip(features),
+        prediction=prediction,
+        confidence=float(aggregated.confidence),
+        features=dict(features),
+        attack_type=str(aggregated.attack_type or "unknown"),
+        profile="streaming",
+        severity=str(aggregated.severity or "low"),
+        suspicious=verdict == "suspicious",
+        reason="stream_pipeline",
+    )
+    logger.info(
+        "Stream detection event source_ip=%s verdict=%s confidence=%.2f engines=%d",
+        event.source_ip,
+        verdict,
+        event.confidence,
+        len(aggregated.engine_results),
+    )
+    event_bus.publish(event)
+
+
+def _pipeline_status() -> dict:
+    status = {
+        "enabled": bool(SETTINGS.pipeline_enabled),
+        "configured": bool(SETTINGS.redis_url),
+        "stream_key": SETTINGS.pipeline_stream_key,
+        "redis_connected": getattr(app, "_redis_client", None) is not None,
+        "running": False,
+    }
+    worker = getattr(app, "_pipeline_worker", None)
+    if worker is not None:
+        status.update(worker.status())
+    return status
+
+
+def _ensure_pipeline_started() -> bool:
+    if getattr(app, "_pipeline_worker_started", False):
+        return True
+    if not SETTINGS.pipeline_enabled:
+        return False
+
+    redis_client = _get_redis_client()
+    if redis_client is None:
+        return False
+
+    load_models()
+    try:
+        processor = StreamProcessor(
+            redis_client,
+            engine_registry,
+            engine_aggregator,
+            stream_key=SETTINGS.pipeline_stream_key,
+            consumer_name=f"app-{os.getpid()}",
+            batch_size=SETTINGS.pipeline_batch_size,
+            result_callback=_stream_result_callback,
+        )
+        backpressure = BackpressureController()
+        worker = PipelineWorker(processor, backpressure)
+        worker.start()
+    except Exception:
+        logger.exception("Failed to start pipeline runtime")
+        return False
+
+    app._pipeline_processor = processor
+    app._pipeline_backpressure = backpressure
+    app._pipeline_worker = worker
+    app._pipeline_worker_started = True
+    return True
+
+
+def _stop_pipeline_runtime() -> None:
+    worker = getattr(app, "_pipeline_worker", None)
+    if worker is not None:
+        try:
+            worker.stop()
+        except Exception:
+            pass  # suppress during teardown; logger streams may be closed
+    app._pipeline_worker = None
+    app._pipeline_processor = None
+    app._pipeline_backpressure = None
+    app._pipeline_worker_started = False
+
+
+def _shutdown_runtime() -> None:
+    if getattr(app, "_shutdown_started", False):
+        return
+    app._shutdown_started = True
+    # Disable logging exception propagation before teardown: at interpreter
+    # shutdown the logging stream handlers may already be closed, and we must
+    # not let ValueError/"I/O on closed file" change the process exit code.
+    import logging as _logging
+    _logging.raiseExceptions = False
+    try:
+        prevention_scheduler.stop()
+    except Exception:
+        pass
+    try:
+        leader_election.stop()
+    except Exception:
+        pass
+    try:
+        _stop_pipeline_runtime()
+    except Exception:
+        pass
+    try:
+        _close_redis_client()
+    except Exception:
+        pass
+
+
+def _prepare_stream_record(features: dict, source: str) -> dict:
+    normalized = ingestion_service.normalize_features(features)
+    payload = dict(normalized)
+    payload["source"] = str(source)
+    for key in ("source_ip", "src_ip", "client_ip", "attack_type", "profile"):
+        if key in features and features[key] not in (None, ""):
+            payload[key] = features[key]
+    return payload
+
+
+def _stream_ingest_records(records: list[dict], source: str) -> int:
+    redis_client = _get_redis_client()
+    if redis_client is None:
+        raise RuntimeError("redis_unavailable")
+
+    for record in records:
+        payload = _prepare_stream_record(record, source)
+        redis_client.xadd(
+            SETTINGS.pipeline_stream_key,
+            {"payload": json.dumps(payload, separators=(",", ":"))},
+        )
+    return len(records)
+
+
 def _on_detection_event(event: DetectionEvent) -> None:
+    if allowlist.contains(event.source_ip):
+        logger.info("Allowlist: bypassing prevention pipeline for %s", event.source_ip)
+        return
     risk_event = risk_engine.calculate(event)
     event_bus.publish(risk_event)
     try:
@@ -191,6 +429,10 @@ def _on_policy_decision_event(event: PolicyDecisionEvent) -> None:
     action = action_executor.execute(event, prevention_service.policy)
     if action is not None:
         event_bus.publish(action)
+    escalation_tracker.record_hit(
+        event.risk.detection.source_ip,
+        event.risk.detection.severity,
+    )
 
 
 def _emit_realtime(event_name: str, payload: dict) -> None:
@@ -203,6 +445,7 @@ def _emit_realtime(event_name: str, payload: dict) -> None:
 
 
 def _on_detection_realtime(event: DetectionEvent) -> None:
+    metrics_service.inc("detection_events_total")
     _emit_realtime("DetectionEvent", event.to_dict())
 
 
@@ -211,7 +454,24 @@ def _on_risk_realtime(event: RiskScoreEvent) -> None:
 
 
 def _on_action_realtime(event: ActionEvent) -> None:
+    metrics_service.inc("action_events_total")
     _emit_realtime("ActionEvent", event.to_dict())
+
+
+def _on_detection_siem(event: DetectionEvent) -> None:
+    siem_exporter.emit(event.to_dict())
+
+
+def _on_risk_siem(event: RiskScoreEvent) -> None:
+    siem_exporter.emit(event.to_dict())
+
+
+def _on_policy_siem(event: PolicyDecisionEvent) -> None:
+    siem_exporter.emit(event.to_dict())
+
+
+def _on_action_siem(event: ActionEvent) -> None:
+    siem_exporter.emit(event.to_dict())
 
 
 event_bus.subscribe(DetectionEvent, _on_detection_event)
@@ -220,13 +480,185 @@ event_bus.subscribe(PolicyDecisionEvent, _on_policy_decision_event)
 event_bus.subscribe(DetectionEvent, _on_detection_realtime)
 event_bus.subscribe(RiskScoreEvent, _on_risk_realtime)
 event_bus.subscribe(ActionEvent, _on_action_realtime)
+event_bus.subscribe(DetectionEvent, _on_detection_siem)
+event_bus.subscribe(RiskScoreEvent, _on_risk_siem)
+event_bus.subscribe(PolicyDecisionEvent, _on_policy_siem)
+event_bus.subscribe(ActionEvent, _on_action_siem)
 
 
 def _ensure_scheduler_started() -> None:
     if getattr(app, "_prevention_scheduler_started", False):
         return
+    _start_leader_election()
     prevention_scheduler.start()
     app._prevention_scheduler_started = True
+    _start_siem_flush_thread()
+    # Load TI feeds once at scheduler start (no-op if ti_feed_dir is unset).
+    if SETTINGS.ti_feed_dir:
+        _load_ti_feeds()
+        _start_ti_refresh_thread()
+
+
+atexit.register(_shutdown_runtime)
+
+
+def _load_ti_feeds() -> int:
+    """Scan SETTINGS.ti_feed_dir for .csv and .json feed files and load them.
+
+    Returns the total number of indicators loaded across all files.
+    CSV files must have a header row with at least an ``indicator`` column.
+    JSON files must contain a JSON array of indicator objects.
+    """
+    feed_dir = SETTINGS.ti_feed_dir
+    if not feed_dir or not os.path.isdir(feed_dir):
+        return 0
+
+    total = 0
+    import glob as _glob
+    for path in sorted(_glob.glob(os.path.join(feed_dir, "*.csv")) + _glob.glob(os.path.join(feed_dir, "*.json"))):
+        source = os.path.splitext(os.path.basename(path))[0]
+        try:
+            with open(path, encoding="utf-8") as fh:
+                content = fh.read()
+            if path.endswith(".csv"):
+                n = ti_manager.load_csv_feed(content, source=source)
+            else:
+                n = ti_manager.load_json_feed(content, source=source)
+            total += n
+        except Exception:
+            logger.exception("Failed to load TI feed: %s", path)
+
+    if total:
+        logger.info("TI feeds loaded: %d indicators from %s", total, feed_dir)
+        engine_registry.set_enabled(ti_engine.engine_id, True)
+    return total
+
+
+def _start_ti_refresh_thread() -> None:
+    """Start a daemon thread that periodically purges expired indicators and re-loads feeds."""
+    if getattr(app, "_ti_refresh_started", False):
+        return
+    import threading as _threading
+
+    interval = SETTINGS.ti_refresh_interval_seconds
+
+    def _refresh_loop() -> None:
+        import time as _time
+        while True:
+            _time.sleep(interval)
+            try:
+                if not leader_election.is_leader:
+                    continue
+                purged = ti_manager.cache.purge_expired()
+                if purged:
+                    logger.info("TI cache: purged %d expired indicators", purged)
+                _load_ti_feeds()
+            except Exception:
+                logger.exception("TI refresh cycle failed")
+
+    t = _threading.Thread(target=_refresh_loop, daemon=True, name="ti-refresh")
+    t.start()
+    app._ti_refresh_started = True
+    logger.info("TI refresh thread started (interval=%ds)", interval)
+
+
+def _start_siem_flush_thread() -> None:
+    """Start SIEM auto-flush thread that periodically drains exporter buffer to logs."""
+    if getattr(app, "_siem_flush_started", False):
+        return
+
+    def _flush_loop() -> None:
+        while True:
+            time.sleep(60)
+            try:
+                if not leader_election.is_leader:
+                    continue
+                batch = siem_exporter.flush(500)
+                if batch:
+                    logger.info("SIEM auto-flush drained %d events", len(batch))
+            except Exception:
+                logger.exception("SIEM auto-flush failed")
+
+    import threading as _threading
+
+    worker = _threading.Thread(target=_flush_loop, daemon=True, name="siem-flush")
+    worker.start()
+    app._siem_flush_started = True
+
+
+def _start_leader_election() -> None:
+    if getattr(app, "_leader_election_started", False):
+        return
+
+    global leader_election
+    redis_client = _get_redis_client() if SETTINGS.redis_url else None
+    leader_election = LeaderElection(
+        redis_client=redis_client,
+        instance_id=f"inids-{os.getpid()}",
+    )
+    leader_election.start()
+    app._leader_election_started = True
+
+
+def _register_health_probes() -> None:
+    health_check.register(
+        "model",
+        lambda: {"ready": model is not None},
+    )
+    health_check.register(
+        "detection_engines",
+        lambda: {
+            "ready": len(engine_registry.list_engines()) > 0,
+            "count": len(engine_registry.list_engines()),
+        },
+    )
+
+    def _ops_probe() -> dict:
+        ops_store.list_alerts(limit=1)
+        return {"ready": True}
+
+    health_check.register("ops_db", _ops_probe)
+
+    def _redis_probe() -> dict:
+        client = _get_redis_client()
+        if not SETTINGS.redis_url:
+            return {"ready": True, "note": "disabled"}
+        if client is None:
+            return {"ready": False, "note": "unavailable"}
+        try:
+            client.ping()
+            return {"ready": True}
+        except Exception as exc:
+            return {"ready": False, "error": str(exc)}
+
+    health_check.register("redis", _redis_probe)
+    health_check.register(
+        "pipeline",
+        lambda: {
+            "ready": (not SETTINGS.pipeline_enabled) or bool(_pipeline_status().get("running")),
+            **_pipeline_status(),
+        },
+    )
+    health_check.register("leader_election", lambda: {"ready": True, **leader_election.status()})
+
+
+def _register_signal_handlers() -> None:
+    if threading.current_thread() is not threading.main_thread():
+        return
+    try:
+        import signal as _signal
+
+        def _handler(signum, _frame):
+            logger.info("Received signal %s; shutting down runtime", signum)
+            _shutdown_runtime()
+            raise SystemExit(0)
+
+        if hasattr(_signal, "SIGTERM"):
+            _signal.signal(_signal.SIGTERM, _handler)
+        if hasattr(_signal, "SIGINT"):
+            _signal.signal(_signal.SIGINT, _handler)
+    except Exception:
+        logger.debug("Signal handlers not installed", exc_info=True)
 
 
 def _validate_runtime_security() -> None:
@@ -234,6 +666,23 @@ def _validate_runtime_security() -> None:
         raise RuntimeError("SECRET_KEY environment variable is required")
     if SETTINGS.require_api_keys and not auth_status().get("enabled", False):
         raise RuntimeError("API keys are required for protected endpoints")
+
+
+def _log_runtime_configuration() -> None:
+    logger.info(
+        "Runtime config host=%s port=%s debug=%s pipeline_enabled=%s ti_feed_dir=%s json_logging=%s firewall_adapter=%s",
+        SETTINGS.host,
+        SETTINGS.port,
+        SETTINGS.debug,
+        SETTINGS.pipeline_enabled,
+        bool(SETTINGS.ti_feed_dir),
+        SETTINGS.json_logging,
+        SETTINGS.firewall_adapter,
+    )
+
+
+_register_health_probes()
+_register_signal_handlers()
 
 
 def ensure_model_loaded() -> None:
@@ -374,7 +823,7 @@ def _before_request_metrics():
     if request.path.startswith('/api/'):
         metrics_service.inc('requests_total')
 
-        if request.path != '/api/health':
+        if request.path not in {'/api/health', '/api/health/live', '/api/health/ready'}:
             client_key = f"{request.remote_addr or 'unknown'}:{request.path}"
             allowed, retry_after = rate_limiter.allow(client_key)
             if not allowed:
@@ -638,9 +1087,12 @@ def batch_predict():
 @app.route("/api/health", methods=["GET"])
 def api_health():
     model_ready = ensure_detection_service()
+    _ensure_pipeline_started()
+    readiness = health_check.check()
     return jsonify({
         "status": "ok",
         "model_loaded": model_ready,
+        "readiness": readiness,
         "alerts_buffered": len(alert_store.list_alerts(limit=1000)),
         "ops_db": OPS_DB_PATH,
         "auth": auth_status(),
@@ -655,7 +1107,21 @@ def api_health():
         },
         "firewall_adapter": SETTINGS.firewall_adapter,
         "detection_engines": engine_registry.list_engines(),
+        "pipeline": _pipeline_status(),
+        "leader_election": leader_election.status(),
     })
+
+
+@app.route("/api/health/live", methods=["GET"])
+def api_health_live():
+    return jsonify({"status": "live", "process_up": True}), 200
+
+
+@app.route("/api/health/ready", methods=["GET"])
+def api_health_ready():
+    _ensure_pipeline_started()
+    report = health_check.check()
+    return jsonify(report), (200 if report.get("status") == "healthy" else 503)
 
 
 @app.route("/api/predict", methods=["POST"])
@@ -713,6 +1179,27 @@ def api_alerts():
     return jsonify({"count": len(alerts), "alerts": alerts})
 
 
+@app.route("/api/alerts/<alert_id>/feedback", methods=["POST"])
+@require_role("analyst")
+def api_alert_feedback(alert_id: str):
+    """Record analyst FP/TP feedback for a detection alert."""
+    body = request.get_json(silent=True) or {}
+    verdict = str(body.get("verdict", "")).strip().lower()
+    engine_id = str(body.get("engine_id", "ml_engine")).strip()
+    rule_id = str(body.get("rule_id", "model")).strip()
+    if verdict == "fp":
+        fp_manager.report_fp(engine_id, rule_id, alert_id=alert_id)
+    elif verdict == "tp":
+        fp_manager.report_tp(engine_id, rule_id)
+    else:
+        return jsonify({"error": "verdict must be 'fp' or 'tp'"}), 400
+    return jsonify({
+        "alert_id": alert_id,
+        "verdict": verdict,
+        "suppressed": fp_manager.is_suppressed(engine_id, rule_id),
+    }), 200
+
+
 @app.route("/api/detect", methods=["POST"])
 @require_role("analyst")
 def api_detect():
@@ -735,11 +1222,27 @@ def api_detect():
         features["source_ip"] = source_ip
 
         metrics_service.inc("predictions_total")
-        results = engine_registry.evaluate_all(features)
+        try:
+            engine_features = enrich_single_row(features)
+        except Exception:
+            logger.warning("Feature enrichment failed in /api/detect; falling back to raw features", exc_info=True)
+            engine_features = features
+
+        eval_start = time.monotonic()
+        results = engine_registry.evaluate_all(engine_features)
+        metrics_service.observe_latency("engine_eval_latency", eval_start)
+        metrics_service.inc("engine_evaluations_total")
         aggregated = engine_aggregator.aggregate(results)
 
         if aggregated.verdict in ("attack", "suspicious"):
             metrics_service.inc("alerts_total")
+        if aggregated.verdict == "attack":
+            metrics_service.inc("engine_attacks_total")
+
+        for result in results:
+            if result.verdict == "attack":
+                metrics_service.inc(f"engine_{result.engine_id}_attacks_total")
+            metrics_service.inc(f"engine_{result.engine_id}_evaluations_total")
 
         return jsonify(aggregated.to_dict())
     except Exception as exc:
@@ -782,16 +1285,59 @@ def api_policy():
             mode=payload.get("mode"),
             block_ttl_seconds=payload.get("block_ttl_seconds"),
             confidence_block_threshold=payload.get("confidence_block_threshold"),
+            dry_run=payload.get("dry_run"),
         )
+        changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
+        reason = str(payload.get("reason", "policy_update")).strip() or "policy_update"
+        pv = policy_store.update(policy.to_dict(), changed_by=changed_by, reason=reason)
         ops_store.add_audit(
             event_type="policy_update",
-            message=f"mode={policy.mode}, ttl={policy.block_ttl_seconds}, threshold={policy.confidence_block_threshold}",
+            message=(
+                f"mode={policy.mode}, ttl={policy.block_ttl_seconds}, "
+                f"threshold={policy.confidence_block_threshold}, dry_run={policy.dry_run}, v={pv.version}"
+            ),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         metrics_service.inc("policy_updates_total")
         return jsonify(policy.to_dict())
     except Exception as exc:
         return jsonify({"error": "invalid_request"}), 400
+
+
+@app.route("/api/policy/history", methods=["GET"])
+@require_role("admin")
+def api_policy_history():
+    limit = request.args.get("limit", default=50, type=int)
+    history = policy_store.history(limit=max(1, min(limit, 500)))
+    return jsonify({"count": len(history), "history": history})
+
+
+@app.route("/api/policy/rollback", methods=["POST"])
+@require_role("admin")
+def api_policy_rollback():
+    payload = request.get_json(silent=True) or {}
+    to_version = payload.get("to_version")
+    if to_version is None:
+        return jsonify({"error": "'to_version' is required"}), 400
+
+    changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
+    pv = policy_store.rollback(int(to_version), changed_by=changed_by)
+    if pv is None:
+        return jsonify({"error": "version_not_found"}), 404
+
+    config = pv.config
+    policy = prevention_service.set_policy(
+        mode=config.get("mode"),
+        block_ttl_seconds=config.get("block_ttl_seconds"),
+        confidence_block_threshold=config.get("confidence_block_threshold"),
+        dry_run=config.get("dry_run"),
+    )
+    ops_store.add_audit(
+        event_type="policy_rollback",
+        message=f"rollback_to={to_version} new_version={pv.version}",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"policy": policy.to_dict(), "version": pv.to_dict()})
 
 
 @app.route("/api/actions", methods=["GET"])
@@ -820,12 +1366,88 @@ def api_actions_cleanup():
     return jsonify({"removed": removed})
 
 
+@app.route("/api/allowlist", methods=["GET"])
+@require_role("analyst")
+def api_allowlist_get():
+    """List all allowlist entries."""
+    return jsonify({"entries": allowlist.list_entries()}), 200
+
+
+@app.route("/api/allowlist", methods=["POST"])
+@require_role("admin")
+def api_allowlist_add():
+    """Add an IP or CIDR to the allowlist."""
+    body = request.get_json(silent=True) or {}
+    entry = str(body.get("entry", "")).strip()
+    reason = str(body.get("reason", "")).strip()
+    if not entry:
+        return jsonify({"error": "'entry' is required"}), 400
+    added = allowlist.add(entry, reason=reason)
+    ops_store.add_audit(
+        event_type="allowlist_add",
+        message=f"entry={entry} reason={reason} new={added}",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"entry": entry, "added": added}), (201 if added else 200)
+
+
+@app.route("/api/allowlist/<path:entry>", methods=["DELETE"])
+@require_role("admin")
+def api_allowlist_remove(entry: str):
+    """Remove an entry from the allowlist."""
+    removed = allowlist.remove(entry)
+    if not removed:
+        return jsonify({"error": "entry not found"}), 404
+    ops_store.add_audit(
+        event_type="allowlist_remove",
+        message=f"entry={entry}",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"entry": entry, "removed": True}), 200
+
+
 @app.route("/api/audit", methods=["GET"])
 @require_role("admin")
 def api_audit():
     limit = request.args.get("limit", default=100, type=int)
     audits = ops_store.list_audits(limit=max(1, min(limit, 500)))
     return jsonify({"count": len(audits), "audits": audits})
+
+
+@app.route("/api/siem/flush", methods=["GET"])
+@require_role("admin")
+def api_siem_flush():
+    limit = request.args.get("limit", default=500, type=int)
+    limit = max(1, min(limit, 5000))
+    jsonl = siem_exporter.flush_jsonl(limit)
+    lines = [line for line in jsonl.splitlines() if line.strip()]
+    return jsonify({"count": len(lines), "jsonl": jsonl, "stats": siem_exporter.stats()})
+
+
+@app.route("/api/threat-intel/stats", methods=["GET"])
+@require_role("analyst")
+def api_ti_stats():
+    """Return TI cache statistics and loaded feed summary."""
+    return jsonify({
+        "stats": ti_manager.stats(),
+        "feeds": ti_manager.feed_summary(),
+        "engine_ready": ti_engine.is_ready(),
+        "engine_enabled": engine_registry.is_enabled(ti_engine.engine_id),
+    })
+
+
+@app.route("/api/threat-intel/lookup", methods=["POST"])
+@require_role("analyst")
+def api_ti_lookup():
+    """Look up a single IP against the TI cache."""
+    body = request.get_json(silent=True) or {}
+    ip = str(body.get("ip", "")).strip()
+    if not ip:
+        return jsonify({"error": "'ip' is required"}), 400
+    indicator = ti_manager.lookup_ip(ip)
+    if indicator is None:
+        return jsonify({"ip": ip, "found": False, "indicator": None}), 200
+    return jsonify({"ip": ip, "found": True, "indicator": indicator.to_dict()}), 200
 
 
 @app.route("/api/explain", methods=["POST"])
@@ -866,21 +1488,36 @@ def api_ingest():
     payload = request.get_json(silent=True) or {}
     source = payload.get("source", "ingestion_api")
     rows = payload.get("rows")
+    pipeline_started = _ensure_pipeline_started()
+
+    backpressure = getattr(app, "_pipeline_backpressure", None)
+    if pipeline_started and backpressure is not None and backpressure.level == BackpressureLevel.SHEDDING:
+        return jsonify({"error": "pipeline_backpressure", "pipeline": _pipeline_status()}), 503
 
     try:
         if isinstance(rows, list):
             if not rows:
                 return jsonify({"error": "rows cannot be empty"}), 400
-            added = ingestion_service.enqueue_batch(rows, source=source)
+            if pipeline_started:
+                added = _stream_ingest_records(rows, source=source)
+            else:
+                added = ingestion_service.enqueue_batch(rows, source=source)
         else:
             features = payload.get("features")
             if not isinstance(features, dict) or not features:
                 return jsonify({"error": "provide either non-empty 'rows' or 'features'"}), 400
-            ingestion_service.enqueue_record(features, source=source)
-            added = 1
+            if pipeline_started:
+                added = _stream_ingest_records([features], source=source)
+            else:
+                ingestion_service.enqueue_record(features, source=source)
+                added = 1
 
         metrics_service.inc("ingested_total", amount=added)
-        return jsonify({"queued": added, "queue_size": ingestion_queue.size()})
+        return jsonify({
+            "queued": added,
+            "queue_size": ingestion_queue.size(),
+            "pipeline": _pipeline_status(),
+        })
     except Exception as exc:
         return jsonify({"error": "invalid_request"}), 400
 
@@ -982,13 +1619,24 @@ def handle_error(e):
 
 
 if __name__ == "__main__":
-    _validate_runtime_security()
-    load_models()
-    _ensure_scheduler_started()
-    socketio.run(
-        app,
-        debug=SETTINGS.debug,
-        host=SETTINGS.host,
-        port=SETTINGS.port,
-    )
+    try:
+        _validate_runtime_security()
+        _log_runtime_configuration()
+        load_models()
+        _ensure_scheduler_started()
+        _ensure_pipeline_started()
+        socketio.run(
+            app,
+            debug=SETTINGS.debug,
+            host=SETTINGS.host,
+            port=SETTINGS.port,
+        )
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested by keyboard interrupt")
+        _shutdown_runtime()
+        sys.exit(0)
+    except Exception:
+        logger.exception("Fatal startup/runtime error")
+        _shutdown_runtime()
+        raise
 

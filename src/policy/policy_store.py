@@ -96,7 +96,8 @@ class PolicyStore:
 
     def history(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:
-            return [v.to_dict() for v in reversed(self._versions[:limit])]
+            effective = max(1, int(limit))
+            return [v.to_dict() for v in reversed(self._versions[-effective:])]
 
     def get_version(self, version: int) -> PolicyVersion | None:
         with self._lock:

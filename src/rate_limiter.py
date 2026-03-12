@@ -19,6 +19,10 @@ class InMemoryRateLimiter:
     def allow(self, key: str) -> tuple[bool, int]:
         now = time()
         window_start = now - self.config.window_seconds
+        if len(self._events) > 50000:
+            stale_keys = [k for k, q in self._events.items() if (not q) or q[-1] < window_start]
+            for stale_key in stale_keys[:10000]:
+                self._events.pop(stale_key, None)
         q = self._events[key]
         while q and q[0] < window_start:
             q.popleft()

@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from src.detection.aggregator import AggregatedResult, EngineAggregator
 from src.detection.engine_registry import EngineRegistry
+from src.feature_engineering import enrich_single_row
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +102,17 @@ class StreamProcessor:
     def _process_message(self, msg_id: Any, fields: dict) -> None:
         try:
             features = self._decode_fields(fields)
-            results = self.engine_registry.evaluate_all(features)
+            try:
+                engine_features = enrich_single_row(features)
+            except Exception:
+                logger.warning("Feature enrichment failed in StreamProcessor; falling back to raw features", exc_info=True)
+                engine_features = features
+
+            results = self.engine_registry.evaluate_all(engine_features)
             aggregated = self.aggregator.aggregate(results)
 
             if self.result_callback is not None:
-                self.result_callback(aggregated, features)
+                self.result_callback(aggregated, engine_features)
 
             # ACK only after successful processing.
             self.redis.xack(self.stream_key, self.group_name, msg_id)

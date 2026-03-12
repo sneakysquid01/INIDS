@@ -75,6 +75,12 @@ class ActionExecutor:
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat() if ttl_seconds > 0 else None
 
+        # Idempotency: skip if this target already has an active enforcement record.
+        if self.ops_store is not None and decision in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
+            if self.ops_store.has_active_block(target):
+                self.logger.debug("Idempotency: %s already has active block, skipping duplicate enforcement", target)
+                return None
+
         dry_run = bool(getattr(policy, "dry_run", True))
         executed = False
         status = "DRY_RUN"

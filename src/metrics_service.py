@@ -68,6 +68,24 @@ class MetricsService:
 
     def as_prometheus(self) -> str:
         with self._lock:
+            emitted_keys = {
+                "requests_total",
+                "predictions_total",
+                "alerts_total",
+                "prevention_actions_total",
+                "policy_updates_total",
+                "unauthorized_total",
+                "ingested_total",
+                "processed_ingestion_total",
+                "expired_actions_cleaned_total",
+                "rate_limited_total",
+                "detection_events_total",
+                "action_events_total",
+                "risk_score_sum",
+                "risk_score_count",
+                "engine_evaluations_total",
+                "engine_attacks_total",
+            }
             lines = [
                 "# HELP inids_requests_total Total API requests processed by INIDS",
                 "# TYPE inids_requests_total counter",
@@ -118,6 +136,14 @@ class MetricsService:
                 "# TYPE inids_engine_attacks_total counter",
                 f"inids_engine_attacks_total {self._counters.get('engine_attacks_total', 0)}",
             ]
+
+            # Export any dynamic counters (e.g., per-engine counters) not emitted above.
+            for ck, cv in sorted(self._counters.items()):
+                if ck in emitted_keys:
+                    continue
+                metric_name = f"inids_{ck}"
+                lines.append(f"# TYPE {metric_name} counter")
+                lines.append(f"{metric_name} {cv}")
 
             # Append gauge lines
             for gk, gv in sorted(self._gauges.items()):

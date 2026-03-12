@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from threading import Event, Thread
 from time import sleep
+from typing import Callable
 
 from src.ips.action_executor import ActionExecutor
 
@@ -16,10 +17,12 @@ class PreventionScheduler:
         *,
         interval_seconds: int = 30,
         reconcile_every: int = 20,
+        is_leader_fn: Callable[[], bool] | None = None,
     ):
         self.executor = executor
         self.interval_seconds = max(5, int(interval_seconds))
         self.reconcile_every = max(1, int(reconcile_every))
+        self.is_leader_fn = is_leader_fn
         self._stop_event = Event()
         self._thread: Thread | None = None
         self._tick = 0
@@ -41,6 +44,9 @@ class PreventionScheduler:
         while not self._stop_event.is_set():
             self._tick += 1
             try:
+                if self.is_leader_fn is not None and not self.is_leader_fn():
+                    sleep(self.interval_seconds)
+                    continue
                 removed = self.executor.cleanup_expired_actions()
                 if removed:
                     self.logger.info("scheduler cleanup removed=%s", removed)

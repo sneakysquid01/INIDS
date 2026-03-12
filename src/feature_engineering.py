@@ -20,6 +20,20 @@ def add_ratio_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add ratio-based interaction features."""
     df = df.copy()
 
+    required = {
+        "src_bytes",
+        "dst_bytes",
+        "serror_rate",
+        "rerror_rate",
+        "dst_host_count",
+        "dst_host_srv_count",
+        "count",
+    }
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        logger.debug("Skipping ratio features; missing columns: %s", ",".join(sorted(missing)))
+        return df
+
     # Byte ratio
     total_bytes = df["src_bytes"] + df["dst_bytes"]
     df["byte_ratio"] = df["src_bytes"] / total_bytes.replace(0, 1)
@@ -51,21 +65,24 @@ def add_entropy_features(df: pd.DataFrame) -> pd.DataFrame:
     """Compute simple entropy proxies from rate columns."""
     df = df.copy()
     rate_cols = [c for c in df.columns if c.endswith("_rate")]
-    if rate_cols:
-        # Pseudo-entropy across rate features per row.
-        # Rates are clipped to [1e-10, 1.0] since they represent proportions.
-        rates = df[rate_cols].clip(lower=1e-10, upper=1.0)
-        log_rates = rates.apply(lambda col: col.apply(math.log2))
-        df["rate_entropy"] = -(rates * log_rates).sum(axis=1)
+    if not rate_cols:
+        return df
+
+    # Pseudo-entropy across rate features per row.
+    # Rates are clipped to [1e-10, 1.0] since they represent proportions.
+    rates = df[rate_cols].clip(lower=1e-10, upper=1.0)
+    log_rates = rates.apply(lambda col: col.apply(math.log2))
+    df["rate_entropy"] = -(rates * log_rates).sum(axis=1)
     return df
 
 
 def enrich_features(df: pd.DataFrame) -> pd.DataFrame:
     """Apply all feature engineering steps to a dataframe."""
+    original_cols = len(df.columns)
     df = add_ratio_features(df)
     df = add_log_transforms(df)
     df = add_entropy_features(df)
-    logger.info("Feature engineering: added %d derived columns", len(df.columns) - 41)
+    logger.info("Feature engineering: added %d derived columns", len(df.columns) - original_cols)
     return df
 
 

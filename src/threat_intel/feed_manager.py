@@ -155,6 +155,8 @@ class ThreatIntelManager:
         if not isinstance(items, list):
             items = [items]
         for item in items:
+            if not isinstance(item, dict):
+                continue
             value = item.get("value", item.get("indicator", item.get("ip", ""))).strip()
             if not value:
                 continue
@@ -208,3 +210,5 @@ class ThreatIntelManager:
                 "indicators_loaded": count,
                 "loaded_at": time.time(),
             })
+            if len(self._feed_metadata) > 1000:
+                self._feed_metadata = self._feed_metadata[-500:]
