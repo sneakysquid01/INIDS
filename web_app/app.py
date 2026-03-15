@@ -24,7 +24,7 @@ if BASE_DIR not in sys.path:
 
 from src.settings import load_settings
 from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
-from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
+from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter, WebhookFirewallAdapter
 from src.core.event_bus import ActionEvent, DetectionEvent, EventBus, PolicyDecisionEvent, RiskScoreEvent
 from src.logging_config import configure_logging
 from src.observability.json_logging import configure_json_logging
@@ -62,7 +62,7 @@ from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
 from src.auth_service import require_role, auth_status
 from src.metrics_service import MetricsService
-from src.ingestion_service import InMemoryIngestionQueue, IngestionService
+from src.ingestion_service import InMemoryIngestionQueue, RedisStreamIngestionQueue, IngestionService
 from src.prevention.allowlist import Allowlist
 from src.prevention.escalation_tracker import EscalationTracker
 from src.prevention.false_positive_manager import FalsePositiveManager
@@ -119,6 +119,8 @@ def _build_firewall_adapter():
         return UfwFirewallAdapter()
     if adapter_name == "nftables":
         return NftablesFirewallAdapter()
+    if adapter_name == "webhook":
+        return WebhookFirewallAdapter(webhook_url=SETTINGS.firewall_webhook_url)
     return MockFirewallAdapter()
 
 
@@ -285,6 +287,17 @@ def _ensure_pipeline_started() -> bool:
     redis_client = _get_redis_client()
     if redis_client is None:
         return False
+
+    # Upgrade the in-process ingestion queue to Redis-backed for durability now
+    # that we have a confirmed Redis connection. This ensures records enqueued via
+    # the non-pipeline path (/api/ingest/process) survive application restarts.
+    global ingestion_queue, ingestion_service
+    if not isinstance(ingestion_queue, RedisStreamIngestionQueue):
+        ingestion_queue = RedisStreamIngestionQueue(
+            redis_client, stream_key="inids:ingestion", max_items=10000
+        )
+        ingestion_service = IngestionService(queue=ingestion_queue)
+        logger.info("Upgraded ingestion queue to Redis-backed (inids:ingestion)")
 
     load_models()
     try:

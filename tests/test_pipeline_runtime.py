@@ -15,9 +15,12 @@ class FakeRedisClient:
     def ping(self):
         return True
 
-    def xadd(self, stream_key, fields):
+    def xadd(self, stream_key, fields, **kwargs):
         self.xadd_calls.append((stream_key, fields))
         return "1-0"
+
+    def xlen(self, stream_key):
+        return 0
 
     def close(self):
         self.closed = True

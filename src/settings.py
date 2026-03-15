@@ -18,6 +18,7 @@ class Settings:
     rate_limit_requests: int = 120
     rate_limit_window_seconds: int = 60
     firewall_adapter: str = "mock"
+    firewall_webhook_url: str = ""
     require_api_keys: bool = False
     require_secret_key: bool = False
     json_logging: bool = False
@@ -63,6 +64,7 @@ def load_settings() -> Settings:
     rate_reqs = _safe_int("RATE_LIMIT_REQUESTS", 120)
     rate_window = _safe_int("RATE_LIMIT_WINDOW_SECONDS", 60)
     firewall_adapter = os.getenv("FIREWALL_ADAPTER", "mock").strip().lower()
+    firewall_webhook_url = os.getenv("FIREWALL_WEBHOOK_URL", "").strip()
     ti_feed_dir = os.getenv("INIDS_TI_FEED_DIR", "").strip()
     ti_refresh_interval_seconds = _safe_int("INIDS_TI_REFRESH_INTERVAL", 3600)
     return Settings(
@@ -78,6 +80,7 @@ def load_settings() -> Settings:
         rate_limit_requests=rate_reqs,
         rate_limit_window_seconds=rate_window,
         firewall_adapter=firewall_adapter,
+        firewall_webhook_url=firewall_webhook_url,
         require_api_keys=require_api_keys,
         require_secret_key=require_secret_key,
         json_logging=json_logging,

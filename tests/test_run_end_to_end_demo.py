@@ -1,4 +1,9 @@
-from src import run_end_to_end_demo as demo
+import importlib.util, pathlib, sys
+
+_demo_path = pathlib.Path(__file__).parents[1] / "tools" / "run_end_to_end_demo.py"
+_spec = importlib.util.spec_from_file_location("run_end_to_end_demo", _demo_path)
+demo = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(demo)
 
 
 class FakeResponse:
