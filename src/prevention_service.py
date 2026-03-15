@@ -13,6 +13,10 @@ class PolicyConfig:
     block_ttl_seconds: int = 300
     confidence_block_threshold: float = 85.0
     dry_run: bool = True
+    block_requires_approval: bool = False
+    risk_weight_confidence: float = 0.5
+    risk_weight_severity: float = 0.3
+    risk_weight_frequency: float = 0.2
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -60,6 +64,10 @@ class PreventionService:
         block_ttl_seconds: int | None = None,
         confidence_block_threshold: float | None = None,
         dry_run: bool | None = None,
+        block_requires_approval: bool | None = None,
+        risk_weight_confidence: float | None = None,
+        risk_weight_severity: float | None = None,
+        risk_weight_frequency: float | None = None,
     ) -> PolicyConfig:
         if mode is not None:
             normalized_mode = mode.strip().lower()
@@ -76,6 +84,18 @@ class PreventionService:
             self.policy.confidence_block_threshold = float(confidence_block_threshold)
         if dry_run is not None:
             self.policy.dry_run = bool(dry_run)
+        if block_requires_approval is not None:
+            self.policy.block_requires_approval = bool(block_requires_approval)
+        for attr, val in (
+            ("risk_weight_confidence", risk_weight_confidence),
+            ("risk_weight_severity", risk_weight_severity),
+            ("risk_weight_frequency", risk_weight_frequency),
+        ):
+            if val is not None:
+                fval = float(val)
+                if fval < 0 or fval > 1:
+                    raise ValueError(f"{attr} must be between 0 and 1")
+                setattr(self.policy, attr, fval)
         return self.policy
 
     def evaluate(self, prediction: str, confidence: float, source: str = "unknown") -> PreventionAction | None:

@@ -55,6 +55,9 @@ class EscalationTracker:
         Seconds of inactivity before an IP de-escalates one level.
     max_level:
         Maximum reachable level (default PERM_BLOCK).
+    max_tracked:
+        Maximum number of IPs to keep in memory. When exceeded, stale entries
+        (last hit > cooldown_seconds ago) are evicted before accepting new IPs.
     """
 
     def __init__(
@@ -62,11 +65,34 @@ class EscalationTracker:
         *,
         cooldown_seconds: float = 300.0,
         max_level: EscalationLevel = EscalationLevel.PERM_BLOCK,
+        max_tracked: int = 100_000,
     ) -> None:
         self._states: dict[str, _IPState] = {}
         self._cooldown = cooldown_seconds
         self._max_level = max_level
+        self._max_tracked = max(100, int(max_tracked))
         self._lock = Lock()
+
+    def evict_stale(self) -> int:
+        """Remove IPs whose escalation level has returned to CLEAN due to cooldown.
+
+        Returns the number of entries evicted.
+        """
+        now = time.monotonic()
+        to_remove: list[str] = []
+        with self._lock:
+            for ip, state in self._states.items():
+                if not state.last_hit:
+                    to_remove.append(ip)
+                    continue
+                elapsed = now - state.last_hit
+                steps_down = int(elapsed // self._cooldown)
+                effective_level = max(0, state.level - steps_down)
+                if effective_level <= EscalationLevel.CLEAN:
+                    to_remove.append(ip)
+            for ip in to_remove:
+                del self._states[ip]
+        return len(to_remove)
 
     def record_hit(self, ip: str, severity: str = "low") -> EscalationLevel:
         """Record a detection hit for ``ip`` and return the new escalation level."""
@@ -74,6 +100,21 @@ class EscalationTracker:
         with self._lock:
             state = self._states.get(ip)
             if state is None:
+                # Capacity guard: evict stale entries before adding a new IP.
+                if len(self._states) >= self._max_tracked:
+                    # Find and remove IPs that have de-escalated to CLEAN.
+                    stale = [
+                        k for k, v in self._states.items()
+                        if v.last_hit and (now - v.last_hit) > self._cooldown * int(v.level + 1)
+                    ]
+                    for k in stale[:max(1, len(stale))]:
+                        del self._states[k]
+                    # Hard cap: if still at limit, drop oldest entry.
+                    if len(self._states) >= self._max_tracked:
+                        oldest = min(self._states, key=lambda k: self._states[k].last_hit or 0)
+                        del self._states[oldest]
+                        logger.warning("EscalationTracker capacity: evicted oldest entry %s", oldest)
+
                 state = _IPState()
                 state.first_hit = now
                 self._states[ip] = state

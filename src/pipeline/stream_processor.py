@@ -162,10 +162,7 @@ class StreamProcessor:
                 if isinstance(name, bytes):
                     name = name.decode()
                 if name == self.group_name:
-                    delivered = g.get("last-delivered-id", b"0-0")
-                    if isinstance(delivered, bytes):
-                        delivered = delivered.decode()
-                    # Rough estimate.
+                    # Rough estimate based on pending count for this group.
                     return max(0, stream_len - self.pending_count())
             return stream_len
         except Exception:

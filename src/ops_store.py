@@ -115,6 +115,18 @@ class OpsStore:
             )
             self._execute(
                 """
+                CREATE TABLE IF NOT EXISTS fp_suppressions (
+                    id BIGSERIAL PRIMARY KEY,
+                    engine_id TEXT NOT NULL,
+                    rule_id TEXT NOT NULL,
+                    suppressed INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (engine_id, rule_id)
+                )
+                """
+            )
+            self._execute(
+                """
                 CREATE TABLE IF NOT EXISTS allowlist (
                     id BIGSERIAL PRIMARY KEY,
                     entry TEXT UNIQUE NOT NULL,
@@ -178,8 +190,21 @@ class OpsStore:
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS fp_suppressions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        engine_id TEXT NOT NULL,
+                        rule_id TEXT NOT NULL,
+                        suppressed INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        UNIQUE (engine_id, rule_id)
+                    )
+                    """
+                )
 
         self._migrate_actions_table()
+        self._migrate_alerts_table()
 
     @staticmethod
     def _utc_now_iso() -> str:
@@ -230,6 +255,24 @@ class OpsStore:
             conn.execute("UPDATE actions SET dry_run = COALESCE(dry_run, 0)")
             conn.execute("UPDATE actions SET executed = COALESCE(executed, 0)")
 
+    def _migrate_alerts_table(self) -> None:
+        """Add alert lifecycle columns if they don't exist (non-destructive migration)."""
+        migrations = {
+            "status": "TEXT NOT NULL DEFAULT 'open'",
+            "assignee": "TEXT",
+            "close_reason": "TEXT",
+            "status_updated_at": "TEXT",
+        }
+        if self._is_postgres:
+            for col, col_type in migrations.items():
+                self._execute(f"ALTER TABLE alerts ADD COLUMN IF NOT EXISTS {col} {col_type}")
+            return
+        with self._connect() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(alerts)").fetchall()}
+            for col, col_type in migrations.items():
+                if col not in columns:
+                    conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {col_type}")
+
     def save_alert(self, payload: dict[str, Any]) -> None:
         if self._is_postgres:
             self._execute(
@@ -249,14 +292,97 @@ class OpsStore:
             payload,
         )
 
-    def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT id, timestamp, severity, prediction, confidence, profile, reason FROM alerts"
+    def list_alerts(
+        self,
+        limit: int = 50,
+        severity: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = (
+            "SELECT id, timestamp, severity, prediction, confidence, profile, reason, "
+            "COALESCE(status, 'open') AS status, assignee, close_reason, status_updated_at "
+            "FROM alerts"
+        )
         params: dict[str, Any] = {"limit": int(limit)}
+        conditions: list[str] = []
         if severity:
-            query += " WHERE lower(severity) = lower(:severity)"
+            conditions.append("lower(severity) = lower(:severity)")
             params["severity"] = severity
+        if status:
+            conditions.append("lower(COALESCE(status, 'open')) = lower(:status)")
+            params["status"] = status
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY timestamp DESC LIMIT :limit"
         return self._fetchall(query, params)
+
+    def update_alert(
+        self,
+        alert_id: str,
+        *,
+        status: str | None = None,
+        assignee: str | None = None,
+        close_reason: str | None = None,
+    ) -> bool:
+        """Update lifecycle fields for an alert. Returns True if a row was updated."""
+        updates: list[str] = []
+        params: dict[str, Any] = {"alert_id": alert_id}
+        valid_statuses = {"open", "reviewing", "closed", "escalated"}
+        if status is not None:
+            if status.lower() not in valid_statuses:
+                raise ValueError(f"status must be one of {valid_statuses}")
+            updates.append("status = :status")
+            params["status"] = status.lower()
+            updates.append("status_updated_at = :status_updated_at")
+            params["status_updated_at"] = self._utc_now_iso()
+        if assignee is not None:
+            updates.append("assignee = :assignee")
+            params["assignee"] = assignee
+        if close_reason is not None:
+            updates.append("close_reason = :close_reason")
+            params["close_reason"] = close_reason
+        if not updates:
+            return False
+        query = f"UPDATE alerts SET {', '.join(updates)} WHERE id = :alert_id"
+        cursor = self._execute(query, params)
+        return bool(getattr(cursor, "rowcount", 0))
+
+    # ------------------------------------------------------------------
+    # False-positive suppression
+    # ------------------------------------------------------------------
+
+    def save_fp_suppression(self, engine_id: str, rule_id: str) -> None:
+        """Persist a suppression entry; idempotent."""
+        now_iso = self._utc_now_iso()
+        if self._is_postgres:
+            self._execute(
+                """
+                INSERT INTO fp_suppressions (engine_id, rule_id, suppressed, created_at)
+                VALUES (:engine_id, :rule_id, 1, :created_at)
+                ON CONFLICT (engine_id, rule_id) DO UPDATE SET suppressed = 1
+                """,
+                {"engine_id": engine_id, "rule_id": rule_id, "created_at": now_iso},
+            )
+        else:
+            self._execute(
+                """
+                INSERT OR REPLACE INTO fp_suppressions (engine_id, rule_id, suppressed, created_at)
+                VALUES (:engine_id, :rule_id, 1, :created_at)
+                """,
+                {"engine_id": engine_id, "rule_id": rule_id, "created_at": now_iso},
+            )
+
+    def delete_fp_suppression(self, engine_id: str, rule_id: str) -> bool:
+        cursor = self._execute(
+            "DELETE FROM fp_suppressions WHERE engine_id = :engine_id AND rule_id = :rule_id",
+            {"engine_id": engine_id, "rule_id": rule_id},
+        )
+        return bool(getattr(cursor, "rowcount", 0))
+
+    def list_fp_suppressions(self) -> list[dict[str, Any]]:
+        return self._fetchall(
+            "SELECT engine_id, rule_id, suppressed, created_at FROM fp_suppressions WHERE suppressed = 1"
+        )
 
     def save_action(self, payload: dict[str, Any]) -> None:
         action = payload.get("action", payload.get("action_type", "block"))

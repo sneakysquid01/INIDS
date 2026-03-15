@@ -76,7 +76,8 @@ class RiskEngine:
                     del self._events_by_source[k]
         return _clamp(count / self.frequency_high_watermark)
 
-    def calculate(self, detection_event: DetectionEvent) -> RiskScoreEvent:
+    def calculate(self, detection_event: DetectionEvent, weights_override: RiskWeights | None = None) -> RiskScoreEvent:
+        weights = weights_override or self.weights
         raw_confidence = float(detection_event.confidence)
         confidence_score = _clamp(raw_confidence / 100.0 if raw_confidence > 1.0 else raw_confidence)
         severity_score = self.map_attack_severity(
@@ -87,9 +88,9 @@ class RiskEngine:
         frequency_score = self.recent_activity_score(detection_event.source)
 
         risk = (
-            confidence_score * self.weights.confidence
-            + severity_score * self.weights.severity
-            + frequency_score * self.weights.frequency
+            confidence_score * weights.confidence
+            + severity_score * weights.severity
+            + frequency_score * weights.frequency
         )
         components = {
             "confidence": round(confidence_score, 6),

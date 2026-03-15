@@ -15,6 +15,7 @@ import logging
 import json
 import time
 import threading
+import uuid
 from datetime import datetime, timezone
 
 # Support both `python -m web_app.app` and direct script runs (`python web_app/app.py`).
@@ -133,7 +134,8 @@ prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
 allowlist = Allowlist(ops_store)
 escalation_tracker = EscalationTracker(cooldown_seconds=300.0)
-fp_manager = FalsePositiveManager()
+fp_manager = FalsePositiveManager(ops_store=ops_store)
+fp_manager.load_from_store()
 metrics_service = MetricsService()
 siem_exporter = SiemExporter()
 ingestion_queue = InMemoryIngestionQueue(max_items=10000)
@@ -147,13 +149,16 @@ rate_limiter = InMemoryRateLimiter(
 engine_registry = EngineRegistry()
 engine_aggregator = EngineAggregator(AggregationStrategy.ANY_TRIGGER)
 RULES_PATH = os.path.join(BASE_DIR, "rules", "default_rules.yaml")
-signature_engine = SignatureEngine(RULES_PATH if os.path.exists(RULES_PATH) else None)
+signature_engine = SignatureEngine(RULES_PATH if os.path.exists(RULES_PATH) else None, fp_manager=fp_manager)
 threshold_engine = ThresholdEngine()
-anomaly_engine = AnomalyEngine()
+anomaly_engine = AnomalyEngine(
+    buffer_size=3000,
+    model_path=os.path.join(MODELS_DIR, "anomaly_engine.pkl"),
+)
 
 engine_registry.register(signature_engine)
 engine_registry.register(threshold_engine)
-engine_registry.register(anomaly_engine, enabled=False)  # enabled after fit()
+engine_registry.register(anomaly_engine, enabled=anomaly_engine.is_ready())
 
 # Threat intelligence engine — starts disabled until feeds are loaded.
 # is_ready() returns True automatically once ti_manager.cache.size() > 0.
@@ -392,7 +397,47 @@ def _on_detection_event(event: DetectionEvent) -> None:
     if allowlist.contains(event.source_ip):
         logger.info("Allowlist: bypassing prevention pipeline for %s", event.source_ip)
         return
-    risk_event = risk_engine.calculate(event)
+
+    pred_lower = str(event.prediction).lower()
+
+    # Persist alerts from all event-bus paths, including streaming detections.
+    if pred_lower in ("attack", "suspicious") or event.suspicious:
+        try:
+            ops_store.save_alert(
+                {
+                    "id": f"al_{uuid.uuid4().hex[:10]}",
+                    "timestamp": event.timestamp,
+                    "severity": event.severity,
+                    "prediction": event.prediction,
+                    "confidence": event.confidence,
+                    "profile": event.profile,
+                    "reason": event.reason,
+                }
+            )
+            metrics_service.inc("alerts_total")
+        except Exception:
+            logger.exception("Failed to persist alert from detection event")
+
+    # Feed normal detections into anomaly training buffer and auto-enable once fitted.
+    if pred_lower == "normal":
+        try:
+            newly_fitted = anomaly_engine.add_sample(event.features)
+            if newly_fitted:
+                engine_registry.set_enabled(anomaly_engine.engine_id, True)
+                logger.info("AnomalyEngine auto-fitted and enabled from traffic")
+        except Exception:
+            logger.debug("Anomaly buffer sample failed", exc_info=True)
+
+    # Use policy-configured weights for dynamic risk scoring.
+    policy = prevention_service.policy
+    from src.ips.risk_engine import RiskWeights as _RW
+
+    weights_override = _RW(
+        confidence=float(getattr(policy, "risk_weight_confidence", 0.5)),
+        severity=float(getattr(policy, "risk_weight_severity", 0.3)),
+        frequency=float(getattr(policy, "risk_weight_frequency", 0.2)),
+    )
+    risk_event = risk_engine.calculate(event, weights_override=weights_override)
     event_bus.publish(risk_event)
     try:
         ops_store.add_audit(
@@ -437,7 +482,7 @@ def _on_risk_event(event: RiskScoreEvent) -> None:
 
 
 def _on_policy_decision_event(event: PolicyDecisionEvent) -> None:
-    if str(event.decision).strip().upper() not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
+    if str(event.decision).strip().upper() not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT", "PENDING_BLOCK"}:
         return
     action = action_executor.execute(event, prevention_service.policy)
     if action is not None:
@@ -1188,7 +1233,8 @@ def api_predict():
 def api_alerts():
     limit = request.args.get("limit", default=50, type=int)
     severity = request.args.get("severity", default=None, type=str)
-    alerts = ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity)
+    status = request.args.get("status", default=None, type=str)
+    alerts = ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity, status=status)
     return jsonify({"count": len(alerts), "alerts": alerts})
 
 
@@ -1211,6 +1257,72 @@ def api_alert_feedback(alert_id: str):
         "verdict": verdict,
         "suppressed": fp_manager.is_suppressed(engine_id, rule_id),
     }), 200
+
+
+@app.route("/api/alerts/<alert_id>", methods=["PATCH"])
+@require_role("analyst")
+def api_alert_update(alert_id: str):
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    assignee = body.get("assignee")
+    close_reason = body.get("close_reason")
+    if status is None and assignee is None and close_reason is None:
+        return jsonify({"error": "at least one of 'status', 'assignee', 'close_reason' is required"}), 400
+
+    try:
+        updated = ops_store.update_alert(
+            alert_id,
+            status=status,
+            assignee=assignee,
+            close_reason=close_reason,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not updated:
+        return jsonify({"error": "alert_not_found"}), 404
+
+    ops_store.add_audit(
+        event_type="alert_update",
+        message=json.dumps(
+            {
+                "alert_id": alert_id,
+                "status": status,
+                "assignee": assignee,
+                "close_reason": close_reason,
+            },
+            separators=(",", ":"),
+        ),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"updated": True, "alert_id": alert_id}), 200
+
+
+@app.route("/api/fp-suppressions", methods=["GET"])
+@require_role("analyst")
+def api_fp_suppressions_list():
+    return jsonify({"count": len(ops_store.list_fp_suppressions()), "suppressions": ops_store.list_fp_suppressions()})
+
+
+@app.route("/api/fp-suppressions", methods=["POST"])
+@require_role("admin")
+def api_fp_suppression_add():
+    body = request.get_json(silent=True) or {}
+    engine_id = str(body.get("engine_id", "")).strip()
+    rule_id = str(body.get("rule_id", "")).strip()
+    if not engine_id or not rule_id:
+        return jsonify({"error": "'engine_id' and 'rule_id' are required"}), 400
+    newly = fp_manager.suppress(engine_id, rule_id)
+    return jsonify({"engine_id": engine_id, "rule_id": rule_id, "suppressed": True, "new": bool(newly)})
+
+
+@app.route("/api/fp-suppressions/<engine_id>/<rule_id>", methods=["DELETE"])
+@require_role("admin")
+def api_fp_suppression_remove(engine_id: str, rule_id: str):
+    removed = fp_manager.unsuppress(engine_id, rule_id)
+    if not removed:
+        return jsonify({"error": "suppression_not_found"}), 404
+    return jsonify({"engine_id": engine_id, "rule_id": rule_id, "removed": True}), 200
 
 
 @app.route("/api/detect", methods=["POST"])
@@ -1298,6 +1410,10 @@ def api_policy():
             mode=payload.get("mode"),
             block_ttl_seconds=payload.get("block_ttl_seconds"),
             confidence_block_threshold=payload.get("confidence_block_threshold"),
+            block_requires_approval=payload.get("block_requires_approval"),
+            risk_weight_confidence=payload.get("risk_weight_confidence"),
+            risk_weight_severity=payload.get("risk_weight_severity"),
+            risk_weight_frequency=payload.get("risk_weight_frequency"),
             dry_run=payload.get("dry_run"),
         )
         changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
@@ -1343,6 +1459,10 @@ def api_policy_rollback():
         mode=config.get("mode"),
         block_ttl_seconds=config.get("block_ttl_seconds"),
         confidence_block_threshold=config.get("confidence_block_threshold"),
+        block_requires_approval=config.get("block_requires_approval"),
+        risk_weight_confidence=config.get("risk_weight_confidence"),
+        risk_weight_severity=config.get("risk_weight_severity"),
+        risk_weight_frequency=config.get("risk_weight_frequency"),
         dry_run=config.get("dry_run"),
     )
     ops_store.add_audit(
@@ -1361,6 +1481,35 @@ def api_actions():
     return jsonify({"count": len(actions), "actions": actions})
 
 
+@app.route("/api/actions/pending", methods=["GET"])
+@require_role("analyst")
+def api_actions_pending():
+    rows = ops_store._fetchall(
+        "SELECT * FROM actions WHERE lower(COALESCE(status, '')) = 'pending_approval' ORDER BY id DESC LIMIT 200"
+    )
+    return jsonify({"count": len(rows), "actions": rows})
+
+
+@app.route("/api/actions/<action_id>/approve", methods=["POST"])
+@require_role("admin")
+def api_action_approve(action_id: str):
+    body = request.get_json(silent=True) or {}
+    ttl_seconds = body.get("ttl_seconds")
+    result = action_executor.approve_pending_block(
+        action_id,
+        prevention_service.policy,
+        ttl_seconds=int(ttl_seconds) if ttl_seconds is not None else None,
+    )
+    if not result.get("ok") and result.get("error") == "not_found":
+        return jsonify({"error": "pending action not found"}), 404
+    ops_store.add_audit(
+        event_type="action_approved",
+        message=json.dumps(result, separators=(",", ":")),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify(result), (200 if result.get("ok") else 500)
+
+
 
 
 @app.route("/api/actions/cleanup", methods=["POST"])
@@ -1368,7 +1517,7 @@ def api_actions():
 def api_actions_cleanup():
     payload = request.get_json(silent=True) or {}
     now_iso = payload.get("now")
-    removed = ops_store.cleanup_expired_actions(now_iso=now_iso)
+    removed = action_executor.cleanup_expired_actions(now_iso=now_iso)
     if removed:
         ops_store.add_audit(
             event_type="actions_cleanup",
@@ -1577,22 +1726,9 @@ def api_ingest_process():
             profile="balanced",
             source_ip=source,
         )
-        if result.alert:
-            ops_store.save_alert(result.alert.to_dict())
-            metrics_service.inc("alerts_total")
-
-        action = prevention_service.evaluate(result.prediction, result.confidence, source=source)
-        if action:
-            ops_store.save_action(action.to_dict())
-            metrics_service.inc("prevention_actions_total")
-            ops_store.add_audit(
-                event_type="prevention_action",
-                message=f"{action.action} target={action.target} reason={action.reason}",
-                created_at=datetime.now(timezone.utc).isoformat(),
-            )
         metrics_service.inc("processed_ingestion_total")
         result_payload = result.to_dict()
-        result_payload["prevention_action"] = action.to_dict() if action else None
+        result_payload["prevention_action"] = None
         return result_payload
 
     processed = ingestion_service.process_all(_handler, max_items=max_items)
@@ -1606,6 +1742,66 @@ def api_ingest_process():
 @app.route("/about")
 def about():
     return render_template("about.html")
+
+
+@app.route("/api/detections/history", methods=["GET"])
+@require_role("analyst")
+def api_detections_history():
+    limit = request.args.get("limit", default=50, type=int)
+    limit = max(1, min(limit, 200))
+    audits = ops_store._fetchall(
+        "SELECT event_type, message, created_at FROM audits "
+        "WHERE event_type IN ('risk_score', 'policy_decision', 'prevention_action') "
+        "ORDER BY id DESC LIMIT :limit",
+        {"limit": limit},
+    )
+    parsed = []
+    for row in audits:
+        try:
+            msg = json.loads(row["message"])
+        except (ValueError, TypeError):
+            msg = {"raw": row["message"]}
+        parsed.append({"event_type": row["event_type"], "created_at": row["created_at"], **msg})
+    return jsonify({"count": len(parsed), "history": parsed})
+
+
+@app.route("/api/anomaly/status", methods=["GET"])
+@require_role("analyst")
+def api_anomaly_status():
+    buf = anomaly_engine.buffer_status()
+    buf["engine_id"] = anomaly_engine.engine_id
+    buf["enabled"] = engine_registry.is_enabled(anomaly_engine.engine_id)
+    buf["ready"] = anomaly_engine.is_ready()
+    return jsonify(buf)
+
+
+@app.route("/api/escalation/summary", methods=["GET"])
+@require_role("analyst")
+def api_escalation_summary():
+    summary = escalation_tracker.summary()
+    return jsonify({
+        "tracked_count": len(summary),
+        "escalation": summary,
+    })
+
+
+@app.route("/api/escalation/evict", methods=["POST"])
+@require_role("admin")
+def api_escalation_evict():
+    removed = escalation_tracker.evict_stale()
+    summary = escalation_tracker.summary()
+    ops_store.add_audit(
+        event_type="escalation_evict",
+        message=f"evicted={removed}",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"evicted": removed, "remaining": len(summary)})
+
+
+@app.route("/api/fp-stats", methods=["GET"])
+@require_role("analyst")
+def api_fp_stats():
+    return jsonify({"stats": fp_manager.stats()})
 
 
 @app.route("/realtime")

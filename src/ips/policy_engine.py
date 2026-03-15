@@ -18,6 +18,7 @@ class PolicyEngine:
         block_threshold = float(getattr(policy, "risk_block_threshold", 0.85))
         confidence_block_threshold = float(getattr(policy, "confidence_block_threshold", 85.0))
         ttl_seconds = int(getattr(policy, "block_ttl_seconds", 300))
+        block_requires_approval = bool(getattr(policy, "block_requires_approval", False))
 
         if mode in {"monitor", "detect_only", "ids_only"}:
             if prediction == "attack" or risk_score >= alert_threshold:
@@ -50,16 +51,18 @@ class PolicyEngine:
             )
 
         if confidence >= confidence_block_threshold and risk_score >= block_threshold:
+            decision = "PENDING_BLOCK" if block_requires_approval else "BLOCK"
             return PolicyDecisionEvent(
                 risk=risk_event,
-                decision="BLOCK",
+                decision=decision,
                 reason="attack_high_confidence_high_risk",
                 ttl_seconds=ttl_seconds,
             )
         if risk_score >= temp_block_threshold:
+            decision = "PENDING_BLOCK" if block_requires_approval else "TEMP_BLOCK"
             return PolicyDecisionEvent(
                 risk=risk_event,
-                decision="TEMP_BLOCK",
+                decision=decision,
                 reason="attack_high_risk_temp_block",
                 ttl_seconds=max(60, ttl_seconds),
             )

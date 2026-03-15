@@ -40,9 +40,10 @@ class SignatureEngine(DetectionEngine):
               value: 200
     """
 
-    def __init__(self, rules_path: str | Path | None = None, *, engine_id: str = "signature") -> None:
+    def __init__(self, rules_path: str | Path | None = None, *, engine_id: str = "signature", fp_manager=None) -> None:
         self._engine_id = engine_id
         self._rules: list[dict[str, Any]] = []
+        self._fp_manager = fp_manager
         if rules_path is not None:
             self.load_rules(rules_path)
 
@@ -87,7 +88,12 @@ class SignatureEngine(DetectionEngine):
         matched_rule: dict[str, Any] | None = None
         for rule in self._rules:
             if self._match_rule(rule, features):
-                # First matching rule wins (rules ordered by priority in YAML).
+                rule_id = rule.get("id", "unknown")
+                # Skip rules that have been suppressed by analyst FP feedback.
+                if self._fp_manager is not None and self._fp_manager.is_suppressed(self._engine_id, rule_id):
+                    logger.debug("Suppressed signature rule %s skipped", rule_id)
+                    continue
+                # First non-suppressed matching rule wins (rules ordered by priority in YAML).
                 matched_rule = rule
                 break
 

@@ -24,6 +24,9 @@ class FalsePositiveManager:
         recommended for suppression.
     min_samples:
         Minimum number of feedback entries before suppression kicks in.
+    ops_store:
+        Optional OpsStore for persisting suppression decisions. When provided,
+        suppression state survives restarts.
     """
 
     def __init__(
@@ -31,15 +34,41 @@ class FalsePositiveManager:
         *,
         suppress_threshold: float = 0.7,
         min_samples: int = 10,
+        ops_store=None,
     ) -> None:
         self.suppress_threshold = suppress_threshold
         self.min_samples = min_samples
+        self._ops_store = ops_store
 
         # Keyed by (engine_id, rule_id or "model")
         self._total: dict[tuple[str, str], int] = defaultdict(int)
         self._fp_count: dict[tuple[str, str], int] = defaultdict(int)
         self._suppressed: set[tuple[str, str]] = set()
         self._lock = Lock()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def load_from_store(self) -> int:
+        """Load persisted suppression state from ops_store. Returns count loaded."""
+        if self._ops_store is None:
+            return 0
+        try:
+            rows = self._ops_store.list_fp_suppressions()
+        except Exception:
+            logger.exception("Failed to load FP suppressions from store")
+            return 0
+        loaded = 0
+        with self._lock:
+            for row in rows:
+                if row.get("suppressed"):
+                    key = (str(row["engine_id"]), str(row["rule_id"]))
+                    self._suppressed.add(key)
+                    loaded += 1
+        if loaded:
+            logger.info("Loaded %d FP suppressions from persistent store", loaded)
+        return loaded
 
     # ------------------------------------------------------------------
     # Feedback
@@ -68,13 +97,34 @@ class FalsePositiveManager:
         with self._lock:
             return (engine_id, rule_id) in self._suppressed
 
+    def suppress(self, engine_id: str, rule_id: str = "model") -> bool:
+        """Explicitly suppress a rule/engine (analyst-driven). Returns True if newly suppressed."""
+        key = (engine_id, rule_id)
+        with self._lock:
+            already = key in self._suppressed
+            self._suppressed.add(key)
+        if not already and self._ops_store is not None:
+            try:
+                self._ops_store.save_fp_suppression(engine_id, rule_id)
+            except Exception:
+                logger.exception("Failed to persist FP suppression engine=%s rule=%s", engine_id, rule_id)
+        logger.info("Suppressed engine=%s rule=%s (explicit)", engine_id, rule_id)
+        return not already
+
     def unsuppress(self, engine_id: str, rule_id: str = "model") -> bool:
         with self._lock:
             key = (engine_id, rule_id)
             if key in self._suppressed:
                 self._suppressed.discard(key)
-                return True
-            return False
+                removed = True
+            else:
+                removed = False
+        if removed and self._ops_store is not None:
+            try:
+                self._ops_store.delete_fp_suppression(engine_id, rule_id)
+            except Exception:
+                logger.exception("Failed to delete FP suppression engine=%s rule=%s", engine_id, rule_id)
+        return removed
 
     # ------------------------------------------------------------------
     # Stats
@@ -123,3 +173,9 @@ class FalsePositiveManager:
                 rate,
                 total,
             )
+            # Persist outside lock to avoid potential deadlock on store call.
+            if self._ops_store is not None:
+                try:
+                    self._ops_store.save_fp_suppression(key[0], key[1])
+                except Exception:
+                    logger.exception("Failed to persist auto-suppression engine=%s rule=%s", key[0], key[1])

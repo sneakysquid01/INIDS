@@ -63,7 +63,7 @@ class ActionExecutor:
 
     def execute(self, decision_event: PolicyDecisionEvent, policy) -> ActionEvent | None:
         decision = str(decision_event.decision).strip().upper()
-        if decision not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
+        if decision not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT", "PENDING_BLOCK"}:
             return None
 
         target = self._normalize_ip(decision_event.risk.detection.source or "")
@@ -74,6 +74,28 @@ class ActionExecutor:
         ttl_seconds = int(decision_event.ttl_seconds or getattr(policy, "block_ttl_seconds", 300))
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat() if ttl_seconds > 0 else None
+
+        # PENDING_BLOCK: save for operator approval without executing.
+        if decision == "PENDING_BLOCK":
+            action_id = f"act_{uuid.uuid4().hex[:16]}"
+            action = ActionEvent(
+                decision=decision_event,
+                action="block",
+                target=target,
+                reason=decision_event.reason,
+                dry_run=False,
+                executed=False,
+                status="PENDING_APPROVAL",
+                adapter=self.adapter_name,
+                expires_at=expires_at,
+                created_at=now.isoformat(),
+            )
+            self._persist_action(action, action_id=action_id, executed_at=None)
+            self._emit_audit(
+                "pending_block",
+                f"target={target} reason={decision_event.reason} action_id={action_id}",
+            )
+            return action
 
         # Idempotency: skip if this target already has an active enforcement record.
         if self.ops_store is not None and decision in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
@@ -167,6 +189,48 @@ class ActionExecutor:
             "missing_in_firewall": len(missing),
             "orphan_firewall_rules": len(orphan),
         }
+
+    def approve_pending_block(self, action_id: str, policy, *, ttl_seconds: int | None = None) -> dict[str, Any]:
+        """Approve a PENDING_BLOCK action and execute it.
+
+        Returns a dict with ``ok``, ``action_id``, ``target``, and ``status``.
+        """
+        if self.ops_store is None:
+            return {"ok": False, "error": "no_ops_store"}
+
+        rows = self._fetchall_pending(action_id)
+        if not rows:
+            return {"ok": False, "error": "not_found"}
+
+        row = rows[0]
+        target = str(row.get("target") or row.get("ip") or "")
+        ip = self._normalize_ip(target)
+        if ip is None:
+            return {"ok": False, "error": "invalid_ip"}
+
+        ttl = int(ttl_seconds or row.get("ttl_seconds") or getattr(policy, "block_ttl_seconds", 300))
+        dry_run = bool(getattr(policy, "dry_run", False))
+        now = datetime.now(timezone.utc)
+
+        if dry_run:
+            self.ops_store.update_action_status(str(row["action_id"]), "DRY_RUN", executed_at=now.isoformat())
+            self._emit_audit("block_approved_dry_run", f"action_id={action_id} target={ip}")
+            return {"ok": True, "action_id": action_id, "target": ip, "status": "DRY_RUN"}
+
+        ok, status = self.block_ip(ip, ttl)
+        new_status = "ACTIVE" if ok else status.upper()
+        self.ops_store.update_action_status(str(row["action_id"]), new_status, executed_at=now.isoformat())
+        self._emit_audit("block_approved", f"action_id={action_id} target={ip} status={new_status} ok={ok}")
+        return {"ok": ok, "action_id": action_id, "target": ip, "status": new_status}
+
+    def _fetchall_pending(self, action_id: str) -> list[dict[str, Any]]:
+        """Fetch pending approval actions by action_id string."""
+        if self.ops_store is None:
+            return []
+        return self.ops_store._fetchall(
+            "SELECT * FROM actions WHERE action_id = :action_id AND lower(COALESCE(status, '')) = 'pending_approval'",
+            {"action_id": str(action_id)},
+        )
 
     def _persist_action(self, action: ActionEvent, *, action_id: str, executed_at: str | None) -> None:
         if self.ops_store is None:
