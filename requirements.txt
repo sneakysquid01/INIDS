@@ -12,3 +12,5 @@ scapy>=2.5.0
 requests>=2.31.0
 PyYAML>=6.0
 redis>=5.0.0
+flask-socketio>=5.3.0
+python-socketio>=5.9.0

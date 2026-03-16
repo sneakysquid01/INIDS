@@ -1,0 +1,561 @@
+<!-- INIDS Base Module Template
+     Reusable panel component for all 15 demo modules.
+     Each module inherits this structure for consistent UX.
+-->
+
+<div class="module-panel" data-module-id="{{ module_id }}">
+    <!-- Module Header -->
+    <div class="module-header">
+        <div class="header-left">
+            <h4 class="module-name">{{ module_name }}</h4>
+            <div class="module-breadcrumb">
+                <span class="breadcrumb-item">Dashboard</span>
+                <span class="breadcrumb-sep">/</span>
+                <span class="breadcrumb-item">{{ module_category }}</span>
+                <span class="breadcrumb-sep">/</span>
+                <span class="breadcrumb-item active">{{ module_name }}</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <button class="btn-icon" id="moduleRefresh" title="Refresh module">
+                <span>⟳</span>
+            </button>
+            <button class="btn-icon" id="moduleFullscreen" title="Fullscreen">
+                <span>⛶</span>
+            </button>
+            <button class="btn-icon" id="moduleSettings" title="Module settings">
+                <span>⚙️</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Module Context Bar (optional) -->
+    <div class="module-context-bar" id="contextBar" style="display: none;">
+        <div class="context-item">
+            <span class="context-label">Status:</span>
+            <span class="context-value" id="contextStatus">-</span>
+        </div>
+        <div class="context-item">
+            <span class="context-label">Last Updated:</span>
+            <span class="context-value" id="contextUpdated">-</span>
+        </div>
+        <div class="context-item">
+            <span class="context-label">Data Points:</span>
+            <span class="context-value" id="contextDataPoints">-</span>
+        </div>
+    </div>
+
+    <!-- Module Content Area -->
+    <div class="module-content">
+        <!-- Loading State -->
+        <div class="module-loading" id="moduleLoading">
+            <div class="spinner"></div>
+            <p>Loading module...</p>
+        </div>
+
+        <!-- Main Content (populated by module) -->
+        <div class="module-main" id="moduleMain" style="display: none;">
+            <!-- Module-specific content goes here -->
+        </div>
+
+        <!-- Error State -->
+        <div class="module-error" id="moduleError" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">Module Error</div>
+            <div class="error-message" id="errorMessage">-</div>
+            <button class="btn btn-sm btn-primary mt-3" id="errorRetry">Retry</button>
+        </div>
+
+        <!-- Empty State -->
+        <div class="module-empty" id="moduleEmpty" style="display: none;">
+            <div class="empty-icon">📭</div>
+            <div class="empty-title">No Data Available</div>
+            <div class="empty-message">{{ empty_message | default("Check back soon or trigger demo mode.") }}</div>
+        </div>
+    </div>
+
+    <!-- Module Footer / Actions -->
+    <div class="module-footer">
+        <div class="footer-left">
+            <div class="module-status-indicator" id="moduleStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </div>
+        <div class="footer-right">
+            <div class="module-actions">
+                <!-- Actions populated by module JS -->
+                <slot name="actions"></slot>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Module CSS (Inline for simplicity) -->
+<style>
+.module-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--secondary-dark, #1a1f3a);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.module-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--tertiary-dark, #252d45);
+    border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.header-left {
+    flex: 1;
+}
+
+.module-name {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--accent-blue, #00d4ff);
+}
+
+.module-breadcrumb {
+    font-size: 0.85rem;
+    color: var(--text-muted, #808080);
+    margin-top: 4px;
+}
+
+.breadcrumb-sep {
+    margin: 0 4px;
+    opacity: 0.5;
+}
+
+.breadcrumb-item.active {
+    color: var(--accent-blue, #00d4ff);
+    font-weight: 500;
+}
+
+.header-right {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-icon {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    color: var(--text-light, #e0e0e0);
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+
+.btn-icon:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: var(--accent-blue, #00d4ff);
+    color: var(--accent-blue, #00d4ff);
+}
+
+.module-context-bar {
+    display: flex;
+    gap: 20px;
+    padding: 8px 20px;
+    background: rgba(0, 212, 255, 0.05);
+    border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+    font-size: 0.85rem;
+}
+
+.context-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.context-label {
+    color: var(--text-muted, #808080);
+    font-weight: 500;
+}
+
+.context-value {
+    color: var(--text-light, #e0e0e0);
+    font-family: monospace;
+}
+
+.module-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    position: relative;
+}
+
+.module-loading,
+.module-error,
+.module-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0, 212, 255, 0.2);
+    border-top-color: var(--accent-blue, #00d4ff);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.module-loading p {
+    margin-top: 16px;
+    color: var(--text-muted, #808080);
+}
+
+.error-icon,
+.empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+}
+
+.error-title,
+.empty-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-light, #e0e0e0);
+    margin-bottom: 8px;
+}
+
+.error-message,
+.empty-message {
+    color: var(--text-muted, #808080);
+    text-align: center;
+    max-width: 300px;
+}
+
+.module-main {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.module-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: var(--tertiary-dark, #252d45);
+    border-top: 1px solid rgba(0, 212, 255, 0.1);
+    font-size: 0.85rem;
+}
+
+.module-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted, #808080);
+}
+
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--accent-green, #44ff44);
+    box-shadow: 0 0 6px rgba(68, 255, 68, 0.5);
+}
+
+.status-dot.status-loading {
+    background-color: var(--accent-yellow, #ffaa00);
+    animation: pulse 1.5s infinite;
+}
+
+.status-dot.status-error {
+    background-color: var(--accent-red, #ff4444);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.module-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Scrollbar styling */
+.module-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.module-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.module-content::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.2);
+    border-radius: 3px;
+}
+
+.module-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 212, 255, 0.3);
+}
+
+/* Fullscreen mode */
+.module-fullscreen .module-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    z-index: 10000;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .module-header {
+        padding: 12px 16px;
+    }
+
+    .module-name {
+        font-size: 1.1rem;
+    }
+
+    .module-breadcrumb {
+        display: none;
+    }
+
+    .module-context-bar {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .header-right {
+        gap: 4px;
+    }
+
+    .btn-icon {
+        padding: 4px 6px;
+        font-size: 0.8rem;
+    }
+}
+</style>
+
+<!-- WebSocket Client Library (Socket.IO) -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<!-- Module JavaScript Base (Inline Template) -->
+<script>
+class BaseModuleController {
+    constructor(moduleElement, config = {}) {
+        this.element = moduleElement;
+        this.config = config;
+        this.state = {
+            loading: true,
+            error: null,
+            empty: false,
+            lastUpdate: null
+        };
+        this.socket = null;
+        this.pollInterval = null;
+        this.useWebSocket = config.useWebSocket !== false;
+        this.setupElements();
+        this.attachListeners();
+        this.initializeConnection();
+    }
+
+    initializeConnection() {
+        // Try to connect via WebSocket if available
+        if (this.useWebSocket && typeof io !== 'undefined') {
+            try {
+                this.socket = io();
+                this.socket.on('connect', () => {
+                    console.log('WebSocket connected');
+                    if (this.config.moduleId) {
+                        this.socket.emit('subscribe_module', { module_id: this.config.moduleId });
+                    }
+                    this.onSocketReady();
+                });
+                this.socket.on('module_update', (data) => {
+                    if (data.module_id === this.config.moduleId) {
+                        this.onDataUpdate(data.data);
+                    }
+                });
+                this.socket.on('disconnect', () => {
+                    console.warn('WebSocket disconnected, falling back to polling');
+                    this.fallbackToPolling();
+                });
+            } catch (e) {
+                console.warn('WebSocket unavailable, using polling:', e);
+                this.fallbackToPolling();
+            }
+        } else {
+            this.fallbackToPolling();
+        }
+    }
+
+    fallbackToPolling() {
+        // Already handled by subclasses calling startLiveUpdates()
+        this.socket = null;
+    }
+
+    onSocketReady() {
+        // Override in subclasses if needed
+    }
+
+    onDataUpdate(data) {
+        // Override in subclasses to handle real-time updates
+    }
+
+    broadcastViaSocket(event, data) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit(event, data);
+        }
+    }
+
+    setupElements() {
+        this.loading = this.element.querySelector('#moduleLoading');
+        this.main = this.element.querySelector('#moduleMain');
+        this.error = this.element.querySelector('#moduleError');
+        this.empty = this.element.querySelector('#moduleEmpty');
+        this.contextBar = this.element.querySelector('#contextBar');
+        this.errorMessage = this.element.querySelector('#errorMessage');
+        this.statusDot = this.element.querySelector('.status-dot');
+        this.statusText = this.element.querySelector('.status-text');
+    }
+
+    attachListeners() {
+        this.element.querySelector('#moduleRefresh')?.addEventListener('click', () => this.refresh());
+        this.element.querySelector('#moduleFullscreen')?.addEventListener('click', () => this.toggleFullscreen());
+        this.element.querySelector('#moduleSettings')?.addEventListener('click', () => this.openSettings());
+        this.element.querySelector('#errorRetry')?.addEventListener('click', () => this.retry());
+    }
+
+    showLoading(message = 'Loading module...') {
+        this.setState({ loading: true, error: null, empty: false });
+        this.loading.style.display = 'flex';
+        this.main.style.display = 'none';
+        this.error.style.display = 'none';
+        this.empty.style.display = 'none';
+    }
+
+    showContent(content) {
+        this.setState({ loading: false, error: null, empty: false });
+        if (typeof content === 'string') {
+            this.main.innerHTML = content;
+        } else {
+            this.main.appendChild(content);
+        }
+        this.loading.style.display = 'none';
+        this.main.style.display = 'flex';
+        this.error.style.display = 'none';
+        this.empty.style.display = 'none';
+        this.setStatus('ready');
+    }
+
+    showError(message) {
+        this.setState({ loading: false, error: message });
+        this.errorMessage.textContent = message;
+        this.loading.style.display = 'none';
+        this.main.style.display = 'none';
+        this.error.style.display = 'flex';
+        this.empty.style.display = 'none';
+        this.setStatus('error');
+    }
+
+    showEmpty(message = 'No data available') {
+        this.setState({ loading: false, error: null, empty: true });
+        this.element.querySelector('.empty-message').textContent = message;
+        this.loading.style.display = 'none';
+        this.main.style.display = 'none';
+        this.error.style.display = 'none';
+        this.empty.style.display = 'flex';
+    }
+
+    setState(newState) {
+        this.state = { ...this.state, ...newState, lastUpdate: new Date().toISOString() };
+        this.updateContextBar();
+    }
+
+    updateContextBar() {
+        if (this.contextBar) {
+            this.contextBar.style.display = 'flex';
+            const status = this.state.loading ? 'loading' : this.state.error ? 'error' : 'active';
+            document.getElementById('contextStatus').textContent = status.toUpperCase();
+            document.getElementById('contextUpdated').textContent = new Date(this.state.lastUpdate).toLocaleTimeString();
+        }
+    }
+
+    setStatus(status) {
+        // 'ready', 'loading', 'error'
+        this.statusDot?.classList.remove('status-loading', 'status-error');
+        this.statusText?.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        if (status === 'loading') {
+            this.statusDot?.classList.add('status-loading');
+        } else if (status === 'error') {
+            this.statusDot?.classList.add('status-error');
+        }
+    }
+
+    async refresh() {
+        this.showLoading('Refreshing...');
+        try {
+            await this.loadData();
+            this.showContent(this.renderContent());
+        } catch (error) {
+            this.showError('Refresh failed: ' + error.message);
+        }
+    }
+
+    retry() {
+        this.refresh();
+    }
+
+    toggleFullscreen() {
+        document.documentElement.classList.toggle('module-fullscreen');
+    }
+
+    openSettings() {
+        alert('Module settings coming soon');
+    }
+
+    // Override in subclasses
+    async loadData() {
+        throw new Error('loadData() must be implemented');
+    }
+
+    renderContent() {
+        throw new Error('renderContent() must be implemented');
+    }
+
+    cleanup() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        if (this.socket) {
+            this.socket.emit('unsubscribe_module', { module_id: this.config.moduleId });
+            this.socket = null;
+        }
+    }
+
+    onClose() {
+        this.cleanup();
+    }
+}
+
+// Export for use in modules
+if (typeof window !== 'undefined') {
+    window.BaseModuleController = BaseModuleController;
+}
+</script>

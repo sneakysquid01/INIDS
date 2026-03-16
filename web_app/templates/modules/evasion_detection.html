@@ -1,0 +1,154 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="evasion-detection-module">
+    <div class="evasion-stats">
+        <div class="stat-card">
+            <div class="stat-label">Evasion Attempts</div>
+            <div class="stat-value" id="evasion-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Techniques Detected</div>
+            <div class="stat-value" id="tech-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Detection Rate</div>
+            <div class="stat-value" id="detection-rate">0%</div>
+        </div>
+    </div>
+
+    <div class="techniques-grid" id="techniques-grid">
+        <div class="empty-state">Loading evasion techniques...</div>
+    </div>
+</div>
+
+<style>
+.evasion-detection-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.evasion-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #ffd43b;
+}
+
+.techniques-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.technique-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.technique-name {
+    font-weight: 600;
+    color: #e8e8e8;
+    margin-bottom: 0.5rem;
+}
+
+.technique-count {
+    font-size: 1.5rem;
+    color: #ffd43b;
+    font-weight: bold;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+
+<script>
+class EvasionDetectionController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/evasion-detection');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateEvasionDetection();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateEvasionDetection())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateEvasionDetection() {
+        const data = await this.loadData();
+        const techniques = data.data.techniques || {};
+        
+        document.getElementById('evasion-count').textContent = 
+            Object.values(techniques).reduce((a, t) => a + (t.count || 0), 0);
+        document.getElementById('tech-count').textContent = Object.keys(techniques).length;
+        document.getElementById('detection-rate').textContent = (data.data.detection_rate || 0) + '%';
+
+        const grid = document.getElementById('techniques-grid');
+        if (Object.keys(techniques).length === 0) {
+            grid.innerHTML = '<div class="empty-state">No evasion detected</div>';
+            return;
+        }
+
+        grid.innerHTML = Object.entries(techniques).map(([name, data]) => `
+            <div class="technique-card">
+                <div class="technique-name">${name}</div>
+                <div class="technique-count">${data.count || 0}</div>
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new EvasionDetectionController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new EvasionDetectionController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

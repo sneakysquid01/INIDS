@@ -1,0 +1,161 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="behavioral-profiling-module">
+    <div class="profile-stats">
+        <div class="stat-card">
+            <div class="stat-label">Users Profiled</div>
+            <div class="stat-value" id="user-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Anomalies Detected</div>
+            <div class="stat-value" id="anomaly-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Profile Confidence</div>
+            <div class="stat-value" id="confidence">0%</div>
+        </div>
+    </div>
+
+    <div class="profiles-grid" id="profiles-grid">
+        <div class="empty-state">Loading profiles...</div>
+    </div>
+</div>
+
+<style>
+.behavioral-profiling-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.profile-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.profiles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.profile-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.profile-name {
+    font-weight: 600;
+    color: #e8e8e8;
+    margin-bottom: 0.5rem;
+}
+
+.profile-status {
+    font-size: 0.9rem;
+    color: #4ecdc4;
+}
+
+.profile-risk {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #888;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+
+<script>
+class BehavioralProfilingController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/behavioral-profiling');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateProfiles();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateProfiles())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateProfiles() {
+        const data = await this.loadData();
+        const profiles = data.data.profiles || [];
+        
+        document.getElementById('user-count').textContent = profiles.length;
+        document.getElementById('anomaly-count').textContent = 
+            profiles.filter(p => p.anomaly).length;
+        document.getElementById('confidence').textContent = 
+            Math.round((data.data.avg_confidence || 0) * 100);
+
+        const grid = document.getElementById('profiles-grid');
+        if (profiles.length === 0) {
+            grid.innerHTML = '<div class="empty-state">No profiles</div>';
+            return;
+        }
+
+        grid.innerHTML = profiles.slice(0, 9).map(profile => `
+            <div class="profile-card">
+                <div class="profile-name">${profile.name || 'Unknown'}</div>
+                <div class="profile-status">${profile.activity_level || 'Active'}</div>
+                <div class="profile-risk">Risk: ${profile.risk_score || 0}%</div>
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new BehavioralProfilingController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new BehavioralProfilingController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

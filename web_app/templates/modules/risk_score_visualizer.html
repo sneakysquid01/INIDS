@@ -1,0 +1,651 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="risk-score-module">
+    <!-- Main Risk Score Gauge -->
+    <div class="gauge-section">
+        <div class="animated-gauge">
+            <svg viewBox="0 0 200 120" class="risk-gauge-svg">
+                <!-- Background track -->
+                <path d="M 30 100 A 70 70 0 0 1 170 100" class="gauge-track" fill="none" stroke="#333" stroke-width="8"/>
+                <!-- Benign zone -->
+                <path d="M 30 100 A 70 70 0 0 1 70 35" class="gauge-zone benign-zone" fill="none" stroke="#51cf66" stroke-width="8" opacity="0.3"/>
+                <!-- Suspicious zone -->
+                <path d="M 70 35 A 70 70 0 0 1 130 35" class="gauge-zone suspicious-zone" fill="none" stroke="#ffd43b" stroke-width="8" opacity="0.3"/>
+                <!-- Malicious zone -->
+                <path d="M 130 35 A 70 70 0 0 1 170 100" class="gauge-zone malicious-zone" fill="none" stroke="#ff6b6b" stroke-width="8" opacity="0.3"/>
+                <!-- Needle -->
+                <g id="needle-group" transform="translate(100, 100)">
+                    <line x1="0" y1="0" x2="0" y2="-65" class="needle-line" stroke="#4ecdc4" stroke-width="3" stroke-linecap="round"/>
+                    <circle cx="0" cy="0" r="5" class="needle-center" fill="#4ecdc4"/>
+                </g>
+                <!-- Center label -->
+                <text x="100" y="110" text-anchor="middle" class="gauge-center-text">--</text>
+            </svg>
+            <div class="gauge-labels">
+                <div class="label benign">BENIGN</div>
+                <div class="label suspicious">SUSPICIOUS</div>
+                <div class="label malicious">MALICIOUS</div>
+            </div>
+        </div>
+        <div class="gauge-details">
+            <div class="detail-stat">
+                <span class="detail-label">Average Risk Score</span>
+                <span class="detail-value" id="avg-risk">0.00</span>
+            </div>
+            <div class="detail-stat">
+                <span class="detail-label">Max Risk Detected</span>
+                <span class="detail-value" id="max-risk">0.00</span>
+            </div>
+            <div class="detail-stat">
+                <span class="detail-label">Risk Trend</span>
+                <span class="detail-value trend" id="risk-trend">→</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Factor Breakdown -->
+    <div class="factors-section">
+        <h3 class="section-title">Risk Factor Breakdown</h3>
+        <div class="factors-grid">
+            <!-- Payload Analysis -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Payload Analysis</span>
+                    <span class="factor-score" id="payload-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="payload-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="payload-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+
+            <!-- Behavioral Anomaly -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Behavioral Anomaly</span>
+                    <span class="factor-score" id="behavior-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="behavior-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="behavior-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+
+            <!-- Protocol Violation -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Protocol Violation</span>
+                    <span class="factor-score" id="protocol-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="protocol-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="protocol-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+
+            <!-- Threat Intelligence -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Threat Intelligence</span>
+                    <span class="factor-score" id="threat-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="threat-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="threat-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+
+            <!-- Statistical Outlier -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Statistical Outlier</span>
+                    <span class="factor-score" id="outlier-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="outlier-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="outlier-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+
+            <!-- Entropy Analysis -->
+            <div class="factor-card">
+                <div class="factor-header">
+                    <span class="factor-name">Entropy Analysis</span>
+                    <span class="factor-score" id="entropy-score">0%</span>
+                </div>
+                <div class="factor-bar">
+                    <div class="factor-fill" id="entropy-fill"></div>
+                </div>
+                <div class="factor-details">
+                    <span id="entropy-detail">Analyzing patterns...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Distribution Timeline -->
+    <div class="timeline-section">
+        <h3 class="section-title">Risk Score Timeline (Last 20 Events)</h3>
+        <div class="timeline-container">
+            <div class="timeline-track" id="timeline-track">
+                <div class="timeline-items" id="timeline-items">
+                    <div class="timeline-empty">Loading events...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.risk-score-module {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    padding: 1.5rem;
+}
+
+.gauge-section {
+    display: flex;
+    gap: 2rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 8px;
+    border: 1px solid #0f3460;
+    align-items: center;
+}
+
+.animated-gauge {
+    flex: 0 0 300px;
+    position: relative;
+}
+
+.risk-gauge-svg {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 0 15px rgba(78, 205, 196, 0.3));
+}
+
+.gauge-track {
+    opacity: 0.2;
+}
+
+.gauge-zone {
+    filter: drop-shadow(0 0 8px currentColor);
+}
+
+.needle-line {
+    transform-origin: 100px 100px;
+    animation: rotateNeedle 0.8s ease-out forwards;
+    filter: drop-shadow(0 0 6px rgba(78, 205, 196, 0.8));
+}
+
+@keyframes rotateNeedle {
+    from {
+        transform: rotate(-135deg);
+    }
+}
+
+.needle-center {
+    filter: drop-shadow(0 0 8px rgba(78, 205, 196, 0.8));
+}
+
+.gauge-center-text {
+    font-size: 18px;
+    font-weight: bold;
+    fill: #4ecdc4;
+    filter: drop-shadow(0 0 8px rgba(78, 205, 196, 0.5));
+}
+
+.gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    padding: 0 1rem;
+}
+
+.gauge-labels .label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.gauge-labels .label.benign {
+    color: #51cf66;
+}
+
+.gauge-labels .label.suspicious {
+    color: #ffd43b;
+}
+
+.gauge-labels .label.malicious {
+    color: #ff6b6b;
+}
+
+.gauge-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.detail-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(78, 205, 196, 0.05);
+    border: 1px solid rgba(78, 205, 196, 0.2);
+    border-radius: 6px;
+}
+
+.detail-label {
+    font-size: 0.85rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.detail-value.trend {
+    font-size: 2rem;
+}
+
+.factors-section {
+    padding: 1rem;
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e8e8e8;
+    margin: 0 0 1rem 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.factors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.factor-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.25rem;
+    transition: all 0.3s ease;
+    animation: slideIn 0.4s ease-out forwards;
+}
+
+.factor-card:hover {
+    border-color: #4ecdc4;
+    box-shadow: 0 0 12px rgba(78, 205, 196, 0.2);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.factor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #16477f;
+}
+
+.factor-name {
+    font-weight: 600;
+    color: #e8e8e8;
+    font-size: 0.95rem;
+}
+
+.factor-score {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.factor-bar {
+    height: 8px;
+    background: rgba(78, 205, 196, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+}
+
+.factor-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ecdc4, #1dd1a1);
+    width: 0%;
+    border-radius: 4px;
+    transition: width 0.6s ease-out;
+    box-shadow: 0 0 8px rgba(78, 205, 196, 0.6);
+}
+
+.factor-details {
+    font-size: 0.8rem;
+    color: #888;
+    min-height: 1.2rem;
+}
+
+.timeline-section {
+    padding: 1rem;
+    border-top: 1px solid #16477f;
+}
+
+.timeline-container {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+.timeline-track {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    min-width: 100%;
+    height: 120px;
+    padding: 1rem 0;
+    border-bottom: 1px solid #16477f;
+}
+
+.timeline-items {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+    align-items: flex-end;
+}
+
+.timeline-item {
+    flex: 1;
+    min-width: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.timeline-bar {
+    width: 100%;
+    background: linear-gradient(180deg, #4ecdc4, #1dd1a1);
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+    max-height: 100px;
+    transition: all 0.3s ease;
+    animation: barGrow 0.4s ease-out;
+    cursor: pointer;
+}
+
+.timeline-bar:hover {
+    filter: brightness(1.3);
+}
+
+.timeline-bar.benign {
+    background: linear-gradient(180deg, #51cf66, #37b24d);
+}
+
+.timeline-bar.suspicious {
+    background: linear-gradient(180deg, #ffd43b, #f59f00);
+}
+
+.timeline-bar.malicious {
+    background: linear-gradient(180deg, #ff6b6b, #f03e3e);
+}
+
+@keyframes barGrow {
+    from {
+        height: 0;
+    }
+}
+
+.timeline-value {
+    font-size: 0.7rem;
+    color: #888;
+    text-align: center;
+    width: 100%;
+    word-break: break-all;
+}
+
+.timeline-empty {
+    width: 100%;
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@media (max-width: 768px) {
+    .gauge-section {
+        flex-direction: column;
+    }
+
+    .animated-gauge {
+        flex: 0 0 250px;
+    }
+
+    .factors-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<script>
+class RiskScoreController extends BaseModuleController {
+    constructor(containerId, config = {}) {
+        config.moduleId = 'risk-score-visualizer';
+        const moduleElement = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
+        super(moduleElement, config);
+        this.events = [];
+        this.riskFactors = {};
+        this.prevAvgRisk = 0;
+        this.init();
+    }
+
+    init() {
+        this.showLoading('Loading risk score visualizer...');
+        this.loadData().then(data => {
+            if (data && data.data) {
+                this.events = data.data.recent_events || [];
+                this.riskFactors = data.data.risk_factors || {};
+            }
+            this.startLiveUpdates();
+        }).catch(error => {
+            this.showError(error.message);
+        });
+    }
+
+    onSocketReady() {
+        // Request fresh data via WebSocket when socket connects
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('request_module_data', { module_id: 'risk-score-visualizer' });
+        }
+    }
+
+    onDataUpdate(data) {
+        // Handle real-time updates from WebSocket
+        if (data.recent_events || data.risk_factors) {
+            this.events = data.recent_events || this.events;
+            this.riskFactors = data.risk_factors || this.riskFactors;
+            this.updateRiskOverview();
+            this.updateRiskFactors();
+            this.updateTimeline();
+        }
+    }
+
+    async loadData() {
+        const response = await fetch('/api/modules/risk-score-visualizer');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    mapVerdict(riskScore) {
+        if (riskScore >= 0.7) return 'malicious';
+        if (riskScore >= 0.4) return 'suspicious';
+        return 'benign';
+    }
+
+    startLiveUpdates() {
+        this.updateRiskOverview();
+        this.updateRiskFactors();
+        this.updateTimeline();
+        
+        // If WebSocket is not available, fall back to polling every 2.5 seconds
+        if (!this.socket || !this.socket.connected) {
+            this.pollInterval = setInterval(() => {
+                this.loadData()
+                    .then(data => {
+                        if (data && data.data) {
+                            this.events = data.data.recent_events || [];
+                            this.riskFactors = data.data.risk_factors || {};
+                            this.updateRiskOverview();
+                            this.updateRiskFactors();
+                            this.updateTimeline();
+                        }
+                    })
+                    .catch(error => console.error('Poll failed:', error));
+            }, 2500);
+        }
+
+        // Show content if element structure exists
+        if (this.element.innerHTML.trim()) {
+            this.setState({ loading: false, error: null });
+            this.setStatus('ready');
+        }
+    }
+
+    updateRiskOverview() {
+        if (this.events.length === 0) return;
+
+        const scores = this.events.map(e => e.risk_score || 0);
+        const avgRisk = scores.reduce((a, b) => a + b, 0) / scores.length;
+        const maxRisk = Math.max(...scores);
+        const prevAvg = this.prevAvgRisk;
+
+        document.getElementById('avg-risk').textContent = avgRisk.toFixed(2);
+        document.getElementById('max-risk').textContent = maxRisk.toFixed(2);
+
+        const trendEl = document.getElementById('risk-trend');
+        if (avgRisk > prevAvg + 0.05) {
+            trendEl.textContent = '↑';
+            trendEl.style.color = '#ff6b6b';
+        } else if (avgRisk < prevAvg - 0.05) {
+            trendEl.textContent = '↓';
+            trendEl.style.color = '#51cf66';
+        } else {
+            trendEl.textContent = '→';
+            trendEl.style.color = '#ffd43b';
+        }
+
+        this.prevAvgRisk = avgRisk;
+        this.rotateNeedle(avgRisk);
+    }
+
+    rotateNeedle(riskScore) {
+        const needleGroup = document.getElementById('needle-group');
+        const gaugeText = document.querySelector('.gauge-center-text');
+        if (needleGroup) {
+            const rotation = -135 + (riskScore * 270);
+            needleGroup.style.transform = `translate(100, 100) rotate(${rotation}deg)`;
+        }
+        if (gaugeText) {
+            gaugeText.textContent = Math.round(riskScore * 100) + '%';
+            const verdict = this.mapVerdict(riskScore);
+            const color = verdict === 'malicious' ? '#ff6b6b' : 
+                          verdict === 'suspicious' ? '#ffd43b' : '#51cf66';
+            gaugeText.style.fill = color;
+            gaugeText.style.filter = `drop-shadow(0 0 8px ${color}80)`;
+        }
+    }
+
+    updateRiskFactors() {
+        const factors = [
+            { name: 'payload', label: 'Payload Analysis', detail: 'Pattern-based analysis' },
+            { name: 'behavior', label: 'Behavioral Anomaly', detail: 'Deviation detection' },
+            { name: 'protocol', label: 'Protocol Violation', detail: 'RFC compliance' },
+            { name: 'threat', label: 'Threat Intelligence', detail: 'Indicator matching' },
+            { name: 'outlier', label: 'Statistical Outlier', detail: 'Distribution analysis' },
+            { name: 'entropy', label: 'Entropy Analysis', detail: 'Randomness measure' }
+        ];
+
+        factors.forEach(factor => {
+            const factorData = this.riskFactors[factor.name] || { score: 0, detail: factor.detail };
+            const score = Math.min(factorData.score || 0, 1);
+            
+            const scoreEl = document.getElementById(`${factor.name}-score`);
+            const fillEl = document.getElementById(`${factor.name}-fill`);
+            const detailEl = document.getElementById(`${factor.name}-detail`);
+
+            if (scoreEl) scoreEl.textContent = Math.round(score * 100) + '%';
+            if (fillEl) fillEl.style.width = (score * 100) + '%';
+            if (detailEl) detailEl.textContent = factorData.detail || factor.detail;
+        });
+    }
+
+    updateTimeline() {
+        const container = document.getElementById('timeline-items');
+        if (!container || this.events.length === 0) return;
+
+        const recentEvents = this.events.slice(-20).reverse();
+        const maxScore = Math.max(...recentEvents.map(e => e.risk_score || 0), 0.01);
+
+        container.innerHTML = recentEvents.map((event, idx) => {
+            const riskScore = event.risk_score || 0;
+            const height = (riskScore / maxScore) * 100;
+            const verdict = this.mapVerdict(riskScore);
+            
+            return `
+                <div class="timeline-item" style="animation-delay: ${idx * 30}ms">
+                    <div class="timeline-bar ${verdict}" style="height: ${height}px;" 
+                         title="${event.source_ip || 'Unknown'}: ${riskScore.toFixed(2)}"></div>
+                    <div class="timeline-value">${riskScore.toFixed(2)}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.cleanup();
+    }
+}
+
+// Module initialization
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new RiskScoreController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new RiskScoreController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

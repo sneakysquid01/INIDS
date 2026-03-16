@@ -1,0 +1,237 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="auto-blocking-module">
+    <div class="blocking-stats">
+        <div class="stat-card">
+            <div class="stat-label">Total Blocked</div>
+            <div class="stat-value" id="total-blocked">0</div>
+            <div class="stat-unit">events</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Block Time</div>
+            <div class="stat-value" id="avg-block-time">0</div>
+            <div class="stat-unit">ms</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Success Rate</div>
+            <div class="stat-value" id="success-rate">0%</div>
+            <div class="stat-unit">preventive</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Active Blocks</div>
+            <div class="stat-value" id="active-blocks">0</div>
+            <div class="stat-unit">ongoing</div>
+        </div>
+    </div>
+
+    <div class="timeline-section">
+        <h3>Detection → Block Pipeline</h3>
+        <div class="block-timeline" id="block-timeline">
+            <div class="empty-state">Loading block events...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.auto-blocking-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.blocking-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2.2rem;
+    font-weight: bold;
+    color: #ff6b6b;
+    margin-bottom: 0.25rem;
+}
+
+.stat-unit {
+    color: #666;
+    font-size: 0.75rem;
+}
+
+.timeline-section h3 {
+    color: #e8e8e8;
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.block-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.block-item {
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #ff6b6b;
+    border-radius: 4px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.block-pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    font-size: 0.9rem;
+    color: #a8a8a8;
+}
+
+.pipeline-step {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.step-icon {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ecdc4;
+}
+
+.step-label {
+    color: #888;
+    font-size: 0.85rem;
+}
+
+.block-time {
+    padding: 0.5rem 1rem;
+    background: rgba(255, 107, 107, 0.2);
+    border-radius: 4px;
+    color: #ff6b6b;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+</style>
+
+<script>
+class AutoBlockingController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/auto-blocking');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateBlockTimeline();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => {
+                    this.updateBlockStats(data.data);
+                    this.updateBlockTimeline();
+                })
+                .catch(error => console.error('Poll failed:', error));
+        }, 2500);
+    }
+
+    updateBlockStats(data) {
+        const events = data.block_events || [];
+        document.getElementById('total-blocked').textContent = events.length;
+        document.getElementById('active-blocks').textContent = events.filter(e => e.status === 'active').length;
+        
+        if (events.length > 0) {
+            const avgTime = events.reduce((a, e) => a + (e.block_time || 0), 0) / events.length;
+            document.getElementById('avg-block-time').textContent = Math.round(avgTime);
+            const successCount = events.filter(e => e.success).length;
+            const rate = Math.round((successCount / events.length) * 100);
+            document.getElementById('success-rate').textContent = rate + '%';
+        }
+    }
+
+    async updateBlockTimeline() {
+        const data = await this.loadData();
+        const events = (data.data.block_events || []).slice(-10).reverse();
+        const container = document.getElementById('block-timeline');
+        
+        if (events.length === 0) {
+            container.innerHTML = '<div class="empty-state">No block events</div>';
+            return;
+        }
+
+        container.innerHTML = events.map(event => `
+            <div class="block-item">
+                <div class="block-pipeline">
+                    <div class="pipeline-step">
+                        <div class="step-icon"></div>
+                        <span class="step-label">DETECT</span>
+                    </div>
+                    <span style="color: #666;">→</span>
+                    <div class="pipeline-step">
+                        <div class="step-icon" style="background: #ffd43b;"></div>
+                        <span class="step-label">CLASSIFY</span>
+                    </div>
+                    <span style="color: #666;">→</span>
+                    <div class="pipeline-step">
+                        <div class="step-icon" style="background: #ff6b6b;"></div>
+                        <span class="step-label">BLOCK</span>
+                    </div>
+                </div>
+                <div class="block-time">${event.block_time || 0}ms</div>
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new AutoBlockingController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new AutoBlockingController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

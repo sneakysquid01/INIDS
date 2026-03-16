@@ -1,0 +1,679 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="multi-engine-voting-module">
+    <!-- Consensus Header -->
+    <div class="consensus-header">
+        <div class="consensus-gauge">
+            <div class="gauge-container">
+                <svg viewBox="0 0 100 60" class="gauge-svg">
+                    <path d="M 20 50 A 30 30 0 0 1 80 50" class="gauge-bg" fill="none" stroke="#444" stroke-width="4"/>
+                    <path d="M 20 50 A 30 30 0 0 1 80 50" class="gauge-fill" fill="none" stroke="#ff6b6b" stroke-width="4" stroke-dasharray="0 100"/>
+                    <text x="50" y="55" text-anchor="middle" class="gauge-text">--</text>
+                </svg>
+                <div class="gauge-label">Malicious Consensus</div>
+            </div>
+        </div>
+        <div class="consensus-stats">
+            <div class="stat-card">
+                <div class="stat-label">Unanimous Votes</div>
+                <div class="stat-value" id="unanimous-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Majority Agreement</div>
+                <div class="stat-value" id="majority-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Conflicting Opinions</div>
+                <div class="stat-value" id="conflict-count">0</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Engine Voting Grid -->
+    <div class="engines-section">
+        <h3 class="section-title">Engine Verdicts</h3>
+        <div class="engines-grid">
+            <!-- Random Forest -->
+            <div class="engine-card" data-engine="Random Forest">
+                <div class="engine-header">
+                    <span class="engine-name">Random Forest</span>
+                    <span class="engine-confidence" id="rf-confidence">0%</span>
+                </div>
+                <div class="verdict-indicator">
+                    <div class="verdict-dot" id="rf-verdict"></div>
+                    <span class="verdict-text" id="rf-text">Unknown</span>
+                </div>
+                <div class="engine-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Trees Active:</span>
+                        <span class="detail-value" id="rf-trees">0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Latency:</span>
+                        <span class="detail-value" id="rf-latency">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SVM -->
+            <div class="engine-card" data-engine="SVM">
+                <div class="engine-header">
+                    <span class="engine-name">Support Vector Machine</span>
+                    <span class="engine-confidence" id="svm-confidence">0%</span>
+                </div>
+                <div class="verdict-indicator">
+                    <div class="verdict-dot" id="svm-verdict"></div>
+                    <span class="verdict-text" id="svm-text">Unknown</span>
+                </div>
+                <div class="engine-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Margin:</span>
+                        <span class="detail-value" id="svm-margin">0.0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Latency:</span>
+                        <span class="detail-value" id="svm-latency">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Decision Tree -->
+            <div class="engine-card" data-engine="Decision Tree">
+                <div class="engine-header">
+                    <span class="engine-name">Decision Tree</span>
+                    <span class="engine-confidence" id="dt-confidence">0%</span>
+                </div>
+                <div class="verdict-indicator">
+                    <div class="verdict-dot" id="dt-verdict"></div>
+                    <span class="verdict-text" id="dt-text">Unknown</span>
+                </div>
+                <div class="engine-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Depth:</span>
+                        <span class="detail-value" id="dt-depth">0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Latency:</span>
+                        <span class="detail-value" id="dt-latency">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Naive Bayes -->
+            <div class="engine-card" data-engine="Naive Bayes">
+                <div class="engine-header">
+                    <span class="engine-name">Naive Bayes</span>
+                    <span class="engine-confidence" id="nb-confidence">0%</span>
+                </div>
+                <div class="verdict-indicator">
+                    <div class="verdict-dot" id="nb-verdict"></div>
+                    <span class="verdict-text" id="nb-text">Unknown</span>
+                </div>
+                <div class="engine-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Prior Prob:</span>
+                        <span class="detail-value" id="nb-prior">0.0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Latency:</span>
+                        <span class="detail-value" id="nb-latency">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logistic Regression -->
+            <div class="engine-card" data-engine="Logistic Regression">
+                <div class="engine-header">
+                    <span class="engine-name">Logistic Regression</span>
+                    <span class="engine-confidence" id="lr-confidence">0%</span>
+                </div>
+                <div class="verdict-indicator">
+                    <div class="verdict-dot" id="lr-verdict"></div>
+                    <span class="verdict-text" id="lr-text">Unknown</span>
+                </div>
+                <div class="engine-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Probability:</span>
+                        <span class="detail-value" id="lr-prob">0.0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Latency:</span>
+                        <span class="detail-value" id="lr-latency">0ms</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Decisions -->
+    <div class="decisions-section">
+        <h3 class="section-title">Recent Consensus Decisions</h3>
+        <div class="decisions-list" id="decisions-list">
+            <div class="empty-state">Loading decisions...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.multi-engine-voting-module {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    padding: 1.5rem;
+}
+
+.consensus-header {
+    display: flex;
+    gap: 2rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 8px;
+    border: 1px solid #0f3460;
+}
+
+.consensus-gauge {
+    flex: 0 0 280px;
+}
+
+.gauge-container {
+    position: relative;
+    width: 100%;
+    padding-top: 60%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.gauge-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.gauge-bg {
+    opacity: 0.2;
+}
+
+.gauge-fill {
+    transition: stroke-dasharray 0.5s ease;
+    filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.6));
+}
+
+.gauge-text {
+    font-size: 20px;
+    font-weight: bold;
+    fill: #ff6b6b;
+    text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+}
+
+.gauge-label {
+    margin-top: 1rem;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #a8a8a8;
+    font-weight: 600;
+}
+
+.consensus-stats {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: rgba(15, 52, 96, 0.4);
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: #a8a8a8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e8e8e8;
+    margin: 0 0 1rem 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.engines-section {
+    padding: 1rem;
+}
+
+.engines-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.engine-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1rem;
+    transition: all 0.3s ease;
+    animation: slideIn 0.4s ease-out forwards;
+}
+
+.engine-card:hover {
+    border-color: #4ecdc4;
+    box-shadow: 0 0 12px rgba(78, 205, 196, 0.3);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.engine-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #16477f;
+}
+
+.engine-name {
+    font-weight: 600;
+    color: #e8e8e8;
+    font-size: 0.95rem;
+}
+
+.engine-confidence {
+    font-size: 0.9rem;
+    color: #4ecdc4;
+    font-weight: 600;
+}
+
+.verdict-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.verdict-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #666;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.verdict-dot.benign {
+    background: #51cf66;
+    box-shadow: 0 0 8px rgba(81, 207, 102, 0.7);
+}
+
+.verdict-dot.suspicious {
+    background: #ffd43b;
+    box-shadow: 0 0 8px rgba(255, 212, 59, 0.7);
+}
+
+.verdict-dot.malicious {
+    background: #ff6b6b;
+    box-shadow: 0 0 8px rgba(255, 107, 107, 0.7);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.verdict-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #a8a8a8;
+}
+
+.engine-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.detail-label {
+    color: #888;
+}
+
+.detail-value {
+    color: #4ecdc4;
+    font-weight: 600;
+}
+
+.decisions-section {
+    padding: 1rem;
+    border-top: 1px solid #16477f;
+}
+
+.decisions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.decision-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: rgba(15, 52, 96, 0.2);
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.decision-info {
+    flex: 1;
+}
+
+.decision-time {
+    color: #888;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+.decision-verdict {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+}
+
+.decision-verdict.benign {
+    background: rgba(81, 207, 102, 0.2);
+    color: #51cf66;
+}
+
+.decision-verdict.suspicious {
+    background: rgba(255, 212, 59, 0.2);
+    color: #ffd43b;
+}
+
+.decision-verdict.malicious {
+    background: rgba(255, 107, 107, 0.2);
+    color: #ff6b6b;
+}
+
+@media (max-width: 768px) {
+    .consensus-header {
+        flex-direction: column;
+    }
+
+    .consensus-gauge {
+        flex: 0 0 auto;
+        max-width: 250px;
+        margin: 0 auto;
+    }
+
+    .engines-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+}
+</style>
+
+<script>
+class MultiEngineVotingController extends BaseModuleController {
+    constructor(containerId, config = {}) {
+        config.moduleId = 'multi-engine-voting';
+        const moduleElement = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
+        super(moduleElement, config);
+        this.engines = ['Random Forest', 'SVM', 'Decision Tree', 'Naive Bayes', 'Logistic Regression'];
+        this.engineData = {};
+        this.decisions = [];
+        this.init();
+    }
+
+    init() {
+        this.showLoading('Loading multi-engine voting...');
+        this.loadData().then(data => {
+            if (data && data.data) {
+                this.engineData = data.data.engines || {};
+                this.decisions = data.data.decisions || [];
+            }
+            this.startLiveUpdates();
+        }).catch(error => {
+            this.showError(error.message);
+        });
+    }
+
+    onSocketReady() {
+        // Request fresh data via WebSocket when socket connects
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('request_module_data', { module_id: 'multi-engine-voting' });
+        }
+    }
+
+    onDataUpdate(data) {
+        // Handle real-time updates from WebSocket
+        if (data.engines || data.decisions) {
+            this.engineData = data.engines || this.engineData;
+            this.decisions = data.decisions || this.decisions;
+            this.updateEngineVerdicts();
+            this.updateDecisions();
+        }
+    }
+
+    async loadData() {
+        const response = await fetch('/api/modules/multi-engine-voting');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    mapVerdict(classification) {
+        if (typeof classification === 'string') {
+            return classification.toLowerCase().includes('malicious') ? 'malicious' : 
+                   classification.toLowerCase().includes('suspicious') ? 'suspicious' : 'benign';
+        }
+        return 'benign';
+    }
+
+    startLiveUpdates() {
+        this.updateEngineVerdicts();
+        this.updateDecisions();
+        
+        // If WebSocket is not available, fall back to polling every 2.5 seconds
+        if (!this.socket || !this.socket.connected) {
+            this.pollInterval = setInterval(() => {
+                this.loadData()
+                    .then(data => {
+                        if (data && data.data) {
+                            this.engineData = data.data.engines || {};
+                            this.decisions = data.data.decisions || [];
+                            this.updateEngineVerdicts();
+                            this.updateDecisions();
+                        }
+                    })
+                    .catch(error => console.error('Poll failed:', error));
+            }, 2500);
+        }
+
+        // Show content if element structure exists
+        if (this.element.innerHTML.trim()) {
+            this.setState({ loading: false, error: null });
+            this.setStatus('ready');
+        }
+    }
+
+    updateEngineVerdicts() {
+        const engines = this.engineData.verdicts || {};
+        let mCount = 0, sCount = 0, bCount = 0;
+
+        this.engines.forEach(engine => {
+            const engineKey = engine.toLowerCase().replace(/\s+/g, '-');
+            const engineInfo = engines[engineKey] || {};
+            const verdict = this.mapVerdict(engineInfo.verdict || 'benign');
+            const confidence = engineInfo.confidence || 0;
+            
+            // Update verdict dot and text
+            const dotEl = document.getElementById(`${engineKey}-verdict`);
+            const textEl = document.getElementById(`${engineKey}-text`);
+            const confEl = document.getElementById(`${engineKey}-confidence`);
+            
+            if (dotEl) {
+                dotEl.className = `verdict-dot ${verdict}`;
+                dotEl.style.animation = 'none';
+                setTimeout(() => dotEl.style.animation = null, 10);
+            }
+            if (textEl) {
+                textEl.textContent = verdict.charAt(0).toUpperCase() + verdict.slice(1);
+                textEl.style.color = verdict === 'malicious' ? '#ff6b6b' : 
+                                      verdict === 'suspicious' ? '#ffd43b' : '#51cf66';
+            }
+            if (confEl) confEl.textContent = Math.round(confidence) + '%';
+
+            // Track votes
+            if (verdict === 'malicious') mCount++;
+            else if (verdict === 'suspicious') sCount++;
+            else if (verdict === 'benign') bCount++;
+
+            // Update engine-specific details
+            this.updateEngineDetails(engineKey, engineInfo);
+        });
+
+        this.updateConsensusGauge(mCount, sCount, bCount);
+        this.updateConsensusStats(mCount, sCount, bCount);
+    }
+
+    updateEngineDetails(engineKey, info) {
+        const detailMap = {
+            'random-forest': { field: 'trees', label: 'Trees' },
+            'svm': { field: 'margin', label: 'Margin' },
+            'decision-tree': { field: 'depth', label: 'Depth' },
+            'naive-bayes': { field: 'prior', label: 'Prior' },
+            'logistic-regression': { field: 'prob', label: 'Prob' }
+        };
+
+        const map = detailMap[engineKey];
+        if (map) {
+            const el = document.getElementById(`${engineKey}-${map.field}`);
+            if (el) {
+                const value = info[map.field] !== undefined ? info[map.field] : 0;
+                el.textContent = typeof value === 'number' ? 
+                    (value < 1 && value > 0 ? value.toFixed(2) : value) : value;
+            }
+        }
+
+        const latEl = document.getElementById(`${engineKey}-latency`);
+        if (latEl) latEl.textContent = (info.latency || 0) + 'ms';
+    }
+
+    updateConsensusGauge(mCount, sCount, bCount) {
+        const total = this.engines.length;
+        const maliciousPercent = total > 0 ? Math.round((mCount / total) * 100) : 0;
+        
+        const gaugeText = document.querySelector('.gauge-text');
+        const gaugeFill = document.querySelector('.gauge-fill');
+        
+        if (gaugeText) gaugeText.textContent = maliciousPercent + '%';
+        if (gaugeFill) {
+            const dasharray = (maliciousPercent / 100) * 100;
+            gaugeFill.style.strokeDasharray = `${dasharray} 100`;
+            
+            // Color based on consensus
+            if (maliciousPercent >= 60) {
+                gaugeFill.style.stroke = '#ff6b6b';
+                gaugeText.style.fill = '#ff6b6b';
+            } else if (maliciousPercent >= 40) {
+                gaugeFill.style.stroke = '#ffd43b';
+                gaugeText.style.fill = '#ffd43b';
+            } else {
+                gaugeFill.style.stroke = '#51cf66';
+                gaugeText.style.fill = '#51cf66';
+            }
+        }
+    }
+
+    updateConsensusStats(mCount, sCount, bCount) {
+        const total = this.engines.length;
+        const unanimous = (mCount === total || sCount === total || bCount === total) ? 1 : 0;
+        const majority = Math.max(mCount, sCount, bCount) > (total / 2) ? 1 : 0;
+        const conflict = total - Math.max(mCount, sCount, bCount);
+
+        document.getElementById('unanimous-count').textContent = unanimous;
+        document.getElementById('majority-count').textContent = majority;
+        document.getElementById('conflict-count').textContent = conflict;
+    }
+
+    updateDecisions() {
+        const list = document.getElementById('decisions-list');
+        if (!list) return;
+
+        if (this.decisions.length === 0) {
+            list.innerHTML = '<div class="empty-state">No decisions yet</div>';
+            return;
+        }
+
+        const recentDecisions = this.decisions.slice(0, 10);
+        list.innerHTML = recentDecisions.map((decision, idx) => {
+            const verdict = this.mapVerdict(decision.final_verdict);
+            const timestamp = new Date(decision.timestamp).toLocaleTimeString();
+            return `
+                <div class="decision-item" style="animation-delay: ${idx * 50}ms">
+                    <div class="decision-info">
+                        <div>${decision.source_ip} → ${decision.dest_ip}</div>
+                        <div class="decision-time">${timestamp} | ${decision.reason || 'Multi-engine consensus'}</div>
+                    </div>
+                    <div class="decision-verdict ${verdict}">${verdict.toUpperCase()}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.cleanup();
+    }
+}
+
+// Module initialization
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new MultiEngineVotingController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new MultiEngineVotingController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

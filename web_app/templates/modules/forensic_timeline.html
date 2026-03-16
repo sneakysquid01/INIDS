@@ -1,0 +1,193 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="forensic-timeline-module">
+    <div class="forensic-stats">
+        <div class="stat-card">
+            <div class="stat-label">Incidents Analyzed</div>
+            <div class="stat-value" id="incident-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Evidence Collected</div>
+            <div class="stat-value" id="evidence-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Investigation Status</div>
+            <div class="stat-value" id="investigation-status">Ready</div>
+        </div>
+    </div>
+
+    <div class="timeline-section">
+        <h3>Event Timeline (Recent)</h3>
+        <div class="events-timeline" id="events-timeline">
+            <div class="empty-state">Loading events...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.forensic-timeline-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.forensic-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #d946ef;
+}
+
+.timeline-section h3 {
+    color: #e8e8e8;
+    margin-bottom: 1rem;
+}
+
+.events-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    position: relative;
+    padding-left: 2rem;
+}
+
+.events-timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.4rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, #d946ef 0%, transparent 100%);
+}
+
+.event-dot {
+    position: absolute;
+    left: -0.5rem;
+    width: 0.9rem;
+    height: 0.9rem;
+    background: #d946ef;
+    border-radius: 50%;
+    border: 2px solid #1a1a2e;
+}
+
+.timeline-event {
+    background: linear-gradient(90deg, rgba(217, 70, 239, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #d946ef;
+    border-radius: 4px;
+    padding: 0.75rem;
+    font-size: 0.9rem;
+    color: #a8a8a8;
+    position: relative;
+}
+
+.event-time {
+    color: #888;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+}
+
+.event-description {
+    color: #e8e8e8;
+    font-weight: 600;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.timeline-event {
+    animation: slideIn 0.3s ease-out;
+}
+</style>
+
+<script>
+class ForensicTimelineController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/forensic-timeline');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateForensics();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateForensics())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateForensics() {
+        const data = await this.loadData();
+        const events = data.data.events || [];
+        
+        document.getElementById('incident-count').textContent = data.data.total_incidents || 0;
+        document.getElementById('evidence-count').textContent = events.length;
+        document.getElementById('investigation-status').textContent = 
+            data.data.status || 'Ready';
+
+        const timeline = document.getElementById('events-timeline');
+        if (events.length === 0) {
+            timeline.innerHTML = '<div class="empty-state">No events</div>';
+            return;
+        }
+
+        timeline.innerHTML = events.slice(0, 10).reverse().map((event, idx) => {
+            const time = new Date(event.timestamp).toLocaleTimeString();
+            return `
+                <div class="timeline-event" style="animation-delay: ${idx * 50}ms">
+                    <div class="event-dot"></div>
+                    <div class="event-time">${time}</div>
+                    <div class="event-description">${event.description || event.event_type || 'Event'}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new ForensicTimelineController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new ForensicTimelineController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

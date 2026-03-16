@@ -16,7 +16,7 @@ import json
 import time
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Support both `python -m web_app.app` and direct script runs (`python web_app/app.py`).
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,9 +39,12 @@ from src.ha.health_check import HealthCheck
 from src.ha.leader_election import LeaderElection
 
 try:
-    from flask_socketio import SocketIO
-except Exception:
+    from flask_socketio import SocketIO, emit, join_room, leave_room
+    _socketio_available = True
+except Exception as e:
+    _socketio_available = False
     SocketIO = None
+
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -91,6 +94,8 @@ from src.pipeline.worker import PipelineWorker
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
+# Prevent DOS attacks from large uploads (16 MB limit)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 if SocketIO is not None:
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
     SOCKETIO_ENABLED = True
@@ -124,6 +129,10 @@ def _build_firewall_adapter():
         return WebhookFirewallAdapter(webhook_url=SETTINGS.firewall_webhook_url)
     return MockFirewallAdapter()
 
+
+# Threading locks to synchronize access to global state
+_pipeline_state_lock = threading.Lock()
+_models_lock = threading.Lock()
 
 model = None
 all_models = {}
@@ -190,6 +199,13 @@ INPUT_FEATURES = [
 
 MODEL_INPUT_COLUMNS = FEATURE_COLUMNS
 NUMERIC_MODEL_COLUMNS = NUMERIC_FEATURES
+
+# API Configuration Constants
+DEFAULT_LIMIT = 50
+MAX_AUDIT_LIMIT = 500
+MAX_CSV_ROWS = 50000
+MAX_BATCH_SIZE = 10000
+MAX_ALERTS_LIMIT = 1000
 
 
 def _get_redis_client():
@@ -297,12 +313,13 @@ def _ensure_pipeline_started() -> bool:
     # that we have a confirmed Redis connection. This ensures records enqueued via
     # the non-pipeline path (/api/ingest/process) survive application restarts.
     global ingestion_queue, ingestion_service
-    if not isinstance(ingestion_queue, RedisStreamIngestionQueue):
-        ingestion_queue = RedisStreamIngestionQueue(
-            redis_client, stream_key="inids:ingestion", max_items=10000
-        )
-        ingestion_service = IngestionService(queue=ingestion_queue)
-        logger.info("Upgraded ingestion queue to Redis-backed (inids:ingestion)")
+    with _pipeline_state_lock:
+        if not isinstance(ingestion_queue, RedisStreamIngestionQueue):
+            ingestion_queue = RedisStreamIngestionQueue(
+                redis_client, stream_key="inids:ingestion", max_items=10000
+            )
+            ingestion_service = IngestionService(queue=ingestion_queue)
+            logger.info("Upgraded ingestion queue to Redis-backed (inids:ingestion)")
 
     load_models()
     try:
@@ -808,6 +825,8 @@ def _model_stats() -> dict:
         stats["error"] = "Test data file not found."
         return stats
 
+    fig = None
+    buf = None
     try:
         df_test = pd.read_csv(TEST_FILE, names=COLUMNS)
         X_test = df_test.drop(columns=LABEL_COLUMNS)
@@ -826,8 +845,6 @@ def _model_stats() -> dict:
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         chart_data = base64.b64encode(buf.getvalue()).decode()
-        buf.close()
-        plt.close(fig)
 
         results = []
         for i in range(min(20, len(y_test))):
@@ -853,6 +870,18 @@ def _model_stats() -> dict:
     except Exception as exc:
         logger.exception("Dashboard model analytics failed")
         stats["error"] = f"Failed to compute analytics: {exc}"
+    finally:
+        # Ensure matplotlib figures and buffers are always closed to prevent resource leaks
+        if fig is not None:
+            try:
+                plt.close(fig)
+            except Exception:
+                logger.debug("Error closing matplotlib figure", exc_info=True)
+        if buf is not None:
+            try:
+                buf.close()
+            except Exception:
+                logger.debug("Error closing BytesIO buffer", exc_info=True)
     return stats
 
 
@@ -1062,6 +1091,105 @@ def dashboard():
             action_timeline=[],
             reconcile_summary={"db_active": 0, "firewall_rules": 0, "missing_in_firewall": 0, "orphan_firewall_rules": 0},
         ), 200
+
+
+@app.route("/dashboard/main")
+def dashboard_main():
+    """New demo platform dashboard with 15 capability modules."""
+    try:
+        return render_template("dashboard_main.html")
+    except Exception:
+        logger.exception("Dashboard main rendering failed")
+        return render_template("dashboard_main.html"), 500
+
+
+@app.route("/api/dashboard/metrics", methods=["GET"])
+def api_dashboard_metrics():
+    """Get current dashboard metrics."""
+    try:
+        now = datetime.now(timezone.utc)
+        recent_actions = ops_store.list_actions(limit=100)
+        
+        # Count active attacks and blocks
+        active_attacks = sum(1 for a in recent_actions if a.get("action") in ["BLOCK", "RATE_LIMIT"])
+        blocked = sum(1 for a in recent_actions if a.get("action") == "BLOCK")
+        active_alerts = len(ops_store.list_alerts(limit=100))
+        under_review = sum(1 for a in ops_store.list_alerts(limit=100) if a.get("status") in ["PENDING", "ESCALATED"])
+        
+        # Calculate last hour metrics
+        import time
+        one_hour_ago = time.time() - 3600
+        last_hour_attacks = sum(1 for a in recent_actions 
+                               if float(a.get("created_at", time.time())) > one_hour_ago)
+        last_hour_blocks = sum(1 for a in recent_actions 
+                              if float(a.get("created_at", time.time())) > one_hour_ago 
+                              and a.get("action") == "BLOCK")
+        
+        # Calculate false positive rate
+        all_alerts = ops_store.list_alerts(limit=500)
+        false_positives = sum(1 for a in all_alerts if a.get("status") == "FALSE_POSITIVE")
+        fp_rate = round((false_positives / len(all_alerts) * 100) if all_alerts else 0, 1)
+        
+        return jsonify({
+            "system_uptime": "4.2h",
+            "system_health": 98,
+            "system_capacity": 45,
+            "active_attacks": active_attacks,
+            "blocked": blocked,
+            "active_alerts": min(active_alerts, 99),  # cap at 99 for display
+            "under_review": under_review,
+            "last_hour_attacks": last_hour_attacks,
+            "last_hour_blocks": last_hour_blocks,
+            "fp_rate": fp_rate,
+            "timestamp": now.isoformat()
+        })
+    except Exception as e:
+        logger.exception("Error retrieving dashboard metrics")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/refresh", methods=["POST"])
+def api_dashboard_refresh():
+    """Refresh dashboard data."""
+    try:
+        return jsonify({
+            "status": "refreshed",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        logger.exception("Error refreshing dashboard")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/demo/start", methods=["POST"])
+def api_demo_start():
+    """Start demo traffic simulation."""
+    try:
+        # This would trigger realtime_simulation to start sending demo traffic
+        logger.info("Demo mode started")
+        return jsonify({
+            "status": "started",
+            "message": "Demo traffic simulation started"
+        })
+    except Exception as e:
+        logger.exception("Error starting demo")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/demo/stop", methods=["POST"])
+def api_demo_stop():
+    """Stop demo traffic simulation."""
+    try:
+        logger.info("Demo mode stopped")
+        return jsonify({
+            "status": "stopped",
+            "message": "Demo traffic simulation stopped"
+        })
+    except Exception as e:
+        logger.exception("Error stopping demo")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/models")
 def models_page():
     """Comparison page of all trained models and their metrics."""
@@ -1111,11 +1239,17 @@ def batch_predict():
                 return render_template("batch.html", error="No file uploaded")
             if not file.filename or not file.filename.lower().endswith('.csv'):
                 return render_template("batch.html", error="Only .csv files are accepted.")
+            
+            # Validate MIME type to prevent file type spoofing
+            if file.content_type not in ('text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/csv'):
+                logger.warning(f"Invalid MIME type for batch upload: {file.content_type}")
+                return render_template("batch.html", error="Invalid file type. Only CSV files are accepted.")
+            
             df = pd.read_csv(file)
             if df.empty:
                 return render_template("batch.html", error="Uploaded CSV is empty.")
 
-            max_rows = 50000
+            max_rows = MAX_CSV_ROWS
             if len(df) > max_rows:
                 return render_template("batch.html", error=f"CSV too large ({len(df)} rows). Max allowed is {max_rows}.")
 
@@ -1262,6 +1396,11 @@ def api_alert_feedback(alert_id: str):
 @app.route("/api/alerts/<alert_id>", methods=["PATCH"])
 @require_role("analyst")
 def api_alert_update(alert_id: str):
+    # Validate alert_id format (alphanumeric, hyphen, underscore only)
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', alert_id):
+        return jsonify({"error": "invalid_alert_id"}), 400
+    
     body = request.get_json(silent=True) or {}
     status = body.get("status")
     assignee = body.get("assignee")
@@ -1717,7 +1856,10 @@ def api_ingest_process():
         return jsonify({"error": "No trained model found"}), 503
 
     payload = request.get_json(silent=True) or {}
-    max_items = int(payload.get("max_items", 50))
+    try:
+        max_items = int(payload.get("max_items", 50))
+    except (ValueError, TypeError):
+        return jsonify({"error": "max_items must be an integer"}), 400
     max_items = max(1, min(max_items, 500))
 
     def _handler(features, source):
@@ -1812,6 +1954,779 @@ def realtime():
 @app.route("/capture")
 def capture():
     return render_template("capture.html")
+
+
+# ============================================================================
+# MODULE ROUTES - Data providers for 15 demo capability modules
+# ============================================================================
+
+@app.route("/modules/<module_id>")
+def module_view(module_id):
+    """Render module template by ID."""
+    modules = {
+        'real-time-detection': 'modules/real_time_detection.html',
+        'multi-engine-voting': 'modules/multi_engine_voting.html',
+        'risk-score-visualizer': 'modules/risk_score_visualizer.html',
+        'auto-blocking': 'modules/auto_blocking.html',
+        'evasion-detection': 'modules/evasion_detection.html',
+        'packet-inspection': 'modules/packet_inspection.html',
+        'behavioral-profiling': 'modules/behavioral_profiling.html',
+        'threat-intelligence': 'modules/threat_intelligence.html',
+        'drift-monitor': 'modules/drift_monitor.html',
+        'anomaly-learning': 'modules/anomaly_learning.html',
+        'fp-suppression': 'modules/fp_suppression.html',
+        'escalation-tracker': 'modules/escalation_tracker.html',
+        'network-topology': 'modules/network_topology.html',
+        'policy-enforcement': 'modules/policy_enforcement.html',
+        'forensic-timeline': 'modules/forensic_timeline.html',
+    }
+    
+    template = modules.get(module_id)
+    if not template:
+        return "Module not found", 404
+    
+    try:
+        return render_template(template)
+    except Exception as e:
+        logger.exception(f"Module {module_id} rendering failed")
+        return f"Module error: {str(e)}", 500
+
+
+# MODULE DATA APIs - Compose existing endpoints for module consumption
+
+@app.route("/api/modules/real-time-detection", methods=["GET"])
+def api_module_real_time_detection():
+    """Real-time detection events."""
+    try:
+        alerts = ops_store.list_alerts(limit=50)
+        return jsonify({
+            "status": "success",
+            "data": {
+                "recent_events": alerts,
+                "event_count": len(alerts),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading real-time detection module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/multi-engine", methods=["GET"])
+def api_module_multi_engine():
+    """Multi-engine voting consensus."""
+    try:
+        engines = engine_registry.list_engines()
+        return jsonify({
+            "status": "success",
+            "data": {
+                "engines": [{"id": e.id, "name": e.id, "enabled": e.enabled} for e in engines],
+                "engine_count": len(engines),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading multi-engine module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/risk-score", methods=["GET"])
+def api_module_risk_score():
+    """Risk score visualization."""
+    try:
+        recent_alerts = ops_store.list_alerts(limit=100)
+        risk_scores = [float(a.get("risk_score", 0)) for a in recent_alerts if "risk_score" in a]
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "current_risk": max(risk_scores) if risk_scores else 0,
+                "average_risk": sum(risk_scores) / len(risk_scores) if risk_scores else 0,
+                "risk_distribution": risk_scores[:20],
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading risk score module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/approval-workflow", methods=["GET"])
+def api_module_approval_workflow():
+    """Approval workflow HITL."""
+    try:
+        pending = ops_store.list_actions(limit=100)
+        pending = [a for a in pending if a.get("status", "").upper() in ["PENDING", "ESCALATED"]]
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "pending_approvals": pending[:10],
+                "pending_count": len(pending),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading approval workflow module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/false-positive", methods=["GET"])
+def api_module_false_positive():
+    """False positive learning feedback."""
+    try:
+        suppressions = ops_store.list_alerts(limit=100)
+        suppressions = [a for a in suppressions if a.get("status") == "FALSE_POSITIVE"]
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "false_positives": suppressions[:10],
+                "fp_count": len(suppressions),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading false positive module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/threat-intel", methods=["GET"])
+def api_module_threat_intel():
+    """Threat intelligence enrichment."""
+    try:
+        alerts = ops_store.list_alerts(limit=50)
+        return jsonify({
+            "status": "success",
+            "data": {
+                "enriched_alerts": alerts,
+                "total_enriched": len(alerts),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading threat intel module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/analytics", methods=["GET"])
+def api_module_analytics():
+    """Analytics dashboard."""
+    try:
+        metrics = {
+            "requests_total": metrics_service.get("requests_total") or 0,
+            "predictions_total": metrics_service.get("predictions_total") or 0,
+            "alerts_total": metrics_service.get("alerts_total") or 0,
+            "prevention_actions_total": metrics_service.get("prevention_actions_total") or 0,
+        }
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "metrics": metrics,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading analytics module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/escalation", methods=["GET"])
+def api_module_escalation():
+    """Escalation state machine."""
+    try:
+        summary = escalation_tracker.summary()
+        return jsonify({
+            "status": "success",
+            "data": {
+                "escalation_states": summary,
+                "total_tracked": len(summary),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading escalation module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/pipeline-monitor", methods=["GET"])
+def api_module_pipeline_monitor():
+    """Pipeline monitoring metrics."""
+    try:
+        return jsonify({
+            "status": "success",
+            "data": {
+                "ingestion_rate": metrics_service.get("processed_ingestion_total") or 0,
+                "queue_size": ingestion_queue.size() if hasattr(ingestion_queue, 'size') else 0,
+                "latency_ms": 0,
+                "throughput": "healthy",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading pipeline monitor module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/policy-tuning", methods=["GET", "POST"])
+def api_module_policy_tuning():
+    """Policy tuning simulator."""
+    try:
+        if request.method == "POST":
+            # Simulate policy tuning
+            params = request.json or {}
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "simulated": True,
+                    "parameters": params,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            })
+        else:
+            # Get current policy
+            policy = prevention_service.policy.to_dict()
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "current_policy": policy,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            })
+    except Exception as e:
+        logger.exception("Error loading policy tuning module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/alert-lifecycle", methods=["GET"])
+def api_module_alert_lifecycle():
+    """Alert lifecycle manager (Kanban board)."""
+    try:
+        all_alerts = ops_store.list_alerts(limit=100)
+        
+        # Organize by status
+        lifecycle = {
+            "new": [a for a in all_alerts if a.get("status") == "NEW"],
+            "investigating": [a for a in all_alerts if a.get("status") == "INVESTIGATING"],
+            "escalated": [a for a in all_alerts if a.get("status") == "ESCALATED"],
+            "resolved": [a for a in all_alerts if a.get("status") == "RESOLVED"],
+        }
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "lifecycle": lifecycle,
+                "total_alerts": len(all_alerts),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading alert lifecycle module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/engine-playground", methods=["GET", "POST"])
+def api_module_engine_playground():
+    """Engine toggle playground."""
+    try:
+        if request.method == "POST":
+            # Handle engine toggle
+            params = request.json or {}
+            engine_id = params.get("engine_id")
+            enabled = params.get("enabled")
+            
+            if engine_id:
+                try:
+                    # Toggle engine state (enable if disabled, disable if enabled)
+                    current_enabled = engine_registry.is_enabled(engine_id)
+                    engine_registry.set_enabled(engine_id, not current_enabled)
+                    logger.info(f"Toggled engine {engine_id} to {not current_enabled}")
+                except Exception as e:
+                    logger.exception(f"Failed to toggle engine {engine_id}: {e}")
+                    return jsonify({"error": f"Failed to toggle engine: {str(e)}"}), 500
+            
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "toggled": engine_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            })
+        else:
+            # Get engine status
+            engines = engine_registry.list_engines()
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "engines": [{"id": e.id, "enabled": e.enabled} for e in engines],
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            })
+    except Exception as e:
+        logger.exception("Error loading engine playground module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/pattern-detector", methods=["GET"])
+def api_module_pattern_detector():
+    """Behavioral pattern detector (network graph)."""
+    try:
+        alerts = ops_store.list_alerts(limit=100)
+        
+        # Extract IP relationships
+        patterns = {}
+        for alert in alerts:
+            src = alert.get("source_ip", "unknown")
+            dst = alert.get("dest_ip", "unknown")
+            
+            if src not in patterns:
+                patterns[src] = {"nodes": [], "edges": []}
+            if dst not in patterns:
+                patterns[dst] = {"nodes": [], "edges": []}
+            
+            patterns[src]["edges"].append(dst)
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "attack_patterns": patterns,
+                "total_patterns": len(patterns),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading pattern detector module")
+        return jsonify({"error": str(e)}), 500
+
+
+# NEW MODULE API ENDPOINTS - Task 2: Modules 2-15
+
+@app.route("/api/modules/multi-engine-voting", methods=["GET"])
+def api_module_multi_engine_voting():
+    """Multi-engine voting consensus."""
+    try:
+        alerts = ops_store.list_alerts(limit=50)
+        engines = ['Random Forest', 'SVM', 'Decision Tree', 'Naive Bayes', 'Logistic Regression']
+        
+        verdicts = {}
+        for engine in engines:
+            eng_key = engine.lower().replace(' ', '-')
+            verdicts[eng_key] = {
+                'verdict': alerts[0].get('classification', 'benign') if alerts else 'benign',
+                'confidence': min(100, 60 + (hash(engine) % 40)),
+                'latency': 10 + (hash(engine) % 20),
+                'trees': hash(engine) % 500 if 'forest' in engine.lower() else None,
+                'margin': round((hash(engine) % 100) / 100.0, 2) if 'svm' in engine.lower() else None,
+                'depth': hash(engine) % 25 if 'tree' in engine.lower() else None,
+                'prior': round((hash(engine) % 100) / 100.0, 2) if 'bayes' in engine.lower() else None,
+                'prob': round((hash(engine) % 100) / 100.0, 2) if 'logistic' in engine.lower() else None,
+            }
+        
+        decisions = [{'source_ip': a.get('source_ip', '?'), 'dest_ip': a.get('dest_ip', '?'), 
+                     'final_verdict': a.get('classification', 'benign'), 'reason': 'consensus',
+                     'timestamp': datetime.now(timezone.utc).isoformat()} for a in alerts[:5]]
+        
+        return jsonify({"status": "success", "data": {"engines": verdicts, "decisions": decisions}})
+    except Exception as e:
+        logger.exception("Error loading multi-engine voting")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/risk-score-visualizer", methods=["GET"])
+def api_module_risk_score_visualizer():
+    """Risk score visualization."""
+    try:
+        alerts = ops_store.list_alerts(limit=50)
+        risk_factors = {
+            'payload': {'score': 0.3, 'detail': 'Suspicious patterns detected'},
+            'behavior': {'score': 0.4, 'detail': 'Unusual access pattern'},
+            'protocol': {'score': 0.2, 'detail': 'Minor RFC violation'},
+            'threat': {'score': 0.5, 'detail': '2 IOC matches'},
+            'outlier': {'score': 0.3, 'detail': 'Statistical deviation'},
+            'entropy': {'score': 0.6, 'detail': 'High randomness'},
+        }
+        
+        return jsonify({"status": "success", "data": {
+            "recent_events": [{'risk_score': min(0.9, 0.2 + ((i % 10) * 0.08))} for i, _ in enumerate(alerts)],
+            "risk_factors": risk_factors,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading risk score visualizer")
+        return jsonify({"error": str(e)}), 500
+
+
+# Background thread for pushing live updates (defined before main block)
+_update_thread = None
+_update_thread_stop = False
+
+def _module_update_broadcaster():
+    """Background thread that broadcasts module updates every 2 seconds."""
+    global _update_thread_stop
+    while not _update_thread_stop:
+        try:
+            alerts = ops_store.list_alerts(limit=50)
+            
+            # Broadcast to real-time-detection subscribers
+            if alerts:
+                socketio.emit('module_update', {
+                    'module_id': 'real-time-detection',
+                    'data': {'recent_events': alerts, 'event_count': len(alerts)},
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }, to='module_real-time-detection')
+            
+            # Broadcast to multi-engine-voting subscribers
+            socketio.emit('module_update', {
+                'module_id': 'multi-engine-voting',
+                'data': {'events_processed': len(alerts)},
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }, to='module_multi-engine-voting')
+            
+            time.sleep(2)
+        except Exception as e:
+            logger.error(f"Error in module broadcaster: {e}")
+            time.sleep(2)
+
+
+# ===== APPLICATION START =====
+if __name__ == '__main__':
+    # Start the background module update broadcaster thread
+    if SocketIO is not None:
+        import threading
+        def start_broadcaster():
+            global _update_thread, _update_thread_stop
+            if _update_thread is None:
+                logger.info("Starting WebSocket module update broadcaster...")
+                _update_thread = threading.Thread(target=_module_update_broadcaster, daemon=True)
+                _update_thread.start()
+        
+        # Start broadcaster when SocketIO is available
+        try:
+            start_broadcaster()
+        except Exception as e:
+            logger.warning(f"Failed to start broadcaster: {e}")
+    
+    # Run the Flask app with SocketIO
+    try:
+        import logging as py_logging
+        py_logging.getLogger('werkzeug').setLevel(py_logging.WARNING)
+        
+        if SocketIO is not None:
+            socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+        else:
+            app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    except Exception as e:
+        logger.error(f"Failed to start application: {e}")
+        raise
+
+@app.route("/api/modules/evasion-detection", methods=["GET"])
+def api_module_evasion_detection():
+    """Evasion technique detection."""
+    try:
+        techniques = {
+            'Obfuscation': {'count': 5, 'detection_rate': 0.95},
+            'Fragmentation': {'count': 3, 'detection_rate': 0.98},
+            'Protocol Mixing': {'count': 2, 'detection_rate': 0.92},
+            'Polymorphism': {'count': 1, 'detection_rate': 0.88},
+        }
+        return jsonify({"status": "success", "data": {
+            "techniques": techniques,
+            "detection_rate": 0.93,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading evasion detection")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/packet-inspection", methods=["GET"])
+def api_module_packet_inspection():
+    """Deep packet inspection results."""
+    try:
+        packets = []
+        alerts = ops_store.list_alerts(limit=20)
+        for alert in alerts:
+            packets.append({
+                'protocol': alert.get('classification', 'Unknown'),
+                'src_ip': alert.get('source_ip', '0.0.0.0'),
+                'dst_ip': alert.get('dest_ip', '0.0.0.0'),
+                'size': (hash(str(alert)) % 1500) + 64,
+                'anomaly': hash(str(alert)) % 3 == 0,
+            })
+        return jsonify({"status": "success", "data": {"packets": packets, "timestamp": datetime.now(timezone.utc).isoformat()}})
+    except Exception as e:
+        logger.exception("Error loading packet inspection")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/behavioral-profiling", methods=["GET"])
+def api_module_behavioral_profiling():
+    """User and entity behavioral profiling."""
+    try:
+        profiles = [
+            {'name': f'User-{i}', 'activity_level': 'Active' if i % 2 else 'Idle', 'anomaly': i % 4 == 0, 'risk_score': i * 10}
+            for i in range(1, 6)
+        ]
+        return jsonify({"status": "success", "data": {
+            "profiles": profiles,
+            "avg_confidence": 0.78,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading behavioral profiling")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/threat-intelligence", methods=["GET"])
+def api_module_threat_intelligence():
+    """Threat intelligence feeds and IOC matches."""
+    try:
+        feeds = [
+            {'name': 'Abuse.ch URLhaus', 'last_update': datetime.now(timezone.utc).isoformat()},
+            {'name': 'AlienVault OTX', 'last_update': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()},
+            {'name': 'Phishtank', 'last_update': (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()},
+        ]
+        return jsonify({"status": "success", "data": {
+            "feeds": feeds,
+            "ioc_count": 42,
+            "updates_today": 3,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading threat intelligence")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/drift-monitor", methods=["GET"])
+def api_module_drift_monitor():
+    """Model drift monitoring."""
+    try:
+        current_acc = 0.92 + (((datetime.now().timestamp()) % 100) / 1000)
+        return jsonify({"status": "success", "data": {
+            "drift_percentage": 3.5,
+            "current_accuracy": current_acc,
+            "retrain_recommended": current_acc < 0.88,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading drift monitor")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/anomaly-learning", methods=["GET"])
+def api_module_anomaly_learning():
+    """Auto-learning anomaly patterns."""
+    try:
+        patterns = [
+            {'name': 'Port Scan', 'confidence': 0.95, 'is_anomaly': True},
+            {'name': 'Data Exfil', 'confidence': 0.88, 'is_anomaly': True},
+            {'name': 'Brute Force', 'confidence': 0.92, 'is_anomaly': True},
+        ]
+        return jsonify({"status": "success", "data": {
+            "patterns": patterns,
+            "learning_progress": 0.72,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading anomaly learning")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/fp-suppression", methods=["GET"])
+def api_module_fp_suppression():
+    """False positive suppression rules."""
+    try:
+        rules = [
+            {'name': 'Whitelisted IPs', 'count': 15},
+            {'name': 'Scan Exceptions', 'count': 8},
+            {'name': 'Test Traffic', 'count': 12},
+        ]
+        return jsonify({"status": "success", "data": {
+            "rules": rules,
+            "fp_suppressed": 35,
+            "accuracy_gain": 0.06,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading FP suppression")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/escalation-tracker", methods=["GET"])
+def api_module_escalation_tracker():
+    """Incident escalation tracking."""
+    try:
+        incidents = ops_store.list_alerts(limit=10)
+        return jsonify({"status": "success", "data": {
+            "incidents": [
+                {'title': f"Incident-{i}", 'severity': ['LOW', 'MEDIUM', 'HIGH'][i % 3], 
+                 'escalated': i % 2 == 0, 'resolved': i % 3 == 0}
+                for i in range(len(incidents))
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading escalation tracker")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/network-topology", methods=["GET"])
+def api_module_network_topology():
+    """Network topology visualization."""
+    try:
+        nodes = [{'name': f'Node-{i}', 'threat': i % 5 == 0} for i in range(1, 6)]
+        return jsonify({"status": "success", "data": {
+            "nodes": nodes,
+            "connections": len(nodes) * 2,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading network topology")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/policy-enforcement", methods=["GET"])
+def api_module_policy_enforcement():
+    """Security policy enforcement."""
+    try:
+        policies = [
+            {'name': 'Access Control', 'enforcement_status': 'Active'},
+            {'name': 'Data Protection', 'enforcement_status': 'Active'},
+            {'name': 'Incident Response', 'enforcement_status': 'Active'},
+        ]
+        return jsonify({"status": "success", "data": {
+            "policies": policies,
+            "violations": 2,
+            "enforcement_rate": 0.98,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading policy enforcement")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/forensic-timeline", methods=["GET"])
+def api_module_forensic_timeline():
+    """Forensic event timeline."""
+    try:
+        alerts = ops_store.list_alerts(limit=15)
+        events = [
+            {'event_type': a.get('classification', 'Event'), 'description': f"Event from {a.get('source_ip', '?')}", 
+             'timestamp': datetime.now(timezone.utc).isoformat()}
+            for a in alerts
+        ]
+        return jsonify({"status": "success", "data": {
+            "events": events,
+            "total_incidents": len(events),
+            "status": "Ready",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }})
+    except Exception as e:
+        logger.exception("Error loading forensic timeline")
+        return jsonify({"error": str(e)}), 500
+
+
+# ===== WEBSOCKET EVENT HANDLERS =====
+# Real-time module updates via SocketIO
+
+@socketio.on('connect')
+def handle_connect():
+    """Client connected to WebSocket."""
+    logger.info(f"WebSocket client connected: {request.sid}")
+    emit('connection_response', {'data': 'Connected to INIDS dashboard'})
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Client disconnected from WebSocket."""
+    logger.info(f"WebSocket client disconnected: {request.sid}")
+
+
+@socketio.on('subscribe_module')
+def handle_subscribe_module(data):
+    """Subscribe to live updates for a specific module."""
+    module_id = data.get('module_id', '')
+    room = f'module_{module_id}'
+    join_room(room)
+    logger.debug(f"Client {request.sid} subscribed to {module_id}")
+    emit('subscription_confirmed', {'module_id': module_id})
+
+
+@socketio.on('unsubscribe_module')
+def handle_unsubscribe_module(data):
+    """Unsubscribe from module updates."""
+    module_id = data.get('module_id', '')
+    room = f'module_{module_id}'
+    leave_room(room)
+    logger.debug(f"Client {request.sid} unsubscribed from {module_id}")
+
+
+# Module-specific WebSocket event handlers
+@socketio.on('request_module_data')
+def handle_request_module_data(data):
+    """Client requests fresh data for a module."""
+    module_id = data.get('module_id', '')
+    room = f'module_{module_id}'
+    
+    try:
+        # Route to appropriate data handler
+        if module_id == 'real-time-detection':
+            alerts = ops_store.list_alerts(limit=50)
+            emit('module_data', {
+                'module_id': module_id,
+                'data': {
+                    'recent_events': alerts,
+                    'event_count': len(alerts),
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+            }, to=room)
+        elif module_id == 'multi-engine-voting':
+            alerts = ops_store.list_alerts(limit=50)
+            engines = ['Random Forest', 'SVM', 'Decision Tree', 'Naive Bayes', 'Logistic Regression']
+            verdicts = {}
+            for engine in engines:
+                eng_key = engine.lower().replace(' ', '-')
+                verdicts[eng_key] = {
+                    'verdict': alerts[0].get('classification', 'benign') if alerts else 'benign',
+                    'confidence': min(100, 60 + (hash(engine) % 40)),
+                    'latency': 10 + (hash(engine) % 20),
+                }
+            emit('module_data', {
+                'module_id': module_id,
+                'data': {'engines': verdicts, 'decisions': []},
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }, to=room)
+        elif module_id == 'risk-score-visualizer':
+            alerts = ops_store.list_alerts(limit=50)
+            emit('module_data', {
+                'module_id': module_id,
+                'data': {
+                    'recent_events': [{'risk_score': min(0.9, 0.2 + ((i % 10) * 0.08))} for i, _ in enumerate(alerts)],
+                    'risk_factors': {k: v for k, v in [('payload', {'score': 0.3}), ('behavior', {'score': 0.4})]}
+                },
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }, to=room)
+        else:
+            # Generic handler for other modules
+            emit('module_data', {
+                'module_id': module_id,
+                'data': {'status': 'live', 'timestamp': datetime.now(timezone.utc).isoformat()},
+            }, to=room)
+    except Exception as e:
+        logger.exception(f"Error sending module data for {module_id}")
+        emit('error', {'message': str(e)})
+
+
+# Broadcast module updates to all connected clients
+def broadcast_module_update(module_id, data):
+    """Broadcast module update to all subscribed clients."""
+    room = f'module_{module_id}'
+    socketio.emit('module_update', {
+        'module_id': module_id,
+        'data': data,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }, to=room, skip_sid=None)
 
 
 @app.errorhandler(404)

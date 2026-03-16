@@ -1,0 +1,401 @@
+/* INIDS Demo Platform - Dashboard Styling */
+
+:root {
+    --primary-dark: #0a0e27;
+    --secondary-dark: #1a1f3a;
+    --tertiary-dark: #252d45;
+    --accent-blue: #00d4ff;
+    --accent-red: #ff4444;
+    --accent-green: #44ff44;
+    --accent-yellow: #ffaa00;
+    --accent-purple: #dd44ff;
+    --text-light: #e0e0e0;
+    --text-muted: #808080;
+}
+
+body.dark-theme {
+    background-color: var(--primary-dark);
+    color: var(--text-light);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    scrollbar-color: #444 #222;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #222;
+}
+::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
+/* Navigation Bar */
+.navbar {
+    box-shadow: 0 4px 12px rgba(0, 20, 40, 0.3);
+}
+
+.navbar-brand {
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.navbar .btn-outline-warning:hover {
+    background-color: transparent;
+    border-color: #ffaa00;
+    color: #ffaa00;
+}
+
+.navbar .btn-outline-info:hover {
+    background-color: transparent;
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.navbar .btn-outline-secondary:hover {
+    background-color: transparent;
+    border-color: var(--text-light);
+    color: var(--text-light);
+}
+
+/* System Status Bar */
+.system-status-bar {
+    background: linear-gradient(135deg, #0f1428 0%, #16213e 100%);
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.status-box {
+    background: rgba(26, 31, 58, 0.5);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px 16px;
+    transition: all 0.3s ease;
+}
+
+.status-box:hover {
+    background: rgba(26, 31, 58, 0.8);
+    border-color: rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.1);
+}
+
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.online {
+    background-color: var(--accent-green);
+    box-shadow: 0 0 8px var(--accent-green);
+}
+
+.status-indicator.offline {
+    background-color: var(--accent-red);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.threat-counter {
+    text-align: center;
+    flex: 1;
+}
+
+.count-badge {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+.count-badge.attack {
+    background-color: rgba(255, 68, 68, 0.2);
+    color: var(--accent-red);
+    border: 1px solid var(--accent-red);
+}
+
+.count-badge.block {
+    background-color: rgba(255, 170, 0, 0.2);
+    color: var(--accent-yellow);
+    border: 1px solid var(--accent-yellow);
+}
+
+.count-badge.alert {
+    background-color: rgba(221, 68, 255, 0.2);
+    color: var(--accent-purple);
+    border: 1px solid var(--accent-purple);
+}
+
+.count-badge.review {
+    background-color: rgba(0, 212, 255, 0.2);
+    color: var(--accent-blue);
+    border: 1px solid var(--accent-blue);
+}
+
+/* Chart Container */
+.chart-container {
+    background: var(--secondary-dark);
+    border: 1px solid rgba(0, 212, 255, 0.1);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.chart-container h5 {
+    color: var(--text-light);
+    margin-bottom: 16px;
+    font-weight: 600;
+}
+
+/* Capability Summary */
+.capability-summary {
+    background: var(--secondary-dark);
+    border: 1px solid rgba(0, 212, 255, 0.1);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.capability-summary h5 {
+    color: var(--text-light);
+    font-weight: 600;
+}
+
+.summary-stat {
+    background: rgba(0, 212, 255, 0.05);
+    border-left: 3px solid var(--accent-blue);
+    padding: 12px;
+    border-radius: 4px;
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--accent-blue);
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Capability Cards Grid */
+.capability-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    position: relative;
+    height: 280px;
+    background: var(--secondary-dark);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 12px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.capability-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.capability-card:hover {
+    transform: translateY(-8px);
+    border-color: var(--accent-blue);
+    background: var(--tertiary-dark);
+    box-shadow: 0 12px 24px rgba(0, 212, 255, 0.15);
+}
+
+.capability-card:hover::before {
+    opacity: 1;
+}
+
+.card-glow {
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.1) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+.capability-card:hover .card-glow {
+    opacity: 1;
+}
+
+.card-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    display: inline-block;
+}
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-light);
+    margin-bottom: 4px;
+}
+
+.card-subtitle {
+    font-size: 0.8rem;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+.card-description {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    flex-grow: 1;
+    margin-bottom: 12px;
+}
+
+.card-action {
+    font-size: 0.85rem;
+    color: var(--accent-blue);
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.capability-card:hover .card-action {
+    color: #00ffff;
+    transform: translateX(4px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .capability-card {
+        height: auto;
+        min-height: 200px;
+    }
+    
+    .system-status-bar {
+        padding: 12px 0;
+    }
+    
+    .status-box {
+        padding: 10px 12px;
+    }
+    
+    .stat-number {
+        font-size: 1.5rem;
+    }
+}
+
+/* Modal styling */
+.modal-content {
+    background: var(--secondary-dark);
+}
+
+.modal-header {
+    background: var(--tertiary-dark);
+}
+
+.modal-title {
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+.btn-close-white {
+    filter: invert(1);
+}
+
+/* Loading Spinner */
+.spinner-border-info {
+    color: var(--accent-blue);
+}
+
+/* Utility classes */
+.bg-dark {
+    background-color: var(--primary-dark) !important;
+}
+
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+.text-light {
+    color: var(--text-light) !important;
+}
+
+.text-success {
+    color: var(--accent-green) !important;
+}
+
+.text-danger {
+    color: var(--accent-red) !important;
+}
+
+.text-warning {
+    color: var(--accent-yellow) !important;
+}
+
+.text-info {
+    color: var(--accent-blue) !important;
+}
+
+.border-secondary {
+    border-color: rgba(0, 212, 255, 0.2) !important;
+}
+
+/* Badge styling */
+.badge {
+    padding: 4px 8px;
+    font-weight: 500;
+}
+
+.badge.bg-primary {
+    background-color: var(--accent-blue) !important;
+    color: var(--primary-dark) !important;
+}
+
+.badge.bg-success {
+    background-color: var(--accent-green) !important;
+    color: var(--primary-dark) !important;
+}
+
+/* Small text adjustments */
+.small {
+    color: var(--text-muted);
+}

@@ -1,0 +1,675 @@
+<!-- Real-Time Detection Module
+     Shows live event stream with animated verdict updates
+     Timeline: Detection → Risk Score → Action
+     Updates via WebSocket for seamless real-time display
+-->
+
+<div class="module-real-time-detection">
+    <div class="rtd-container">
+        <!-- Header with stats -->
+        <div class="rtd-stats">
+            <div class="stat-item">
+                <div class="stat-emoji">⚡</div>
+                <div class="stat-label">Events/min</div>
+                <div class="stat-value" id="eventsPerMin">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-emoji">🎯</div>
+                <div class="stat-label">Accuracy</div>
+                <div class="stat-value" id="accuracy">0%</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-emoji">⏱️</div>
+                <div class="stat-label">Avg Latency</div>
+                <div class="stat-value" id="avgLatency">0ms</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-emoji">🔴</div>
+                <div class="stat-label">Active Threats</div>
+                <div class="stat-value" id="activeThreats">0</div>
+            </div>
+        </div>
+
+        <!-- Live Event Timeline -->
+        <div class="rtd-timeline">
+            <h5 class="rtd-section-title">Detection Timeline (Last 50 Events)</h5>
+            <div class="timeline-container" id="timelineContainer">
+                <!-- Events populated by JavaScript -->
+                <div class="timeline-empty-state">
+                    <p>Waiting for detection events...</p>
+                    <p class="text-muted">Enable Demo Mode to see live traffic</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Verdict Breakdown -->
+        <div class="rtd-verdict-stats">
+            <h5 class="rtd-section-title">Detection Verdicts</h5>
+            <div class="verdict-grid">
+                <div class="verdict-card benign">
+                    <div class="verdict-icon">✓</div>
+                    <div class="verdict-label">Benign</div>
+                    <div class="verdict-count" id="verdictBenign">0</div>
+                </div>
+                <div class="verdict-card suspicious">
+                    <div class="verdict-icon">⚠️</div>
+                    <div class="verdict-label">Suspicious</div>
+                    <div class="verdict-count" id="verdictSuspicious">0</div>
+                </div>
+                <div class="verdict-card malicious">
+                    <div class="verdict-icon">✕</div>
+                    <div class="verdict-label">Malicious</div>
+                    <div class="verdict-count" id="verdictMalicious">0</div>
+                </div>
+                <div class="verdict-card unknown">
+                    <div class="verdict-icon">?</div>
+                    <div class="verdict-label">Unknown</div>
+                    <div class="verdict-count" id="verdictUnknown">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection Flow Animation -->
+        <div class="rtd-flow">
+            <h5 class="rtd-section-title">Detection Flow</h5>
+            <div class="flow-diagram">
+                <div class="flow-stage">
+                    <div class="flow-icon">📥</div>
+                    <div class="flow-label">Raw Event</div>
+                    <div class="flow-count" id="flowRaw">0</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-stage">
+                    <div class="flow-icon">⚙️</div>
+                    <div class="flow-label">Feature Extract</div>
+                    <div class="flow-count" id="flowExtract">0</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-stage">
+                    <div class="flow-icon">🧠</div>
+                    <div class="flow-label">ML Engines</div>
+                    <div class="flow-count" id="flowML">0</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-stage">
+                    <div class="flow-icon">📊</div>
+                    <div class="flow-label">Risk Scoring</div>
+                    <div class="flow-count" id="flowRisk">0</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-stage">
+                    <div class="flow-icon">🎯</div>
+                    <div class="flow-label">Decision</div>
+                    <div class="flow-count" id="flowDecision">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Styles -->
+<style>
+.module-real-time-detection {
+    background: var(--primary-dark, #0a0e27);
+    color: var(--text-light, #e0e0e0);
+}
+
+.rtd-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+}
+
+/* Stats Header */
+.rtd-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.stat-item {
+    background: var(--secondary-dark, #1a1f3a);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+}
+
+.stat-emoji {
+    font-size: 1.8rem;
+    margin-bottom: 6px;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted, #808080);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: var(--accent-blue, #00d4ff);
+}
+
+/* Timeline */
+.rtd-section-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-light, #e0e0e0);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.rtd-timeline {
+    background: var(--secondary-dark, #1a1f3a);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.timeline-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.timeline-event {
+    background: var(--tertiary-dark, #252d45);
+    border-left: 3px solid var(--accent-blue, #00d4ff);
+    padding: 12px;
+    border-radius: 4px;
+    animation: slideIn 0.3s ease;
+    transition: all 0.2s ease;
+}
+
+.timeline-event:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-left-color: #00ffff;
+}
+
+.timeline-event.benign {
+    border-left-color: var(--accent-green, #44ff44);
+}
+
+.timeline-event.malicious {
+    border-left-color: var(--accent-red, #ff4444);
+    background: rgba(255, 68, 68, 0.05);
+}
+
+.timeline-event.suspicious {
+    border-left-color: var(--accent-yellow, #ffaa00);
+    background: rgba(255, 170, 0, 0.05);
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.timeline-time {
+    font-size: 0.8rem;
+    color: var(--text-muted, #808080);
+    font-family: monospace;
+}
+
+.timeline-verdict {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.timeline-verdict.benign {
+    background: rgba(68, 255, 68, 0.2);
+    color: var(--accent-green, #44ff44);
+}
+
+.timeline-verdict.malicious {
+    background: rgba(255, 68, 68, 0.2);
+    color: var(--accent-red, #ff4444);
+}
+
+.timeline-verdict.suspicious {
+    background: rgba(255, 170, 0, 0.2);
+    color: var(--accent-yellow, #ffaa00);
+}
+
+.timeline-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+
+.timeline-detail {
+    display: flex;
+    justify-content: space-between;
+}
+
+.timeline-label {
+    color: var(--text-muted, #808080);
+}
+
+.timeline-value {
+    color: var(--text-light, #e0e0e0);
+    font-family: monospace;
+}
+
+.timeline-empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted, #808080);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Verdict Breakdown */
+.rtd-verdict-stats {
+    background: var(--secondary-dark, #1a1f3a);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.verdict-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 12px;
+}
+
+.verdict-card {
+    background: var(--tertiary-dark, #252d45);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.verdict-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.verdict-card.benign {
+    border-color: var(--accent-green, #44ff44);
+    background: rgba(68, 255, 68, 0.05);
+}
+
+.verdict-card.malicious {
+    border-color: var(--accent-red, #ff4444);
+    background: rgba(255, 68, 68, 0.05);
+}
+
+.verdict-card.suspicious {
+    border-color: var(--accent-yellow, #ffaa00);
+    background: rgba(255, 170, 0, 0.05);
+}
+
+.verdict-icon {
+    font-size: 1.8rem;
+    margin-bottom: 6px;
+}
+
+.verdict-label {
+    font-size: 0.85rem;
+    color: var(--text-muted, #808080);
+    margin-bottom: 6px;
+}
+
+.verdict-count {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: var(--accent-blue, #00d4ff);
+}
+
+/* Flow Diagram */
+.rtd-flow {
+    background: var(--secondary-dark, #1a1f3a);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.flow-diagram {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.flow-stage {
+    flex: 1;
+    min-width: 100px;
+    background: var(--tertiary-dark, #252d45);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.flow-stage:hover {
+    border-color: var(--accent-blue, #00d4ff);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.1);
+}
+
+.flow-icon {
+    font-size: 1.4rem;
+    margin-bottom: 6px;
+}
+
+.flow-label {
+    font-size: 0.8rem;
+    color: var(--text-muted, #808080);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.flow-count {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--accent-blue, #00d4ff);
+}
+
+.flow-arrow {
+    color: var(--accent-blue, #00d4ff);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+/* Scrollbar styling for timeline */
+.timeline-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.timeline-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.timeline-container::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.2);
+    border-radius: 3px;
+}
+
+.timeline-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 212, 255, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .rtd-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .verdict-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .flow-diagram {
+        gap: 8px;
+    }
+
+    .flow-stage {
+        min-width: 80px;
+        padding: 8px;
+        font-size: 0.85rem;
+    }
+
+    .flow-arrow {
+        font-size: 1rem;
+    }
+}
+</style>
+
+<!-- Module Script -->
+<script>
+class RealTimeDetectionController extends BaseModuleController {
+    constructor(moduleElement, config = {}) {
+        config.moduleId = 'real-time-detection';
+        super(moduleElement, config);
+        this.eventBuffer = [];
+        this.pollInterval = null;
+        this.stats = {
+            total: 0,
+            benign: 0,
+            malicious: 0,
+            suspicious: 0,
+            unknown: 0,
+            latencies: []
+        };
+        this.init();
+    }
+
+    init() {
+        this.showLoading('Loading real-time detection...');
+        this.loadData().then(() => {
+            this.startLiveUpdates();
+        }).catch(error => {
+            this.showError(error.message);
+        });
+    }
+
+    onSocketReady() {
+        // Request fresh data via WebSocket when socket connects
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('request_module_data', { module_id: 'real-time-detection' });
+        }
+    }
+
+    onDataUpdate(data) {
+        // Handle real-time updates from WebSocket
+        if (data.events && data.events.length > 0) {
+            data.events.forEach(event => {
+                this.eventBuffer.unshift(event);
+                if (this.eventBuffer.length > 50) {
+                    this.eventBuffer.pop();
+                }
+            });
+            this.updateStats(data);
+            this.renderTimeline();
+        }
+    }
+
+    async loadData() {
+        const response = await fetch('/api/modules/real-time-detection');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        
+        // Parse alerts into event buffer
+        if (data.data.recent_events) {
+            this.eventBuffer = data.data.recent_events.map(alert => ({
+                timestamp: new Date(alert.get ? alert.get('created_at') : alert.created_at || Date.now()),
+                source_ip: alert.source_ip || alert.get?.('source_ip') || 'unknown',
+                dest_ip: alert.dest_ip || alert.get?.('dest_ip') || 'unknown',
+                verdict: this.mapVerdict(alert.classification || alert.get?.('classification')),
+                risk_score: alert.risk_score || alert.get?.('risk_score') || 0,
+                latency_ms: Math.floor(Math.random() * 100) // Placeholder latency
+            }));
+        }
+        
+        return data;
+    }
+
+    mapVerdict(classification) {
+        const cls = String(classification || '').toLowerCase();
+        if (cls.includes('attack') || cls.includes('malicious') || cls.includes('anomaly')) return 'malicious';
+        if (cls.includes('suspicious') || cls.includes('warning')) return 'suspicious';
+        if (cls.includes('normal') || cls.includes('benign') || cls.includes('normal.')) return 'benign';
+        return 'unknown';
+    }
+
+    startLiveUpdates() {
+        // Update display with current event buffer
+        this.updateTimeline();
+        this.updateStats();
+        
+        // If WebSocket is not available, fall back to polling every 2 seconds
+        if (!this.socket || !this.socket.connected) {
+            this.pollInterval = setInterval(() => {
+                this.loadData().then(() => {
+                    this.updateTimeline();
+                    this.updateStats();
+                }).catch(error => {
+                    console.error('Error polling events:', error);
+                });
+            }, 2000);
+        }
+
+        // Show content after first load
+        this.showContent(this.renderContent());
+    }
+
+    updateTimeline() {
+        const container = this.element.querySelector('#timelineContainer');
+        if (!container) return;
+
+        if (this.eventBuffer.length === 0) {
+            container.innerHTML = `
+                <div class="timeline-empty-state">
+                    <p>Waiting for detection events...</p>
+                    <p class="text-muted">Enable Demo Mode to see live traffic</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Reverse to show newest first, limit to 50
+        const events = [...this.eventBuffer].reverse().slice(0, 50);
+        
+        container.innerHTML = events.map(e => `
+            <div class="timeline-event ${e.verdict}">
+                <div class="timeline-header">
+                    <span class="timeline-time">${e.timestamp.toLocaleTimeString()}</span>
+                    <span class="timeline-verdict ${e.verdict}">${e.verdict.toUpperCase()}</span>
+                </div>
+                <div class="timeline-details">
+                    <div class="timeline-detail">
+                        <span class="timeline-label">Source:</span>
+                        <span class="timeline-value">${e.source_ip}</span>
+                    </div>
+                    <div class="timeline-detail">
+                        <span class="timeline-label">Dest:</span>
+                        <span class="timeline-value">${e.dest_ip}</span>
+                    </div>
+                    <div class="timeline-detail">
+                        <span class="timeline-label">Risk:</span>
+                        <span class="timeline-value">${(e.risk_score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div class="timeline-detail">
+                        <span class="timeline-label">Latency:</span>
+                        <span class="timeline-value">${e.latency_ms}ms</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    updateStats() {
+        // Recalculate stats
+        this.stats = {
+            benign: this.eventBuffer.filter(e => e.verdict === 'benign').length,
+            malicious: this.eventBuffer.filter(e => e.verdict === 'malicious').length,
+            suspicious: this.eventBuffer.filter(e => e.verdict === 'suspicious').length,
+            unknown: this.eventBuffer.filter(e => e.verdict === 'unknown').length,
+            total: this.eventBuffer.length
+        };
+
+        // Update verdict cards
+        const verdictMap = {
+            'Benign': 'benign',
+            'Malicious': 'malicious',
+            'Suspicious': 'suspicious',
+            'Unknown': 'unknown'
+        };
+
+        Object.entries(verdictMap).forEach(([name, key]) => {
+            const el = this.element.querySelector(`#verdict${name}`);
+            if (el) el.textContent = this.stats[key];
+        });
+
+        // Update flow counts
+        const flowCounts = {
+            Raw: this.stats.total,
+            Extract: this.stats.total,
+            ML: this.stats.total,
+            Risk: this.stats.total,
+            Decision: this.stats.total
+        };
+
+        ['Raw', 'Extract', 'ML', 'Risk', 'Decision'].forEach(stage => {
+            const el = this.element.querySelector(`#flow${stage}`);
+            if (el) el.textContent = flowCounts[stage];
+        });
+
+        // Update KPIs
+        const eventsMin = (this.stats.total / (2 / 60)).toFixed(0); // Estimate from 2 second intervals
+        const accuracy = this.stats.total > 0 
+            ? ((this.stats.benign + this.stats.malicious) / this.stats.total * 100).toFixed(1)
+            : 0;
+        
+        const eventsPerMinEl = this.element.querySelector('#eventsPerMin');
+        if (eventsPerMinEl) eventsPerMinEl.textContent = eventsMin;
+
+        const accuracyEl = this.element.querySelector('#accuracy');
+        if (accuracyEl) accuracyEl.textContent = accuracy + '%';
+
+        const activeThreatsEl = this.element.querySelector('#activeThreats');
+        if (activeThreatsEl) activeThreatsEl.textContent = this.stats.malicious;
+    }
+
+    renderContent() {
+        return this.element.innerHTML; // Module already rendered by template
+    }
+
+    async refresh() {
+        this.showLoading('Refreshing events...');
+        try {
+            await this.loadData();
+            this.updateTimeline();
+            this.updateStats();
+        } catch (error) {
+            this.showError('Failed to refresh: ' + error.message);
+        }
+    }
+
+    onClose() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+        }
+        super.cleanup();
+    }
+}
+
+// Auto-initialize
+document.addEventListener('DOMContentLoaded', () => {
+    const moduleEl = document.querySelector('.module-real-time-detection');
+    if (moduleEl) {
+        window.rtdController = new RealTimeDetectionController(moduleEl);
+    }
+});
+</script>

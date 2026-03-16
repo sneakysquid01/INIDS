@@ -1,0 +1,161 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="packet-inspection-module">
+    <div class="inspection-stats">
+        <div class="stat-card">
+            <div class="stat-label">Packets Inspected</div>
+            <div class="stat-value" id="packets-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Anomalies Found</div>
+            <div class="stat-value" id="anomalies-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Throughput</div>
+            <div class="stat-value" id="throughput">0</div>
+            <div class="stat-unit">pps</div>
+        </div>
+    </div>
+
+    <div class="layers-section">
+        <h3>Network Layer Analysis</h3>
+        <div class="layers-display" id="layers-display">
+            <div class="empty-state">Loading packet analysis...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.packet-inspection-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.inspection-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #1dd1a1;
+}
+
+.stat-unit {
+    color: #666;
+    font-size: 0.75rem;
+}
+
+.layers-section h3 {
+    color: #e8e8e8;
+    margin-bottom: 1rem;
+}
+
+.layers-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.layer-item {
+    background: linear-gradient(90deg, rgba(29, 209, 161, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #1dd1a1;
+    border-radius: 4px;
+    padding: 0.75rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #a8a8a8;
+    animation: slideIn 0.3s ease-out;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+</style>
+
+<script>
+class PacketInspectionController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/packet-inspection');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updatePacketAnalysis();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updatePacketAnalysis())
+                .catch(error => console.error('Poll failed:', error));
+        }, 2500);
+    }
+
+    async updatePacketAnalysis() {
+        const data = await this.loadData();
+        const packets = data.data.packets || [];
+        
+        document.getElementById('packets-count').textContent = packets.length;
+        document.getElementById('anomalies-count').textContent = 
+            packets.filter(p => p.anomaly).length;
+        document.getElementById('throughput').textContent = 
+            Math.round(packets.length * 400) / 1000;
+
+        const display = document.getElementById('layers-display');
+        if (packets.length === 0) {
+            display.innerHTML = '<div class="empty-state">No packets detected</div>';
+            return;
+        }
+
+        display.innerHTML = packets.slice(0, 10).map(pkt => `
+            <div class="layer-item">
+                <strong>${pkt.protocol || 'UNKNOWN'}</strong> | 
+                ${pkt.src_ip || '?'} → ${pkt.dst_ip || '?'} | 
+                Size: ${pkt.size || 0}B
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new PacketInspectionController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new PacketInspectionController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

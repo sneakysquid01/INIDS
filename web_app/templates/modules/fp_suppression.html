@@ -1,0 +1,157 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="fp-suppression-module">
+    <div class="suppression-stats">
+        <div class="stat-card">
+            <div class="stat-label">FP Suppressed</div>
+            <div class="stat-value" id="fp-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Rules Active</div>
+            <div class="stat-value" id="rules-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Accuracy Gain</div>
+            <div class="stat-value" id="accuracy-gain">0%</div>
+        </div>
+    </div>
+
+    <div class="rules-section">
+        <h3>Suppression Rules</h3>
+        <div class="rules-list" id="rules-list">
+            <div class="empty-state">Loading rules...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.fp-suppression-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.suppression-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #818cf8;
+}
+
+.rules-section h3 {
+    color: #e8e8e8;
+    margin-bottom: 1rem;
+}
+
+.rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.rule-item {
+    background: linear-gradient(90deg, rgba(129, 140, 248, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #818cf8;
+    border-radius: 4px;
+    padding: 0.75rem;
+    font-size: 0.9rem;
+    color: #a8a8a8;
+}
+
+.rule-name {
+    color: #e8e8e8;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.rule-status {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+</style>
+
+<script>
+class FPSuppressionController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/fp-suppression');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateSuppression();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateSuppression())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateSuppression() {
+        const data = await this.loadData();
+        const rules = data.data.rules || [];
+        
+        document.getElementById('fp-count').textContent = data.data.fp_suppressed || 0;
+        document.getElementById('rules-count').textContent = rules.length;
+        document.getElementById('accuracy-gain').textContent = 
+            Math.round((data.data.accuracy_gain || 0) * 100) + '%';
+
+        const list = document.getElementById('rules-list');
+        if (rules.length === 0) {
+            list.innerHTML = '<div class="empty-state">No rules active</div>';
+            return;
+        }
+
+        list.innerHTML = rules.slice(0, 8).map(rule => `
+            <div class="rule-item">
+                <div class="rule-name">${rule.name || 'Rule'}</div>
+                <div class="rule-status">Suppressions: ${rule.count || 0}</div>
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new FPSuppressionController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new FPSuppressionController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

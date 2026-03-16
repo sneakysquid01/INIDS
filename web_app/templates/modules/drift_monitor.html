@@ -1,0 +1,152 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="drift-monitor-module">
+    <div class="drift-stats">
+        <div class="stat-card">
+            <div class="stat-label">Model Drift %</div>
+            <div class="stat-value" id="drift-percent">0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Current Accuracy</div>
+            <div class="stat-value" id="accuracy">0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Retraining Status</div>
+            <div class="stat-value" id="retrain-status">Ready</div>
+        </div>
+    </div>
+
+    <div class="drift-chart">
+        <h3>Accuracy Over Time</h3>
+        <svg id="drift-svg" viewBox="0 0 600 200" style="width: 100%; height: 300px;">
+            <line x1="40" y1="180" x2="580" y2="180" stroke="#444" stroke-width="1"/>
+            <line x1="40" y1="20" x2="40" y2="180" stroke="#444" stroke-width="1"/>
+            <polyline id="accuracy-line" points="40,100" stroke="#4ecdc4" stroke-width="2" fill="none"/>
+        </svg>
+    </div>
+</div>
+
+<style>
+.drift-monitor-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.drift-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #a78bfa;
+}
+
+.drift-chart {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+}
+
+.drift-chart h3 {
+    color: #e8e8e8;
+    margin-bottom: 1rem;
+}
+
+#drift-svg {
+    background: rgba(15, 52, 96, 0.3);
+    border: 1px solid #16477f;
+    border-radius: 4px;
+}
+</style>
+
+<script>
+class DriftMonitorController extends BaseModuleController {
+    constructor(containerId) {
+        super(containerId);
+        this.accuracyHistory = [];
+    }
+
+    async loadData() {
+        const response = await fetch('/api/modules/drift-monitor');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateDriftMonitor();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateDriftMonitor())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateDriftMonitor() {
+        const data = await this.loadData();
+        const drift = data.data;
+        
+        document.getElementById('drift-percent').textContent = 
+            Math.round((drift.drift_percentage || 0)) + '%';
+        document.getElementById('accuracy').textContent = 
+            Math.round((drift.current_accuracy || 0) * 100) + '%';
+        document.getElementById('retrain-status').textContent = 
+            drift.retrain_recommended ? 'Recommended' : 'Ready';
+
+        this.accuracyHistory.push(drift.current_accuracy || 0);
+        if (this.accuracyHistory.length > 20) this.accuracyHistory.shift();
+        
+        this.updateAccuracyChart();
+    }
+
+    updateAccuracyChart() {
+        const line = document.getElementById('accuracy-line');
+        if (!line) return;
+
+        const points = this.accuracyHistory.map((acc, idx) => {
+            const x = 40 + (idx / Math.max(this.accuracyHistory.length - 1, 1)) * 540;
+            const y = 180 - (acc * 160);
+            return `${x},${y}`;
+        }).join(' ');
+
+        line.setAttribute('points', points);
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new DriftMonitorController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new DriftMonitorController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

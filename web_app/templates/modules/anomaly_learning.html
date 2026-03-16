@@ -1,0 +1,155 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="anomaly-learning-module">
+    <div class="learning-stats">
+        <div class="stat-card">
+            <div class="stat-label">Patterns Learned</div>
+            <div class="stat-value" id="patterns-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Anomalies Found</div>
+            <div class="stat-value" id="anomalies-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Learning Progress</div>
+            <div class="stat-value" id="progress">0%</div>
+        </div>
+    </div>
+
+    <div class="patterns-grid" id="patterns-grid">
+        <div class="empty-state">Loading patterns...</div>
+    </div>
+</div>
+
+<style>
+.anomaly-learning-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.learning-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #06b6d4;
+}
+
+.patterns-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.pattern-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.pattern-name {
+    font-weight: 600;
+    color: #e8e8e8;
+    margin-bottom: 0.5rem;
+    word-break: break-word;
+}
+
+.pattern-confidence {
+    font-size: 0.9rem;
+    color: #06b6d4;
+}
+
+.empty-state {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+
+<script>
+class AnomalyLearningController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/anomaly-learning');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateLearning();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateLearning())
+                .catch(error => console.error('Poll failed:', error));
+        }, 3000);
+    }
+
+    async updateLearning() {
+        const data = await this.loadData();
+        const patterns = data.data.patterns || [];
+        
+        document.getElementById('patterns-count').textContent = patterns.length;
+        document.getElementById('anomalies-count').textContent = 
+            patterns.filter(p => p.is_anomaly).length;
+        document.getElementById('progress').textContent = 
+            Math.round((data.data.learning_progress || 0) * 100) + '%';
+
+        const grid = document.getElementById('patterns-grid');
+        if (patterns.length === 0) {
+            grid.innerHTML = '<div class="empty-state">No patterns yet</div>';
+            return;
+        }
+
+        grid.innerHTML = patterns.slice(0, 8).map(pattern => `
+            <div class="pattern-card">
+                <div class="pattern-name">${pattern.name || 'Pattern'}</div>
+                <div class="pattern-confidence">Conf: ${(pattern.confidence * 100).toFixed(0)}%</div>
+            </div>
+        `).join('');
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new AnomalyLearningController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new AnomalyLearningController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}

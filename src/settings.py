@@ -60,6 +60,7 @@ def load_settings() -> Settings:
         raise ValueError("SECRET_KEY environment variable is required when INIDS_REQUIRE_SECRET_KEY=1")
     if not secret:
         # Backward-compatible dev fallback. Use INIDS_REQUIRE_SECRET_KEY=1 in production.
+        # In test/dev environments without explicit secret requirement, use dev secret
         secret = "dev-inids-secret"
     rate_reqs = _safe_int("RATE_LIMIT_REQUESTS", 120)
     rate_window = _safe_int("RATE_LIMIT_WINDOW_SECONDS", 60)

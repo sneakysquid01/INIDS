@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INIDS Demo Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="dark-theme">
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-dark bg-dark border-bottom border-secondary sticky-top" aria-label="Main navigation">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <span class="badge bg-primary me-2">INIDS</span>
+                Intelligent Network Intrusion Detection System
+            </span>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-warning" id="demoModeToggle" title="Trigger demo attack traffic" aria-label="Toggle demo mode">
+                    <span id="demoModeText" aria-live="polite">Demo Mode: OFF</span>
+                </button>
+                <button class="btn btn-sm btn-outline-info" id="refreshBtn" title="Refresh all data" aria-label="Refresh dashboard metrics">
+                    ⟳ Refresh
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="settingsBtn" title="Settings" aria-label="Open settings">
+                    ⚙️ Settings
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- System Status Bar -->
+    <div class="system-status-bar" aria-label="System status information">
+        <div class="container-fluid">
+            <div class="row g-3 align-items-center">
+                <!-- System Health -->
+                <div class="col-md-4">
+                    <div class="status-box">
+                        <h6 class="text-muted mb-2">SYSTEM STATUS</h6>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="status-indicator online" aria-label="System is online"></div>
+                                <span class="badge bg-success">Online</span>
+                            </div>
+                            <div class="text-end small">
+                                <div>Uptime: <span id="systemUptime" aria-label="System uptime">4.2h</span></div>
+                                <div>Health: <span id="systemHealth" class="text-success" aria-label="System health percentage">98%</span></div>
+                                <div>Capacity: <span id="systemCapacity" class="text-info" aria-label="System capacity usage">45%</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Threats -->
+                <div class="col-md-4">
+                    <div class="status-box">
+                        <h6 class="text-muted mb-2">ACTIVE THREATS</h6>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="threat-counter">
+                                <div class="count-badge attack">3</div>
+                                <small>Attacks</small>
+                            </div>
+                            <div class="threat-counter">
+                                <div class="count-badge block">5</div>
+                                <small>Blocked</small>
+                            </div>
+                            <div class="threat-counter">
+                                <div class="count-badge alert">12</div>
+                                <small>Alerts</small>
+                            </div>
+                            <div class="threat-counter">
+                                <div class="count-badge review">2</div>
+                                <small>Under Review</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Last Hour Metrics -->
+                <div class="col-md-4">
+                    <div class="status-box">
+                        <h6 class="text-muted mb-2">LAST HOUR METRICS</h6>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-end small w-100">
+                                <div>Attacks: <span id="lastHourAttacks" class="text-danger">127</span></div>
+                                <div>Blocks: <span id="lastHourBlocks" class="text-warning">23</span></div>
+                                <div>False Pos Rate: <span id="fpRate" class="text-info">8%</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container-fluid pt-4 pb-5">
+        <!-- Detection Rate Chart Section -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="chart-container">
+                    <h5 class="mb-3">Detection Rate (Last 24h)</h5>
+                    <canvas id="detectionChart" height="80"></canvas>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="capability-summary">
+                    <h5 class="mb-3">15 Capability Modules</h5>
+                    <div class="summary-stat">
+                        <div class="stat-number">15</div>
+                        <div class="stat-label">Modules Ready</div>
+                    </div>
+                    <div class="summary-stat mt-3">
+                        <div class="stat-number">14</div>
+                        <div class="stat-label text-success">✓ Ready to Demo</div>
+                    </div>
+                    <div class="summary-stat mt-3">
+                        <div class="stat-number">1</div>
+                        <div class="stat-label text-warning">🔧 In Development</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module Grid -->
+        <div class="row g-3 mb-5">
+            <h4 class="mb-4">Demo Capability Modules</h4>
+
+            <!-- MODULE 1: Real-Time Detection -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="real-time-detection">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🔥</div>
+                        <div class="card-title">Real-Time Detection</div>
+                        <div class="card-subtitle">Live Event Feed</div>
+                        <div class="card-description">Stream detection happening in real-time with animated verdict updates</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 2: Multi-Engine Comparison -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="multi-engine">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🔥</div>
+                        <div class="card-title">Multi-Engine Voting</div>
+                        <div class="card-subtitle">Consensus Decision</div>
+                        <div class="card-description">5 detection engines voting for intelligent consensus</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 3: Risk Visualization -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="risk-score">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">📊</div>
+                        <div class="card-title">Risk Score</div>
+                        <div class="card-subtitle">Visualizer</div>
+                        <div class="card-description">Animated gauge showing multi-factor risk calculation</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 4: Auto-Blocking -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="auto-blocking">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🛑</div>
+                        <div class="card-title">Automated Blocking</div>
+                        <div class="card-subtitle">Immediate Response</div>
+                        <div class="card-description">Timeline showing detection to firewall block execution</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 5: Approval Workflow -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="approval-workflow">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">👨‍💻</div>
+                        <div class="card-title">Approval Workflow</div>
+                        <div class="card-subtitle">HITL Review</div>
+                        <div class="card-description">Human-in-the-loop decision process for critical actions</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 6: False Positive Learning -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="false-positive">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🧪</div>
+                        <div class="card-title">False Positive Learning</div>
+                        <div class="card-subtitle">Feedback Loop</div>
+                        <div class="card-description">System learns from analyst feedback and suppresses patterns</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 7: Threat Intelligence -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="threat-intel">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🌐</div>
+                        <div class="card-title">Threat Intelligence</div>
+                        <div class="card-subtitle">Enrichment</div>
+                        <div class="card-description">External reputation checks and malicious source badges</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 8: Anomaly Learning -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="anomaly-learning">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🤖</div>
+                        <div class="card-title">Anomaly Learning</div>
+                        <div class="card-subtitle">Self-Training</div>
+                        <div class="card-description">Engine learns baseline behavior and flags deviations</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 9: Analytics Dashboard -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="analytics">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">📈</div>
+                        <div class="card-title">Analytics Dashboard</div>
+                        <div class="card-subtitle">Insights & Reports</div>
+                        <div class="card-description">Charts showing security posture and detection metrics</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 10: Escalation Visualizer -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="escalation">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🔁</div>
+                        <div class="card-title">Escalation State</div>
+                        <div class="card-subtitle">Machine</div>
+                        <div class="card-description">Per-IP escalation progression and response severity</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 11: Pipeline Monitor -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="pipeline-monitor">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🚰</div>
+                        <div class="card-title">Pipeline Monitor</div>
+                        <div class="card-subtitle">Throughput & Health</div>
+                        <div class="card-description">Real-time ingestion rate, queue depth, latency metrics</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 12: Policy Tuning -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="policy-tuning">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🎯</div>
+                        <div class="card-title">Policy Tuning</div>
+                        <div class="card-subtitle">Simulator</div>
+                        <div class="card-description">Interactive sliders showing real-time impact on detection</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 13: Alert Lifecycle -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="alert-lifecycle">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">📂</div>
+                        <div class="card-title">Alert Lifecycle</div>
+                        <div class="card-subtitle">Manager</div>
+                        <div class="card-description">Kanban workflow board for SOC alert management</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 14: Engine Playground -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="engine-playground">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🔧</div>
+                        <div class="card-title">Engine Toggle</div>
+                        <div class="card-subtitle">Playground</div>
+                        <div class="card-description">Disable engines to see impact on detection coverage</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- MODULE 15: Pattern Detector -->
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="#" class="capability-card" data-module="pattern-detector">
+                    <div class="card-glow"></div>
+                    <div class="card-content">
+                        <div class="card-icon">🗺️</div>
+                        <div class="card-title">Behavioral Pattern</div>
+                        <div class="card-subtitle">Detector</div>
+                        <div class="card-description">Network graph visualization of attack patterns</div>
+                        <div class="card-action">Open Panel →</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Module Modal (Placeholder for now) -->
+    <div class="modal fade" id="moduleModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable modal-lg">
+            <div class="modal-content bg-dark text-light border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="moduleTitle">Module</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="moduleContent">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-info" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Module loading...</p>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary">More Info</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>
+        // Simple chart placeholder
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('detectionChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['6am', '9am', '12pm', '3pm', '6pm', '9pm', '12am'],
+                        datasets: [{
+                            label: 'Attacks detected',
+                            data: [65, 120, 85, 140, 95, 110, 72],
+                            borderColor: '#ff4444',
+                            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#333' },
+                                ticks: { color: '#aaa' }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#aaa' }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+{% extends "modules/base_module.html" %}
+
+{% block module_content %}
+<div class="network-topology-module">
+    <div class="topology-stats">
+        <div class="stat-card">
+            <div class="stat-label">Nodes Active</div>
+            <div class="stat-value" id="nodes-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Connections</div>
+            <div class="stat-value" id="connections-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Threats Detected</div>
+            <div class="stat-value" id="threats-count">0</div>
+        </div>
+    </div>
+
+    <div class="topology-graph">
+        <h3>Network Map</h3>
+        <svg id="topology-svg" viewBox="0 0 600 400" style="width: 100%; height: 400px; background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%); border: 1px solid #16477f; border-radius: 6px;">
+            <circle cx="300" cy="200" r="15" fill="#4ecdc4" stroke="#4ecdc4" stroke-width="2"/>
+            <text x="300" y="235" text-anchor="middle" fill="#888" font-size="12">Network</text>
+            <!-- Nodes will be rendered here -->
+        </svg>
+    </div>
+</div>
+
+<style>
+.network-topology-module {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.topology-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.topology-graph {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+    padding: 1.5rem;
+}
+
+.topology-graph h3 {
+    color: #e8e8e8;
+    margin-bottom: 1rem;
+}
+
+#topology-svg {
+    display: block;
+}
+</style>
+
+<script>
+class NetworkTopologyController extends BaseModuleController {
+    async loadData() {
+        const response = await fetch('/api/modules/network-topology');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    startLiveUpdates() {
+        this.updateTopology();
+        this.pollInterval = setInterval(() => {
+            this.loadData()
+                .then(data => this.updateTopology())
+                .catch(error => console.error('Poll failed:', error));
+        }, 4000);
+    }
+
+    async updateTopology() {
+        const data = await this.loadData();
+        const nodes = data.data.nodes || [];
+        
+        document.getElementById('nodes-count').textContent = nodes.length;
+        document.getElementById('connections-count').textContent = data.data.connections || 0;
+        document.getElementById('threats-count').textContent = 
+            nodes.filter(n => n.threat).length;
+
+        this.renderTopology(nodes);
+    }
+
+    renderTopology(nodes) {
+        const svg = document.getElementById('topology-svg');
+        if (!svg) return;
+
+        // Keep center node, render others in circle
+        const centerX = 300, centerY = 200;
+        const radius = 120;
+        
+        nodes.forEach((node, idx) => {
+            const angle = (idx / Math.max(nodes.length, 1)) * 2 * Math.PI;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+            
+            // Add circle if not exists
+            let circle = svg.querySelector(`circle[data-node="${idx}"]`);
+            if (!circle) {
+                circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('data-node', idx);
+                circle.setAttribute('r', '10');
+                circle.setAttribute('stroke-width', '2');
+                circle.setAttribute('cy', centerY);
+                svg.appendChild(circle);
+            }
+            
+            circle.setAttribute('cx', x);
+            circle.setAttribute('cy', y);
+            circle.setAttribute('fill', node.threat ? '#ff6b6b' : '#4ecdc4');
+            circle.setAttribute('stroke', node.threat ? '#ff6b6b' : '#4ecdc4');
+        });
+    }
+
+    onClose() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        super.onClose();
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const controller = new NetworkTopologyController('module-content');
+        controller.init();
+    });
+} else {
+    const controller = new NetworkTopologyController('module-content');
+    controller.init();
+}
+</script>
+{% endblock %}
