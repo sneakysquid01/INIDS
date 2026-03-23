@@ -47,7 +47,7 @@ def load_settings() -> Settings:
     port = _safe_int("PORT", 5000)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
-    ops_db_path = os.getenv("OPS_DB_PATH", "data/inids_ops.db")
+    ops_db_path = os.getenv("OPS_DB_PATH", os.getenv("INIDS_OPS_DB_PATH", "data/inids_ops.db"))
     secret = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "")).strip()
     redis_url = os.getenv("REDIS_URL", "").strip()
     pipeline_enabled = _safe_bool("INIDS_PIPELINE_ENABLED", False)

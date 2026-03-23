@@ -1,366 +1,348 @@
-# PROJECT_REVIEW
+﻿# INIDS Deep Maintenance and Correctness Review
 
-## Scope and Method
-This review was performed as a maintenance/correctness audit of the activated IDS/IPS runtime.
+Date: 2026-03-24
+Scope: Full repository maintenance and correctness audit focused on runtime safety, dead code, and maintainability without architectural rewrites.
 
-Review approach:
-- Read core runtime, support modules, and tests across `src/`, `web_app/`, and `tests/`.
-- Verified implementation evidence (not design assumptions).
-- Applied only surgical edits for correctness and operational safety.
-- Re-ran full regression suite after fixes.
+## 1) Architecture Map
 
-Final validation:
-- `pytest tests/ -q` equivalent run passed.
-- Current result: **143 passing tests**.
+### 1.1 Entry points
+- HTTP/Web runtime: `web_app/app.py`
+- Standalone pipeline worker CLI: `src/pipeline/worker.py`
+- Training/preprocessing CLIs:
+  - `src/preprocess_train.py`
+  - `src/train_cli.py`
+  - wrappers: `src/train_model.py`, `src/train_all_models.py`
+- Demo/ops scripts:
+  - `src/run_end_to_end_demo.py` (duplicate of `tools/run_end_to_end_demo.py`)
+  - `src/run_demo.py`, `src/realtime_simulation.py`, `src/capture_live_traffic.py`
 
----
+### 1.2 Core modules and responsibilities
+- Event bus + event contracts: `src/core/event_bus.py`
+- Detection inference (single-model path): `src/detection_service.py`
+- Multi-engine framework:
+  - base/result types: `src/detection/engine_base.py`
+  - registry: `src/detection/engine_registry.py`
+  - fusion/aggregation: `src/detection/aggregator.py`
+  - engines: `src/detection/engines/{ml_engine,signature_engine,anomaly_engine,threshold_engine}.py`
+  - threat-intel engine: `src/threat_intel/ti_engine.py`
+- Prevention path:
+  - risk scoring: `src/ips/risk_engine.py`
+  - policy decisions: `src/ips/policy_engine.py`
+  - action execution: `src/ips/action_executor.py`
+  - cleanup/reconcile scheduler: `src/ips/scheduler.py`
+  - service policy config: `src/prevention_service.py`
+  - allowlist/escalation/FP management: `src/prevention/*`
+- Streaming runtime:
+  - stream consumer: `src/pipeline/stream_processor.py`
+  - backpressure control: `src/pipeline/backpressure.py`
+  - worker orchestration: `src/pipeline/worker.py`
+  - ingestion queues: `src/ingestion_service.py`
+- Persistence:
+  - Ops DB (SQLite/Postgres): `src/ops_store.py`
+  - policy versioning: `src/policy/policy_store.py`
+  - model registry file: `src/model_registry.py`
+- Security and controls:
+  - RBAC API-key guard: `src/auth_service.py`
+  - request rate limiting: `src/rate_limiter.py`
+- Observability + HA:
+  - metrics: `src/metrics_service.py`
+  - JSON logging: `src/observability/json_logging.py`
+  - SIEM buffer/export: `src/observability/siem_exporter.py`
+  - leader election: `src/ha/leader_election.py`
+  - health checks: `src/ha/health_check.py`
 
-## 1) End-to-End Architecture Map
+### 1.3 End-to-end runtime flow
 
-### 1.1 Entry Points
-- HTTP entrypoint: `web_app/app.py`
-  - App startup, route registration, EventBus subscriptions, pipeline/scheduler lifecycle.
-- Streaming worker path (in-process): `src/pipeline/stream_processor.py` + `src/pipeline/worker.py`
-  - Bootstrapped from `web_app/app.py` when pipeline is enabled and Redis is reachable.
-- Optional standalone worker CLI: `python -m src.pipeline.worker`
-  - Not used by default runtime, but available for process-separated operation.
+```
+HTTP /api/predict or /api/ingest/*
+    -> normalize / parse / enrich features
+    -> detection engines (single-model or multi-engine)
+    -> DetectionEvent on EventBus
+    -> RiskEngine => RiskScoreEvent
+    -> PolicyEngine => PolicyDecisionEvent
+    -> ActionExecutor => ActionEvent + firewall adapter calls
+    -> OpsStore persistence (alerts/actions/audit)
+    -> Metrics + SIEM exporter + websocket realtime emit
+```
 
-### 1.2 Core Event Types
-Defined in `src/core/event_bus.py`:
-- `DetectionEvent`
-- `RiskScoreEvent`
-- `PolicyDecisionEvent`
-- `ActionEvent`
-- `AuditEvent`
+### 1.4 Streaming ingestion path
+- `POST /api/ingest`
+  - If pipeline active: writes JSON payloads to Redis stream `SETTINGS.pipeline_stream_key`.
+  - If pipeline inactive: queues records in `InMemoryIngestionQueue` or `RedisStreamIngestionQueue`.
+- `StreamProcessor.run()`
+  - `XREADGROUP` from consumer group
+  - decode -> feature enrichment -> `EngineRegistry.evaluate_all()` -> `EngineAggregator.aggregate()`
+  - callback publishes `DetectionEvent`
+  - `XACK` only after successful processing
 
-Dispatcher:
-- `EventBus.publish()` executes handlers synchronously in calling thread, with per-handler exception isolation.
+### 1.5 Detection -> Risk -> Policy -> Action pipeline
+- `web_app/app.py` subscribes:
+  - `DetectionEvent` -> `_on_detection_event()` -> `risk_engine.calculate()`
+  - `RiskScoreEvent` -> `_on_risk_event()` -> `policy_engine.decide()`
+  - `PolicyDecisionEvent` -> `_on_policy_decision_event()` -> `action_executor.execute()`
+- Prevention actions persisted in `ops_store.actions`, audited in `ops_store.audits`.
 
-### 1.3 Detection -> Risk -> Policy -> Action Pipeline
-Path in `web_app/app.py`:
-1. Detection produced (HTTP prediction path or streaming callback) -> `DetectionEvent`
-2. `_on_detection_event`
-   - Allowlist bypass check
-   - `risk_engine.calculate(...)` -> `RiskScoreEvent`
-3. `_on_risk_event`
-   - `policy_engine.decide(...)` -> `PolicyDecisionEvent`
-4. `_on_policy_decision_event`
-   - Executes action for `BLOCK/TEMP_BLOCK/RATE_LIMIT` via `ActionExecutor`
-   - Publishes `ActionEvent` if execution returns action
-   - Records escalation hit
+### 1.6 Observability path
+- Metrics counters/gauges/histograms via `MetricsService`
+- `/api/metrics` Prometheus exposition
+- EventBus subscribers mirror detection/risk/policy/action events to `SiemExporter`
+- Optional JSON structured logs (`INIDS_JSON_LOGGING`)
+- Health probes: `/api/health`, `/api/health/live`, `/api/health/ready`
 
-Related modules:
-- `src/ips/risk_engine.py`
-- `src/ips/policy_engine.py`
-- `src/ips/action_executor.py`
-- `src/prevention/*`
+### 1.7 ML preprocessing / training / inference
+- Preprocessing: one-hot categorical + standard scaling (`src/preprocess_train.py`)
+- Training: model suite in `src/train_cli.py` (RF/GB/DT/AB/MLP)
+- Runtime inference:
+  - single-model path via `DetectionService`
+  - multi-engine path via `MLEngine` in `EngineRegistry`
+- Drift monitor utility: `src/drift_monitor.py` (PSI report)
 
-### 1.4 Streaming Ingestion Path
-Path:
-- `POST /api/ingest` in `web_app/app.py`
-  - If pipeline running: `XADD` into Redis stream
-  - Else: enqueue to in-memory ingestion queue
-- `StreamProcessor.run()` in `src/pipeline/stream_processor.py`
-  - `XREADGROUP` from stream
-  - decode payload
-  - feature enrichment (`enrich_single_row`)
-  - evaluate all enabled+ready engines
-  - aggregate result
-  - callback to app (`_stream_result_callback`) -> `DetectionEvent`
-  - `XACK` after successful processing
+## 2) Dead Code Discovery (with evidence)
 
-Backpressure path:
-- `PipelineWorker` lag monitor updates `BackpressureController`
-- `/api/ingest` returns 503 on SHEDDING mode
-
-### 1.5 Prevention Execution Path
-- Policy decisions drive `ActionExecutor.execute(...)`.
-- Adapter abstraction in `src/firewall_adapters.py`:
-  - Mock/UFW/nftables/webhook adapters.
-- Action idempotency guard:
-  - `OpsStore.has_active_block(target)` check prevents duplicate enforcement.
-- Scheduled maintenance:
-  - `PreventionScheduler` cleanup/reconcile loop (leader-gated in HA mode).
-
-### 1.6 Observability Path
-- Structured logging:
-  - base formatter in `src/logging_config.py`
-  - optional JSON formatter in `src/observability/json_logging.py`
-- SIEM buffering/export:
-  - `src/observability/siem_exporter.py`
-  - EventBus subscriptions for detection/risk/policy/action
-  - periodic auto-flush thread + `/api/siem/flush`
-- Metrics:
-  - `src/metrics_service.py`
-  - Prometheus text from `/api/metrics`
-  - includes dynamic per-engine counters
-
-### 1.7 ML Preprocessing / Inference Path
-- Synchronous prediction path:
-  - `/api/predict` -> `DetectionService.predict_from_features(...)`
-- Multi-engine detect path:
-  - `/api/detect` -> normalize numeric -> `enrich_single_row` (best effort) -> engine registry + aggregator
-- ML engine wrapper:
-  - `src/detection/engines/ml_engine.py`
-  - restricts model input to `FEATURE_COLUMNS` using `DEFAULT_FEATURE_ROW`
-
-### 1.8 Threat Intelligence Path
-- TI cache/manager: `src/threat_intel/feed_manager.py`
-- TI engine: `src/threat_intel/ti_engine.py`
-- Startup feed load from local dir (CSV/JSON) and periodic refresh thread.
-- API:
-  - `/api/threat-intel/stats`
-  - `/api/threat-intel/lookup`
-
-### 1.9 HA Readiness Path
-- Leader election: `src/ha/leader_election.py`
-- Health aggregation: `src/ha/health_check.py`
-- Endpoints:
-  - `/api/health`
-  - `/api/health/live`
-  - `/api/health/ready`
-- Singleton tasks gated by leadership:
-  - scheduler cleanup/reconcile
-  - TI refresh
-  - SIEM periodic flush
-
----
-
-## 2) Dead Code and Integration Audit
-
-### 2.1 Safe to Delete (or move to docs/examples)
-These are not part of live runtime path and do not appear in app wiring:
+### 2.1 Never-imported modules (static import graph)
+Evidence from AST import graph scan:
 - `src/analyze_performance.py`
 - `src/capture_live_traffic.py`
 - `src/generate_confusion_matrix.py`
+- `src/imbalance_handler.py`
+- `src/integrations/__init__.py`
 - `src/realtime_simulation.py`
 - `src/run_demo.py`
 - `src/run_end_to_end_demo.py`
+- `src/train_all_models.py`
+- `src/train_model.py`
+- `tools/analyze_performance.py`
+- `tools/capture_live_traffic.py`
+- `tools/generate_confusion_matrix.py`
+- `tools/realtime_simulation.py`
+- `tools/run_demo.py`
+- `tools/run_end_to_end_demo.py`
 
-Rationale:
-- Utility/demo scripts. Keep if used operationally; otherwise archive under `tools/` or `examples/`.
+Interpretation: these are mostly CLI/demo utilities, not runtime-integrated modules.
 
-### 2.2 Imported but Unused / Redundant
-- `EscalationLevel` import in `web_app/app.py` was unused.
-  - Action taken: removed import.
+### 2.2 Duplicate functionality
+Evidence (content hash equality):
+- `src/capture_live_traffic.py` == `tools/capture_live_traffic.py`
+- `src/run_end_to_end_demo.py` == `tools/run_end_to_end_demo.py`
 
-### 2.3 Defined but Not Instantiated in Main Runtime
-- `WebhookFirewallAdapter` in `src/firewall_adapters.py`
-  - Capability exists but no active selection in current adapter factory.
-  - Category: **Potential future capability**.
-- `RedisStreamIngestionQueue` in `src/ingestion_service.py`
-  - Framework exists, but app currently uses direct stream path for pipeline and in-memory queue fallback.
-  - Category: **Needs integration or redesign** (overlaps with current `/api/ingest` + stream processor design).
+Likely duplicate ownership boundary (`src` vs `tools`) rather than separate behaviors.
 
-### 2.4 Runtime-Reachable but Effectively Optional by Flags
-- Pipeline runtime (`INIDS_PIPELINE_ENABLED` + Redis URL)
-- JSON logging (`INIDS_JSON_LOGGING`)
-- TI feed loading (`INIDS_TI_FEED_DIR`)
+### 2.3 Imported but unused symbols (example evidence)
+- `src/pipeline/worker.py`: `json` import unused
+- `src/observability/siem_exporter.py`: `time` import unused
+- `src/feature_engineering.py`: `NUMERIC_FEATURES` import unused
+- `src/policy/policy_store.py`: `field` import unused
+- `src/preprocess_train.py`: `Pipeline` import unused
+- `src/analyze_performance.py` + `tools/analyze_performance.py`: several unused imports
 
-These are expected optional capabilities, not dead code.
+### 2.4 Categorization
+- Safe to delete (after deprecation notice):
+  - one copy of each exact duplicate script in `src/` or `tools/`
+  - unused marker package `src/integrations/__init__.py` if not part of planned public API
+- Needs integration:
+  - `imbalance_handler.py` (currently detached from training CLI)
+  - `capture_live_traffic.py` and `realtime_simulation.py` (demo-only, not ingestion-integrated)
+- Needs redesign:
+  - module demo APIs that synthesize placeholder values not backed by authoritative runtime state
+- Potential future capability:
+  - performance analysis / confusion matrix scripts (offline model QA utilities)
 
-### 2.5 Duplicate/Overlapping Functionality
-- Ingestion has two models:
-  - in-memory queue processing (`/api/ingest` + `/api/ingest/process`)
-  - Redis stream pipeline processing
-- This is intentional transitional architecture but creates overlap.
-- Category: **Needs redesign** for long-term simplification.
+## 3) Deep Bug Hunt and Fixes Applied
 
----
-
-## 3) Deep Bug Hunt Findings and Fixes
-
-### Fixed in this maintenance pass
-
-1. Policy history ordering bug
-- File: `src/policy/policy_store.py`
-- Issue:
-  - `history(limit)` returned reversed earliest `limit` items instead of latest versions.
-- Fix:
-  - Use tail slice (`self._versions[-effective:]`) and reverse for newest-first ordering.
-
-2. Threat intel JSON feed robustness
-- File: `src/threat_intel/feed_manager.py`
-- Issue:
-  - Non-dict items in JSON feed array could raise errors via `.get(...)`.
-- Fix:
-  - Skip non-dict items safely.
-
-3. Threat intel feed metadata growth
-- File: `src/threat_intel/feed_manager.py`
-- Issue:
-  - `_feed_metadata` grew unbounded during periodic refresh.
-- Fix:
-  - Bound metadata list length (trim policy applied).
-
-4. Rate limiter cardinality growth
-- File: `src/rate_limiter.py`
-- Issue:
-  - `_events` dictionary could grow unbounded with many unique keys.
-- Fix:
-  - Add stale-key pruning when cardinality exceeds threshold.
-
-5. Direct-script startup import-path failure
+### 3.1 High-impact correctness fixes
+1. SocketIO fallback import bug fixed
 - File: `web_app/app.py`
-- Issue:
-  - `python web_app/app.py` could fail before `src` path was inserted.
-- Fix:
-  - Ensure workspace root is inserted into `sys.path` before `src.*` imports.
+- Issue: fallback `_NoopSocketIO` lacked `.on()` so module import could fail when `flask_socketio` missing.
+- Fix: added no-op decorator-compatible `on()`.
 
-6. Startup/shutdown hardening
+2. Runtime-unreachable startup path fixed
 - File: `web_app/app.py`
-- Improvements:
-  - runtime config logging
-  - guarded `__main__` startup block
-  - graceful keyboard interrupt shutdown path
+- Issue: two `if __name__ == "__main__"` blocks; earlier one could start server before remaining routes/security bootstrap executed.
+- Fix: removed duplicate mid-file main block; consolidated startup into single final main block and moved module broadcaster startup into shared helper.
 
-### High-risk areas reviewed (no breaking edits applied)
-- Redis consumer-group handling and ACK timing: acceptable (ACK after successful processing).
-- Scheduler/threads use daemon patterns and stop hooks: acceptable for current architecture.
-- EventBus handler exception isolation: acceptable, though synchronous dispatch means handler latency propagates.
+3. Module APIs returning 500 due wrong engine object assumptions fixed
+- File: `web_app/app.py`
+- Affected endpoints:
+  - `/api/modules/multi-engine`
+  - `/api/modules/engine-playground`
+- Issue: code used `e.id/e.enabled` but registry returns dict entries.
+- Fix: switched to dict-key access (`engine_id`, `enabled`, `ready`, `engine_type`).
 
----
+4. Dashboard metrics timestamp parsing crash fixed
+- File: `web_app/app.py`
+- Endpoint: `/api/dashboard/metrics`
+- Issue: attempted `float(created_at)` on ISO datetime strings.
+- Fix: added `_to_epoch_seconds()` with ISO parsing fallback + safer counting logic.
 
-## 4) Streamlining and Simplification Notes
+5. Streaming bypass inconsistency in log ingestion fixed
+- File: `web_app/app.py`
+- Endpoint: `/api/ingest/log`
+- Issue: did not honor active stream pipeline path/backpressure.
+- Fix: aligned with `/api/ingest` behavior: stream to Redis when pipeline is active, enforce shedding response.
 
-Changes applied without behavior redesign:
-- Removed duplicate/unused import (`EscalationLevel`) in app wiring.
-- Removed duplicate `BASE_DIR` assignment in `web_app/app.py`.
-- Kept architecture stable; no control-flow redesign.
+6. Concurrency hardening
+- Files:
+  - `src/rate_limiter.py`
+  - `src/ingestion_service.py`
+- Issue: shared mutable structures were unguarded in threaded runtime.
+- Fix: added locks around mutation/read paths.
 
-Future simplification opportunities:
-- Converge ingestion models (in-memory process endpoint vs direct stream path).
-- Standardize background thread lifecycle under a single runtime manager object.
+7. Consumer-group recovery improvement
+- File: `src/pipeline/stream_processor.py`
+- Issue: stale pending messages from dead consumers were not reclaimed.
+- Fix: added best-effort reclaim loop using `XPENDING` + `XCLAIM` (guarded/optional for client compatibility).
 
----
+### 3.2 Maintainability cleanup (non-functional)
+- Removed clearly unused imports in several modules listed in section 2.3.
+- Added support for `INIDS_OPS_DB_PATH` env alias in settings loader (`src/settings.py`) while preserving `OPS_DB_PATH`.
+
+## 4) Streamlining and Simplification Performed
+- Unified engine-list module responses to registry’s actual dict schema.
+- Unified ingestion log path behavior with existing streaming/non-streaming ingestion semantics.
+- Reduced duplicate startup complexity by single main-block execution path.
+- Removed low-value unused imports to lower cognitive noise.
 
 ## 5) Runtime Integrity Verification
 
-Verified after changes:
-- Streaming pipeline remains functional (code path preserved and tested).
-- Detection engines still register and run.
-- Escalation semantics unchanged (state machine logic untouched).
-- HTTP endpoints remain backward-compatible; new endpoints additive.
-- Full test suite passes.
+### 5.1 Verification executed
+- Syntax/bytecode compile:
+  - `python -m compileall -q src web_app` -> PASS
+- Focused pytest subset (no tmpdir fixture use):
+  - `tests/test_rate_limiter.py`
+  - `tests/test_ingestion_service.py`
+  - `tests/test_stream_consumer_group_recovery.py`
+  - `tests/test_feature_engineering_runtime.py`
+  - `tests/test_app_import_path.py`
+  - Result: 25 passed
+- Manual API smoke checks (Flask test client):
+  - `/api/modules/multi-engine` -> 200
+  - `/api/modules/engine-playground` -> 200
+  - `/api/dashboard/metrics` -> 200
+  - `/api/modules/alert-lifecycle` -> 200
+- Forced import scenario without `flask_socketio`: module load succeeded.
 
-Current verification result:
-- **143 tests passed**.
+### 5.2 Environment limitations during broader test execution
+- Full/expanded pytest runs hit filesystem permission failures in temp/cache directories (`PermissionError` on pytest tmpdir cleanup and `.pytest_cache`).
+- This prevented reliable pass/fail determination for tests requiring `tmp_path` fixtures in this environment.
 
-Risky changes called out:
-- Rate limiter stale-key pruning introduces bounded-cardinality behavior under extreme key churn.
-  - Intended to prevent memory growth.
-  - Does not change normal path for typical key populations.
-
----
+### 5.3 Risky change callouts
+- Stale pending reclaim in `StreamProcessor` introduces additional Redis calls (`XPENDING`/`XCLAIM`) during idle periods.
+  - Risk: minor operational overhead and possible duplicate processing in misconfigured consumer groups.
+  - Mitigation: best-effort guarded implementation; only runs periodically and only when APIs exist.
 
 ## 6) Testing Coverage Gap Analysis
 
-### Areas now covered reasonably well
-- Pipeline callback/startup/backpressure
-- Prevention runtime (allowlist, escalation, idempotency)
-- TI manager/engine/apis
-- Observability and policy runtime APIs
-- HA endpoints and shutdown paths
+### 6.1 Modules with weak or no direct tests
+- `src/detection/engines/ml_engine.py`
+- `src/detection/engines/threshold_engine.py`
+- `src/pipeline/worker.py`
+- `src/logging_config.py`
+- Offline scripts (`run_demo`, `capture_live_traffic`, `analyze_performance`, etc.)
 
-### Remaining gaps
-1. Redis outage and reconnect behavior under live worker loops
-- Missing: long-running integration that simulates Redis flap during active stream consumption.
+### 6.2 Gaps by risk area
+- Concurrency paths:
+  - no dedicated stress tests for `InMemoryRateLimiter` lock correctness
+  - limited tests for concurrent ingestion queue producer/consumer pressure
+- Redis outage/recovery:
+  - no end-to-end test for newly added `XPENDING/XCLAIM` reclaim path
+  - no test for Redis reconnect while pipeline is already running
+- Duplicate delivery handling:
+  - idempotency covered for action executor, but not for stream-processor re-delivery + event bus effects end-to-end
+- Escalation downgrade behavior:
+  - basic cooldown de-escalation exists, but not long-run downgrade across multiple severity mixes
 
-2. Consumer group pending/reclaim edge cases
-- Missing: tests for stuck pending messages, crashed consumer ownership, and replay strategies.
+### 6.3 Recommended new tests
+1. `test_stream_processor_reclaims_stale_pending_messages()` with fake redis implementing `xpending_range/xclaim`.
+2. `test_api_dashboard_metrics_parses_iso_created_at()` regression guard.
+3. `test_import_without_flask_socketio()` explicit guard for fallback decorators.
+4. `test_ingest_log_routes_to_stream_when_pipeline_enabled()` parity with `/api/ingest`.
+5. `test_rate_limiter_thread_safety_under_parallel_requests()`.
+6. `test_engine_playground_and_multi_engine_module_schema_consistency()`.
 
-3. Concurrency stress
-- Missing: race/stress tests for EventBus fanout under high publish volume and mixed handler latency.
+## 7) Complete Project Capability Report
 
-4. Scheduler leadership transitions
-- Missing: transition tests (leader->follower->leader) with live scheduler/reconcile behavior.
+### 7.1 What the system does end-to-end
+INIDS accepts network-feature events (API/log parsers/stream), performs ML + multi-engine detection, computes risk, applies policy decisions, executes prevention actions (mock/UFW/nftables/webhook), persists operational state, and exposes health/metrics/SIEM/web dashboard interfaces.
 
-5. SIEM periodic flush durability semantics
-- Missing: explicit guarantees for dropped/retained events across flush failures.
+### 7.2 Supported detection capabilities
+- Supervised ML classifier inference (`DetectionService`, `MLEngine`)
+- Signature rules (`SignatureEngine`, YAML rules)
+- Threshold/rate heuristics (`ThresholdEngine`)
+- Unsupervised anomaly detection with buffered auto-fit (`AnomalyEngine`)
+- Threat intelligence IOC matching (`TIEngine`)
+- Multi-engine vote aggregation strategies (`ANY_TRIGGER`, `MAJORITY`, `UNANIMOUS`, `WEIGHTED`)
 
-6. Security/auth edge cases
-- Missing: comprehensive RBAC matrix tests for every new endpoint and mixed auth modes.
+### 7.3 Prevention capabilities
+- Policy-driven decisions: allow, alert, rate-limit, temp block, block, pending approval
+- Firewall adapter abstraction:
+  - in-memory mock
+  - UFW
+  - nftables
+  - webhook-based external control
+- Approval gate for pending blocks
+- Allowlist bypass
+- Expired-action cleanup + reconciliation
 
-### Suggested next tests
-- `tests/test_stream_consumer_group_recovery.py`
-- `tests/test_redis_outage_recovery.py`
-- `tests/test_scheduler_leader_transition.py`
-- `tests/test_event_bus_stress.py`
-- `tests/test_endpoint_auth_matrix.py`
+### 7.4 Streaming architecture
+- Redis Streams consumer group model with at-least-once semantics
+- In-process pipeline worker + backpressure controller
+- Stream callback to EventBus for full risk/policy/action flow
+- Best-effort stale pending claim support (new)
 
----
+### 7.5 ML pipeline capabilities
+- NSL-KDD preprocessing pipeline (one-hot + scaling)
+- Binary and optional multiclass split generation
+- Multi-model training CLI with registry + artifact outputs
+- Basic drift report generation (PSI)
 
-## 7) Capability Report for New Engineers
+### 7.6 Threat intelligence support
+- CSV and JSON feed loading
+- In-memory indicator cache with TTL purge
+- Feed summary and lookup APIs
+- Optional scheduled refresh (leader-only)
 
-### What the system does end-to-end
-INIDS ingests network-flow-like records, performs multi-engine detection, computes risk, applies policy decisions, and optionally executes prevention actions, while exporting metrics and SIEM-friendly events.
+### 7.7 Observability support
+- Prometheus metrics endpoint
+- Structured JSON logging option
+- SIEM export buffer + flush API + leader auto-flush thread
+- Websocket event emissions for realtime UI
+- Health/readiness/live endpoints with subsystem probes
 
-### Supported detection capabilities
-- Supervised ML detection (`MLEngine`)
-- Signature rule detection (YAML-driven)
-- Threshold/rate anomaly detection
-- Optional unsupervised anomaly engine (registerable)
-- Threat intelligence match engine (feed-driven)
+### 7.8 HA readiness
+- Redis-based leader election with TTL renewal
+- Standalone-leader fallback when Redis unavailable
+- Leader-gated singleton tasks (cleanup/reconcile/TI refresh/SIEM flush)
 
-### Prevention capabilities
-- Policy decisions: ALLOW/ALERT/RATE_LIMIT/TEMP_BLOCK/BLOCK
-- Action execution adapters: mock, UFW, nftables (webhook adapter available)
-- Allowlist bypass support (IP/CIDR)
-- Escalation tracking by source IP
-- Duplicate enforcement guard via active-action dedupe
+### 7.9 Known limitations
+- Demo module APIs still contain synthetic placeholders and inconsistent domain fields (`classification`, demo-only status enums).
+- Partial test-environment fragility around temporary directory permissions prevented full automated regression execution here.
+- Several scripts are duplicated across `src/` and `tools/` with unclear ownership boundaries.
 
-### Streaming architecture
-- Redis Streams consumer group processing
-- At-least-once consumption model
-- Backpressure controller (normal/sampling/shedding)
-- HTTP ingest can route records to stream when pipeline is enabled
+### 7.10 Technical debt areas
+- Very large `web_app/app.py` mixes transport, orchestration, and demo UI data assembly.
+- Mixed casing/enum conventions in status/action fields across modules.
+- Broad exception handling in endpoint paths may hide precise failure causes.
+- Limited explicit integration tests for thread/race behaviors under load.
 
-### ML pipeline capabilities
-- Default synchronous model inference endpoint (`/api/predict`)
-- Multi-engine aggregation endpoint (`/api/detect`)
-- Feature enrichment for engine evaluation with safe fallback
+### 7.11 Current maturity stage
+Stage: Late prototype / early production hardening.
+- Strengths: event-driven core, policy/action pipeline, HA/observability scaffolding, broad test suite footprint.
+- Needed next: module decomposition, stronger contract tests, cleanup of duplicate utilities, and consistency enforcement for statuses/schemas.
 
-### Threat intelligence support
-- Local CSV/JSON feed loading
-- In-memory IoC cache with expiration handling
-- TI lookup and stats API endpoints
-- Periodic refresh thread support
+## 8) Change Log (This Audit)
 
-### Observability support
-- Structured text logging and optional JSON logging
-- SIEM exporter with flush API and periodic draining
-- Prometheus-compatible metrics, including dynamic per-engine counters
+Files edited in this pass:
+- `web_app/app.py`
+- `src/pipeline/stream_processor.py`
+- `src/rate_limiter.py`
+- `src/ingestion_service.py`
+- `src/settings.py`
+- `src/pipeline/worker.py`
+- `src/observability/siem_exporter.py`
+- `src/feature_engineering.py`
+- `src/policy/policy_store.py`
+- `src/preprocess_train.py`
+- `src/analyze_performance.py`
+- `tools/analyze_performance.py`
 
-### HA readiness
-- Redis-backed leader election (standalone fallback when Redis absent)
-- Leader-gated singleton tasks
-- Liveness/readiness endpoints and aggregated subsystem probes
-
-### Known limitations
-- EventBus is synchronous; slow handlers can increase request/processing latency.
-- Consumer-group recovery behavior for pending messages is basic.
-- Ingestion architecture still has overlapping in-memory and stream models.
-- Some adapters/capabilities exist but are not exposed through runtime config paths.
-
-### Technical debt areas
-- Consolidate runtime lifecycle/thread management into unified supervisor.
-- Clarify ownership between detection_service path and multi-engine path.
-- Reduce overlap between demo/utility scripts and production runtime code.
-
-### Current maturity stage
-- **Late prototype / early beta**
-  - Strongly improved runtime completeness and test coverage.
-  - Correctness baseline is now significantly stronger.
-  - Still requires resilience hardening for production-grade distributed operation.
-
----
-
-## 8) Summary of This Audit Pass
-
-Implemented (surgical, non-architectural):
-- Correctness fixes: policy history ordering, TI feed parser hardening, TI metadata bounds, rate limiter stale-key pruning.
-- Runtime stability fix: direct-script import-path bootstrap and startup/shutdown hardening.
-- Readability cleanup: removed unused import and duplicate assignment.
-
-Validation:
-- Regression suite remains green at **143 passed**.
+No architecture rewrite was performed; changes were surgical and backward-compatible where possible.

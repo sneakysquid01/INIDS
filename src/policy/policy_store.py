@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any
 

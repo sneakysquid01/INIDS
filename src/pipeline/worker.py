@@ -10,7 +10,6 @@ Or imported and wired into the Flask application for in-process operation.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import signal
 import sys

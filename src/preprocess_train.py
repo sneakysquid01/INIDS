@@ -1,7 +1,6 @@
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 import joblib
 import os

@@ -36,6 +36,9 @@ class StreamProcessor:
         consumer_name: str = "worker-1",
         batch_size: int = 50,
         block_ms: int = 2000,
+        pending_reclaim_idle_ms: int = 60000,
+        pending_reclaim_batch: int = 50,
+        pending_reclaim_interval: int = 5,
         result_callback: Callable[[AggregatedResult, dict[str, Any]], None] | None = None,
     ) -> None:
         self.redis = redis_client
@@ -46,8 +49,12 @@ class StreamProcessor:
         self.consumer_name = consumer_name
         self.batch_size = batch_size
         self.block_ms = block_ms
+        self.pending_reclaim_idle_ms = max(1000, int(pending_reclaim_idle_ms))
+        self.pending_reclaim_batch = max(1, int(pending_reclaim_batch))
+        self.pending_reclaim_interval = max(1, int(pending_reclaim_interval))
         self.result_callback = result_callback
         self._running = False
+        self._idle_reads = 0
 
         self._ensure_group()
 
@@ -81,7 +88,11 @@ class StreamProcessor:
                     block=self.block_ms,
                 )
                 if not entries:
+                    self._idle_reads += 1
+                    if self._idle_reads % self.pending_reclaim_interval == 0:
+                        self._reclaim_stale_pending()
                     continue
+                self._idle_reads = 0
 
                 for _stream, messages in entries:
                     for msg_id, fields in messages:
@@ -118,6 +129,98 @@ class StreamProcessor:
             self.redis.xack(self.stream_key, self.group_name, msg_id)
         except Exception:
             logger.exception("Failed to process message %s", msg_id)
+
+    def _reclaim_stale_pending(self) -> None:
+        """Best-effort reclaim of stale pending messages from dead consumers."""
+        xpending_range = getattr(self.redis, "xpending_range", None)
+        xclaim = getattr(self.redis, "xclaim", None)
+        if not callable(xpending_range) or not callable(xclaim):
+            return
+        try:
+            pending = xpending_range(
+                self.stream_key,
+                self.group_name,
+                min="-",
+                max="+",
+                count=self.pending_reclaim_batch,
+            )
+        except TypeError:
+            pending = xpending_range(
+                name=self.stream_key,
+                groupname=self.group_name,
+                min="-",
+                max="+",
+                count=self.pending_reclaim_batch,
+            )
+        except Exception:
+            logger.debug("Pending range check failed; skipping reclaim", exc_info=True)
+            return
+
+        stale_ids: list[str] = []
+        for item in pending or []:
+            if not isinstance(item, dict):
+                continue
+            idle_ms = item.get("time_since_delivered")
+            if idle_ms is None:
+                idle_ms = item.get("time_since_delivered_ms")
+            try:
+                idle_ms = int(idle_ms or 0)
+            except Exception:
+                idle_ms = 0
+            if idle_ms < self.pending_reclaim_idle_ms:
+                continue
+
+            msg_id = item.get("message_id")
+            if not msg_id:
+                continue
+            if isinstance(msg_id, bytes):
+                msg_id = msg_id.decode()
+            stale_ids.append(str(msg_id))
+
+        if not stale_ids:
+            return
+
+        try:
+            claimed = xclaim(
+                self.stream_key,
+                self.group_name,
+                self.consumer_name,
+                min_idle_time=self.pending_reclaim_idle_ms,
+                message_ids=stale_ids,
+            )
+        except TypeError:
+            claimed = xclaim(
+                self.stream_key,
+                self.group_name,
+                self.consumer_name,
+                self.pending_reclaim_idle_ms,
+                stale_ids,
+            )
+        except Exception:
+            logger.debug("Pending message claim failed", exc_info=True)
+            return
+
+        for msg_id, fields in self._normalize_claimed_messages(claimed):
+            self._process_message(msg_id, fields)
+
+    @staticmethod
+    def _normalize_claimed_messages(claimed) -> list[tuple[Any, dict]]:
+        """Normalize xclaim return shape across Redis client versions."""
+        normalized: list[tuple[Any, dict]] = []
+        if not claimed:
+            return normalized
+        for item in claimed:
+            if not isinstance(item, tuple) or len(item) != 2:
+                continue
+            first, second = item
+            if isinstance(second, dict):
+                normalized.append((first, second))
+                continue
+            if isinstance(second, list):
+                for sub in second:
+                    if isinstance(sub, tuple) and len(sub) == 2 and isinstance(sub[1], dict):
+                        normalized.append((sub[0], sub[1]))
+        return normalized
 
     @staticmethod
     def _decode_fields(fields: dict) -> dict[str, Any]:

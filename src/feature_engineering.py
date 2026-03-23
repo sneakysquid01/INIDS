@@ -11,8 +11,6 @@ from typing import Any
 
 import pandas as pd
 
-from src.schema import NUMERIC_FEATURES
-
 logger = logging.getLogger(__name__)
 
 

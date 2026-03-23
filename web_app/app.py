@@ -106,6 +106,12 @@ else:
         def emit(self, *args, **kwargs):
             return None
 
+        def on(self, *_args, **_kwargs):
+            def _decorator(fn):
+                return fn
+
+            return _decorator
+
         def run(self, flask_app, **kwargs):
             flask_app.run(**kwargs)
 
@@ -363,6 +369,15 @@ def _shutdown_runtime() -> None:
     if getattr(app, "_shutdown_started", False):
         return
     app._shutdown_started = True
+    try:
+        # Stop background module broadcaster if running.
+        if "_update_thread_stop" in globals():
+            globals()["_update_thread_stop"] = True
+        updater = globals().get("_update_thread")
+        if updater is not None and getattr(updater, "is_alive", lambda: False)():
+            updater.join(timeout=1)
+    except Exception:
+        pass
     # Disable logging exception propagation before teardown: at interpreter
     # shutdown the logging stream handlers may already be closed, and we must
     # not let ValueError/"I/O on closed file" change the process exit code.
@@ -890,6 +905,20 @@ def _safe_created_at(item: dict, fallback: str) -> str:
     return value if isinstance(value, str) and value else fallback
 
 
+def _to_epoch_seconds(value, default: float = 0.0) -> float:
+    try:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str) and value:
+            try:
+                return datetime.fromisoformat(value).timestamp()
+            except ValueError:
+                return float(value)
+    except Exception:
+        pass
+    return float(default)
+
+
 def _action_status(expires_at: str | None, now: datetime) -> str:
     if not expires_at:
         return "active"
@@ -1110,20 +1139,32 @@ def api_dashboard_metrics():
         now = datetime.now(timezone.utc)
         recent_actions = ops_store.list_actions(limit=100)
         
-        # Count active attacks and blocks
-        active_attacks = sum(1 for a in recent_actions if a.get("action") in ["BLOCK", "RATE_LIMIT"])
-        blocked = sum(1 for a in recent_actions if a.get("action") == "BLOCK")
+        # Count active attacks and blocks (case-insensitive across legacy/new rows).
+        active_attacks = sum(
+            1
+            for a in recent_actions
+            if str(a.get("action", "")).strip().lower() in {"block", "rate_limit"}
+        )
+        blocked = sum(1 for a in recent_actions if str(a.get("action", "")).strip().lower() == "block")
         active_alerts = len(ops_store.list_alerts(limit=100))
-        under_review = sum(1 for a in ops_store.list_alerts(limit=100) if a.get("status") in ["PENDING", "ESCALATED"])
+        under_review = sum(
+            1
+            for a in ops_store.list_alerts(limit=100)
+            if str(a.get("status", "")).strip().lower() in {"pending", "pending_approval", "reviewing", "escalated"}
+        )
         
         # Calculate last hour metrics
         import time
         one_hour_ago = time.time() - 3600
-        last_hour_attacks = sum(1 for a in recent_actions 
-                               if float(a.get("created_at", time.time())) > one_hour_ago)
-        last_hour_blocks = sum(1 for a in recent_actions 
-                              if float(a.get("created_at", time.time())) > one_hour_ago 
-                              and a.get("action") == "BLOCK")
+        recent_last_hour = [
+            a for a in recent_actions if _to_epoch_seconds(a.get("created_at"), default=0.0) > one_hour_ago
+        ]
+        last_hour_attacks = len(recent_last_hour)
+        last_hour_blocks = sum(
+            1
+            for a in recent_last_hour
+            if str(a.get("action", "")).strip().lower() == "block"
+        )
         
         # Calculate false positive rate
         all_alerts = ops_store.list_alerts(limit=500)
@@ -1829,6 +1870,10 @@ def api_ingest_log():
     payload = request.get_json(silent=True) or {}
     source_type = str(payload.get("type", "zeek")).lower()
     records = payload.get("records")
+    pipeline_started = _ensure_pipeline_started()
+    backpressure = getattr(app, "_pipeline_backpressure", None)
+    if pipeline_started and backpressure is not None and backpressure.level == BackpressureLevel.SHEDDING:
+        return jsonify({"error": "pipeline_backpressure", "pipeline": _pipeline_status()}), 503
     if not isinstance(records, list) or not records:
         return jsonify({"error": "'records' must be a non-empty list"}), 400
 
@@ -1842,7 +1887,10 @@ def api_ingest_log():
             else:
                 return jsonify({"error": "type must be 'zeek' or 'suricata'"}), 400
 
-        added = ingestion_service.enqueue_batch(transformed, source=f"{source_type}_log")
+        if pipeline_started:
+            added = _stream_ingest_records(transformed, source=f"{source_type}_log")
+        else:
+            added = ingestion_service.enqueue_batch(transformed, source=f"{source_type}_log")
         metrics_service.inc("ingested_total", amount=added)
         return jsonify({"queued": added, "queue_size": ingestion_queue.size(), "type": source_type})
     except Exception as exc:
@@ -2020,7 +2068,16 @@ def api_module_multi_engine():
         return jsonify({
             "status": "success",
             "data": {
-                "engines": [{"id": e.id, "name": e.id, "enabled": e.enabled} for e in engines],
+                "engines": [
+                    {
+                        "id": e.get("engine_id"),
+                        "name": e.get("engine_id"),
+                        "type": e.get("engine_type"),
+                        "enabled": bool(e.get("enabled")),
+                        "ready": bool(e.get("ready")),
+                    }
+                    for e in engines
+                ],
                 "engine_count": len(engines),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
@@ -2056,7 +2113,11 @@ def api_module_approval_workflow():
     """Approval workflow HITL."""
     try:
         pending = ops_store.list_actions(limit=100)
-        pending = [a for a in pending if a.get("status", "").upper() in ["PENDING", "ESCALATED"]]
+        pending = [
+            a
+            for a in pending
+            if str(a.get("status", "")).strip().lower() in {"pending", "pending_approval", "escalated"}
+        ]
         
         return jsonify({
             "status": "success",
@@ -2207,10 +2268,10 @@ def api_module_alert_lifecycle():
         
         # Organize by status
         lifecycle = {
-            "new": [a for a in all_alerts if a.get("status") == "NEW"],
-            "investigating": [a for a in all_alerts if a.get("status") == "INVESTIGATING"],
-            "escalated": [a for a in all_alerts if a.get("status") == "ESCALATED"],
-            "resolved": [a for a in all_alerts if a.get("status") == "RESOLVED"],
+            "new": [a for a in all_alerts if str(a.get("status", "")).strip().lower() in {"new", "open"}],
+            "investigating": [a for a in all_alerts if str(a.get("status", "")).strip().lower() in {"investigating", "reviewing"}],
+            "escalated": [a for a in all_alerts if str(a.get("status", "")).strip().lower() == "escalated"],
+            "resolved": [a for a in all_alerts if str(a.get("status", "")).strip().lower() in {"resolved", "closed"}],
         }
         
         return jsonify({
@@ -2259,7 +2320,15 @@ def api_module_engine_playground():
             return jsonify({
                 "status": "success",
                 "data": {
-                    "engines": [{"id": e.id, "enabled": e.enabled} for e in engines],
+                    "engines": [
+                        {
+                            "id": e.get("engine_id"),
+                            "enabled": bool(e.get("enabled")),
+                            "ready": bool(e.get("ready")),
+                            "type": e.get("engine_type"),
+                        }
+                        for e in engines
+                    ],
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
             })
@@ -2361,6 +2430,20 @@ def api_module_risk_score_visualizer():
 _update_thread = None
 _update_thread_stop = False
 
+
+def _start_module_update_broadcaster() -> None:
+    """Start module websocket broadcaster if SocketIO is enabled."""
+    global _update_thread, _update_thread_stop
+    if not SOCKETIO_ENABLED:
+        return
+    if _update_thread is not None and _update_thread.is_alive():
+        return
+    _update_thread_stop = False
+    logger.info("Starting WebSocket module update broadcaster...")
+    _update_thread = threading.Thread(target=_module_update_broadcaster, daemon=True, name="module-broadcaster")
+    _update_thread.start()
+
+
 def _module_update_broadcaster():
     """Background thread that broadcasts module updates every 2 seconds."""
     global _update_thread_stop
@@ -2388,37 +2471,6 @@ def _module_update_broadcaster():
             logger.error(f"Error in module broadcaster: {e}")
             time.sleep(2)
 
-
-# ===== APPLICATION START =====
-if __name__ == '__main__':
-    # Start the background module update broadcaster thread
-    if SocketIO is not None:
-        import threading
-        def start_broadcaster():
-            global _update_thread, _update_thread_stop
-            if _update_thread is None:
-                logger.info("Starting WebSocket module update broadcaster...")
-                _update_thread = threading.Thread(target=_module_update_broadcaster, daemon=True)
-                _update_thread.start()
-        
-        # Start broadcaster when SocketIO is available
-        try:
-            start_broadcaster()
-        except Exception as e:
-            logger.warning(f"Failed to start broadcaster: {e}")
-    
-    # Run the Flask app with SocketIO
-    try:
-        import logging as py_logging
-        py_logging.getLogger('werkzeug').setLevel(py_logging.WARNING)
-        
-        if SocketIO is not None:
-            socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
-        else:
-            app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
-    except Exception as e:
-        logger.error(f"Failed to start application: {e}")
-        raise
 
 @app.route("/api/modules/evasion-detection", methods=["GET"])
 def api_module_evasion_detection():
@@ -2749,6 +2801,7 @@ if __name__ == "__main__":
         load_models()
         _ensure_scheduler_started()
         _ensure_pipeline_started()
+        _start_module_update_broadcaster()
         socketio.run(
             app,
             debug=SETTINGS.debug,

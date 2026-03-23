@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 import json
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -20,19 +21,23 @@ class InMemoryIngestionQueue:
     def __init__(self, max_items: int = 10000):
         self.max_items = max_items
         self._queue: deque[IngestionRecord] = deque()
+        self._lock = Lock()
 
     def enqueue(self, record: IngestionRecord) -> None:
-        self._queue.append(record)
-        while len(self._queue) > self.max_items:
-            self._queue.popleft()
+        with self._lock:
+            self._queue.append(record)
+            while len(self._queue) > self.max_items:
+                self._queue.popleft()
 
     def dequeue(self) -> IngestionRecord | None:
-        if not self._queue:
-            return None
-        return self._queue.popleft()
+        with self._lock:
+            if not self._queue:
+                return None
+            return self._queue.popleft()
 
     def size(self) -> int:
-        return len(self._queue)
+        with self._lock:
+            return len(self._queue)
 
 
 class RedisStreamIngestionQueue:
