@@ -103,3 +103,25 @@ def test_api_metrics_endpoint(monkeypatch, tmp_path):
     body = metrics.get_data(as_text=True)
     assert "inids_requests_total" in body
     assert "inids_predictions_total" in body
+
+
+def test_predict_allowlist_bypasses_enforcement_only(monkeypatch, tmp_path):
+    client = _setup_app(monkeypatch, tmp_path)
+    app_module.prevention_service.set_policy(mode="auto_block", dry_run=False, confidence_block_threshold=80)
+    app_module.allowlist.add("3.3.3.3", reason="trusted")
+    try:
+        predict = client.post(
+            "/api/predict",
+            json={"features": {"duration": 1}, "source": "3.3.3.3"},
+        )
+        assert predict.status_code == 200
+        payload = predict.get_json()
+        assert payload["prediction"] == "Attack"
+        assert payload["prevention_action"] is None
+
+        actions = client.get("/api/actions?limit=20")
+        assert actions.status_code == 200
+        assert all(str(a.get("target")) != "3.3.3.3" for a in actions.get_json()["actions"])
+    finally:
+        app_module.allowlist.remove("3.3.3.3")
+        app_module.prevention_service.set_policy(mode="monitor", dry_run=True)

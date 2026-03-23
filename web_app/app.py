@@ -426,9 +426,9 @@ def _stream_ingest_records(records: list[dict], source: str) -> int:
 
 
 def _on_detection_event(event: DetectionEvent) -> None:
-    if allowlist.contains(event.source_ip):
-        logger.info("Allowlist: bypassing prevention pipeline for %s", event.source_ip)
-        return
+    source_is_allowlisted = allowlist.contains(event.source_ip)
+    if source_is_allowlisted:
+        logger.info("Allowlist: enforcement bypass enabled for %s", event.source_ip)
 
     pred_lower = str(event.prediction).lower()
 
@@ -515,6 +515,23 @@ def _on_risk_event(event: RiskScoreEvent) -> None:
 
 def _on_policy_decision_event(event: PolicyDecisionEvent) -> None:
     if str(event.decision).strip().upper() not in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT", "PENDING_BLOCK"}:
+        return
+    if allowlist.contains(event.risk.detection.source_ip):
+        try:
+            ops_store.add_audit(
+                event_type="allowlist_enforcement_bypass",
+                message=json.dumps(
+                    {
+                        "source_ip": event.risk.detection.source_ip,
+                        "decision": event.decision,
+                        "reason": "allowlisted_target",
+                    },
+                    separators=(",", ":"),
+                ),
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception:
+            logger.exception("Failed to persist allowlist enforcement bypass audit")
         return
     action = action_executor.execute(event, prevention_service.policy)
     if action is not None:
@@ -1370,6 +1387,7 @@ def api_predict():
         return jsonify({"error": "'features' must be a non-empty object"}), 400
 
     try:
+        request_started_at = time.time()
         for col in NUMERIC_MODEL_COLUMNS:
             if col in features:
                 features[col] = float(features[col])
@@ -1381,22 +1399,18 @@ def api_predict():
             source_ip=source,
             attack_type=payload.get("attack_type"),
         )
-        if result.alert:
-            ops_store.save_alert(result.alert.to_dict())
-            metrics_service.inc("alerts_total")
-
-        action = prevention_service.evaluate(result.prediction, result.confidence, source=source)
-        if action:
-            ops_store.save_action(action.to_dict())
-            metrics_service.inc("prevention_actions_total")
-            ops_store.add_audit(
-                event_type="prevention_action",
-                message=f"{action.action} target={action.target} reason={action.reason}",
-                created_at=datetime.now(timezone.utc).isoformat(),
-            )
-
         response = result.to_dict()
-        response["prevention_action"] = action.to_dict() if action else None
+        recent_actions = ops_store.list_actions(limit=20)
+        prevention_action = next(
+            (
+                action
+                for action in recent_actions
+                if str(action.get("target", "")).strip() == str(source).strip()
+                and _to_epoch_seconds(action.get("created_at"), default=0.0) >= request_started_at
+            ),
+            None,
+        )
+        response["prevention_action"] = prevention_action
         return jsonify(response)
     except Exception as exc:
         logger.error("API predict error: %s", exc)
@@ -2299,10 +2313,18 @@ def api_module_engine_playground():
             
             if engine_id:
                 try:
-                    # Toggle engine state (enable if disabled, disable if enabled)
-                    current_enabled = engine_registry.is_enabled(engine_id)
-                    engine_registry.set_enabled(engine_id, not current_enabled)
-                    logger.info(f"Toggled engine {engine_id} to {not current_enabled}")
+                    if enabled is None:
+                        # Toggle engine state (enable if disabled, disable if enabled)
+                        current_enabled = engine_registry.is_enabled(engine_id)
+                        new_state = not current_enabled
+                    else:
+                        if isinstance(enabled, str):
+                            new_state = enabled.strip().lower() in {"1", "true", "yes", "on"}
+                        else:
+                            new_state = bool(enabled)
+                    if not engine_registry.set_enabled(engine_id, new_state):
+                        return jsonify({"error": "engine_not_found"}), 404
+                    logger.info("Set engine %s enabled=%s", engine_id, new_state)
                 except Exception as e:
                     logger.exception(f"Failed to toggle engine {engine_id}: {e}")
                     return jsonify({"error": f"Failed to toggle engine: {str(e)}"}), 500
