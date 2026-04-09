@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INIDS - Detection Console</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .nav-brand {
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #fff !important;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 2rem;
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 0;
+        }
+        
+        .container-main {
+            padding: 0 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .input-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1a1a2e;
+        }
+        
+        .form-row-custom {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-group-custom {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group-custom label {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        
+        .form-group-custom input,
+        .form-group-custom select {
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        
+        .form-group-custom input:focus,
+        .form-group-custom select:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+        
+        .helper-text {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 0.3rem;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .btn-detect {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-detect:hover {
+            background: linear-gradient(135deg, #0052a3 0%, #003f7a 100%);
+            color: white;
+        }
+        
+        .btn-detect:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .btn-reset {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            color: #333;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .btn-reset:hover {
+            background: #e8e8e8;
+        }
+        
+        .result-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .result-section.active {
+            display: block;
+        }
+        
+        .verdict-badge {
+            display: inline-block;
+            font-weight: 700;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .verdict-attack {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .verdict-normal {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .verdict-suspicious {
+            background-color: #ffc107;
+            color: #333;
+        }
+        
+        .confidence-display {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .confidence-bar-large {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .progress {
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        
+        .confidence-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            min-width: 80px;
+            text-align: center;
+        }
+        
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        .result-card-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .result-card-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #0066cc;
+        }
+        
+        .engine-results {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid #e0e0e0;
+        }
+        
+        .engine-result {
+            background: #f8f9fa;
+            border-left: 4px solid #0066cc;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+        
+        .engine-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .engine-status {
+            display: inline-block;
+            padding: 0.3rem 0.7rem;
+            border-radius: 3px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-right: 0.5rem;
+        }
+        
+        .engine-triggered {
+            background: #ffe0e0;
+            color: #c41c3b;
+        }
+        
+        .engine-clean {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .engine-detail {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .code-block {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+        
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 3rem 2rem;
+        }
+        
+        .loading-spinner.active {
+            display: block;
+        }
+        
+        .spinner-border {
+            color: #0066cc;
+        }
+        
+        .error-message {
+            background: #ffe0e0;
+            border: 1px solid #ffb3b3;
+            border-radius: 4px;
+            padding: 1rem;
+            color: #c41c3b;
+            margin: 1rem 0;
+            display: none;
+        }
+        
+        .error-message.active {
+            display: block;
+        }
+        
+        .example-section {
+            background: #f0f7ff;
+            border: 1px solid #c9e1ff;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .example-title {
+            font-weight: 600;
+            color: #0052a3;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <a class="nav-brand" href="/">🔍 INIDS</a>
+            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Detection Console</h1>
+        <p style="color: #666; margin-top: 0.5rem;">Run multi-engine threat detection on custom data</p>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container-main">
+        <!-- Input Section -->
+        <div class="input-section">
+            <div class="section-title">🔍 Input Features</div>
+            
+            <form id="detection-form">
+                <div class="form-row-custom">
+                    <div class="form-group-custom">
+                        <label for="duration">Duration (seconds)</label>
+                        <input type="number" id="duration" value="10" min="0" step="1">
+                        <div class="helper-text">Connection duration in seconds</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="src_bytes">Source Bytes</label>
+                        <input type="number" id="src_bytes" value="1000" min="0" step="100">
+                        <div class="helper-text">Bytes sent from source</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="dst_bytes">Destination Bytes</label>
+                        <input type="number" id="dst_bytes" value="2000" min="0" step="100">
+                        <div class="helper-text">Bytes sent to destination</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="count">Packet Count</label>
+                        <input type="number" id="count" value="50" min="0" step="1">
+                        <div class="helper-text">Number of packets</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="srv_count">Service Packet Count</label>
+                        <input type="number" id="srv_count" value="40" min="0" step="1">
+                        <div class="helper-text">Packets on same service port</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="serror_rate">SYN Error Rate</label>
+                        <input type="number" id="serror_rate" value="0.05" min="0" max="1" step="0.01">
+                        <div class="helper-text">Percentage (0-1)</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="same_srv_rate">Same Service Rate</label>
+                        <input type="number" id="same_srv_rate" value="0.8" min="0" max="1" step="0.01">
+                        <div class="helper-text">Percentage (0-1)</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="source_ip">Source IP (optional)</label>
+                        <input type="text" id="source_ip" placeholder="192.168.1.100">
+                        <div class="helper-text">For context and IP reputation lookup</div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn-detect" id="btn-detect" onclick="runDetection()">
+                        ▶️ Run Detection
+                    </button>
+                    <button type="button" class="btn-reset" id="btn-reset" onclick="resetForm()">
+                        ↺ Reset
+                    </button>
+                </div>
+
+                <div class="example-section">
+                    <div class="example-title">💡 Example Scenarios</div>
+                    <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.85rem;">
+                        <li><strong>Normal Traffic:</strong> Duration=30, SrcBytes=5000, DstBytes=6000, Count=100, SrvCount=95</li>
+                        <li><strong>Port Scan:</strong> Duration=1, SrcBytes=100, DstBytes=50, Count=50, SrvCount=10, ErrorRate=0.5</li>
+                        <li><strong>DoS Attack:</strong> Duration=60, SrcBytes=100000, Count=10000, SrvCount=9000</li>
+                    </ul>
+                </div>
+            </form>
+        </div>
+
+        <!-- Error Message -->
+        <div class="error-message" id="error-message"></div>
+
+        <!-- Loading Spinner -->
+        <div class="loading-spinner" id="loading-spinner">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p style="margin-top: 1rem; color: #666;">Running multi-engine detection...</p>
+        </div>
+
+        <!-- Results Section -->
+        <div class="result-section" id="result-section">
+            <div class="section-title">📊 Detection Results</div>
+
+            <!-- Verdict -->
+            <div id="verdict-container"></div>
+
+            <!-- Confidence Score -->
+            <div class="confidence-display" id="confidence-container" style="display: none;">
+                <div>
+                    <strong style="font-size: 0.9rem; color: #666;">Confidence Score</strong>
+                </div>
+                <div class="confidence-bar-large">
+                    <div class="progress">
+                        <div class="progress-bar" id="confidence-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="confidence-text" id="confidence-value">0%</div>
+            </div>
+
+            <!-- Result Cards -->
+            <div class="result-grid">
+                <div class="result-card">
+                    <div class="result-card-title">Attack Type</div>
+                    <div class="result-card-value" id="attack-type">—</div>
+                </div>
+                <div class="result-card">
+                    <div class="result-card-title">Severity</div>
+                    <div class="result-card-value" id="severity-result">—</div>
+                </div>
+                <div class="result-card">
+                    <div class="result-card-title">Engines Triggered</div>
+                    <div class="result-card-value" id="engines-count">0</div>
+                </div>
+            </div>
+
+            <!-- Engine Results -->
+            <div class="engine-results" id="engine-results">
+                <h5 style="margin-bottom: 1rem; color: #333;">🔧 Engine Details</h5>
+                <div id="engines-list"></div>
+            </div>
+
+            <!-- Features Used -->
+            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 2px solid #e0e0e0;">
+                <h5 style="color: #333; margin-bottom: 1rem;">📋 Input Features</h5>
+                <div class="code-block" id="features-display"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/detection.js') }}"></script>
+</body>
+</html>

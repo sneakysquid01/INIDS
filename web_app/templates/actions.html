@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INIDS - Actions</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .nav-brand {
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #fff !important;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 2rem;
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 0;
+        }
+        
+        .container-main {
+            padding: 0 2rem;
+        }
+        
+        .tabs-container {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .table-wrapper {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .table {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        
+        .table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .table th {
+            font-weight: 600;
+            color: #333;
+            padding: 1rem;
+            vertical-align: middle;
+        }
+        
+        .table td {
+            padding: 0.75rem 1rem;
+            vertical-align: middle;
+        }
+        
+        .table tbody tr {
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .status-badge {
+            font-weight: 500;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        
+        .status-pending {
+            background-color: #fff3e0;
+            color: #cc6600;
+        }
+        
+        .status-approved {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .status-executed {
+            background-color: #e3f2fd;
+            color: #0d47a1;
+        }
+        
+        .status-failed {
+            background-color: #ffe0e0;
+            color: #c41c3b;
+        }
+        
+        .action-type-badge {
+            font-weight: 500;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            background: #e8eaf6;
+            color: #3f51b5;
+        }
+        
+        .alert-count {
+            display: inline-block;
+            background: #fff3e0;
+            color: #cc6600;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+        
+        .action-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s;
+        }
+        
+        .action-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .action-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 0.75rem;
+        }
+        
+        .action-type {
+            font-weight: 600;
+            color: #1a1a2e;
+        }
+        
+        .action-target {
+            display: inline-block;
+            background: #f0f0f0;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin: 0.5rem 0;
+        }
+        
+        .action-details {
+            font-size: 0.9rem;
+            color: #666;
+            margin: 0.75rem 0;
+        }
+        
+        .action-timestamp {
+            font-size: 0.85rem;
+            color: #999;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .detail-value {
+            color: #333;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+        }
+        
+        .detail-row {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .code-block {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            color: #333;
+        }
+        
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .loading-spinner.active {
+            display: block;
+        }
+        
+        .btn-approve {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .btn-approve:hover {
+            background: linear-gradient(135deg, #218838 0%, #1aa179 100%);
+            color: white;
+        }
+        
+        .approval-notes {
+            background: #f0f9ff;
+            border-left: 4px solid #0066cc;
+            padding: 0.75rem;
+            margin: 0.75rem 0;
+            border-radius: 4px;
+        }
+        
+        .tabs-nav {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -1rem;
+        }
+        
+        .tab-btn.active {
+            color: #0066cc;
+            border-bottom-color: #0066cc;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 1.5rem;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .modal-header {
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .modal-title {
+            font-weight: 600;
+            color: #1a1a2e;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <a class="nav-brand" href="/">🔍 INIDS</a>
+            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Prevention Actions</h1>
+        <p style="color: #666; margin-top: 0.5rem;">Manage IPS actions, approvals, and incident response</p>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container-main">
+        <!-- Tabs -->
+        <div class="tabs-container">
+            <div class="tabs-nav">
+                <button class="tab-btn active" onclick="switchTab('all')">
+                    📋 All Actions
+                </button>
+                <button class="tab-btn" onclick="switchTab('pending')">
+                    ⏳ Pending Approval <span id="pending-badge"></span>
+                </button>
+                <button class="tab-btn" onclick="switchTab('executed')">
+                    ✔️ Executed
+                </button>
+                <button class="tab-btn" onclick="switchTab('failed')">
+                    ❌ Failed
+                </button>
+            </div>
+            
+            <!-- All Actions Tab -->
+            <div id="tab-all" class="tab-content active">
+                <div class="loading-spinner active" id="loading-all">
+                    <div class="spinner-border" role="status"></div>
+                    <p style="margin-top: 1rem; color: #666;">Loading actions...</p>
+                </div>
+                <div id="all-actions-list"></div>
+            </div>
+            
+            <!-- Pending Approval Tab -->
+            <div id="tab-pending" class="tab-content">
+                <div class="loading-spinner active" id="loading-pending">
+                    <div class="spinner-border" role="status"></div>
+                    <p style="margin-top: 1rem; color: #666;">Loading pending actions...</p>
+                </div>
+                <div id="pending-actions-list"></div>
+            </div>
+            
+            <!-- Executed Tab -->
+            <div id="tab-executed" class="tab-content">
+                <div class="loading-spinner active" id="loading-executed">
+                    <div class="spinner-border" role="status"></div>
+                    <p style="margin-top: 1rem; color: #666;">Loading executed actions...</p>
+                </div>
+                <div id="executed-actions-list"></div>
+            </div>
+            
+            <!-- Failed Tab -->
+            <div id="tab-failed" class="tab-content">
+                <div class="loading-spinner active" id="loading-failed">
+                    <div class="spinner-border" role="status"></div>
+                    <p style="margin-top: 1rem; color: #666;">Loading failed actions...</p>
+                </div>
+                <div id="failed-actions-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Modal -->
+    <div class="modal fade" id="approvalModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Approve Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="approval-details">
+                        <!-- Action details loaded here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-approve" id="btn-confirm-approve">Approve & Execute</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/actions.js') }}"></script>
+</body>
+</html>

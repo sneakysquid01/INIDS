@@ -977,7 +977,7 @@ def _after_request_metrics(response):
 @app.route("/")
 def home():
     """Landing page with navigation."""
-    return render_template("home.html")
+    return render_template("index_main.html")
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -1027,6 +1027,54 @@ def predict():
     return render_template("predict.html", features=INPUT_FEATURES,
                            prediction=prediction, error=error_message,
                            confidence=confidence, is_suspicious=is_suspicious)
+
+
+@app.route("/alerts")
+def alerts_page():
+    """Security alerts monitoring page."""
+    return render_template("alerts.html")
+
+
+@app.route("/actions")
+def actions_page():
+    """Prevention actions and approval workflow page."""
+    return render_template("actions.html")
+
+
+@app.route("/detection")
+def detection_page():
+    """Detection console for running multi-engine detection."""
+    return render_template("detection.html")
+
+
+@app.route("/engines")
+def engines_page():
+    """Detection engines management page."""
+    return render_template("engines.html")
+
+
+@app.route("/policy")
+def policy_page():
+    """Policy editor and configuration page."""
+    return render_template("policy.html")
+
+
+@app.route("/allowlist")
+def allowlist_page():
+    """Allowlist manager page for trusted IPs and domains."""
+    return render_template("allowlist.html")
+
+
+@app.route("/threat-intel")
+def threat_intel_page():
+    """Threat intelligence lookup page."""
+    return render_template("threat_intel.html")
+
+
+@app.route("/health")
+def health_page():
+    """System health monitoring dashboard."""
+    return render_template("health.html")
 
 
 @app.route("/dashboard")

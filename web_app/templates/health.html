@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}System Health Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>📊 System Health Dashboard</h1>
+            <p class="text-muted">Real-time system monitoring and performance metrics</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-secondary" onclick="loadHealthData()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            <span id="lastUpdate" class="ms-3 text-muted small">Last update: --</span>
+        </div>
+    </div>
+
+    <!-- Overall Status -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <div id="healthStatus" class="fs-1">🟡</div>
+                        </div>
+                        <div>
+                            <h6 class="text-muted mb-1">System Status</h6>
+                            <h4 id="statusText" class="mb-0">Initializing...</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">Uptime</h6>
+                    <h4 id="uptimeText" class="mb-1">--</h4>
+                    <small id="startTimeText" class="text-muted">-- ago</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">CPU Usage</h6>
+                    <div class="d-flex align-items-center">
+                        <div class="progress flex-grow-1" style="height: 25px;">
+                            <div id="cpuBar" class="progress-bar bg-success" style="width: 0%"></div>
+                        </div>
+                        <span id="cpuPercent" class="ms-2">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Alerts</h6>
+                    <h3 id="totalAlerts" class="mb-0">--</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted">Prevention Actions</h6>
+                    <h3 id="totalActions" class="mb-0">--</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted">Avg Response Time</h6>
+                    <h3 id="avgResponseTime" class="mb-0">--</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted">Error Rate</h6>
+                    <h3 id="errorRate" class="mb-0">--</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Component Health -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">🔧 Detection Engines</h5>
+                </div>
+                <div class="card-body">
+                    <div id="enginesList" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">🛠️ Core Services</h5>
+                </div>
+                <div class="card-body">
+                    <div id="servicesList" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">📈 Performance Trends</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="performanceChart" style="max-height: 300px;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Usage -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">💾 Memory Usage</h5>
+                </div>
+                <div class="card-body">
+                    <div class="progress" style="height: 30px; margin-bottom: 1rem;">
+                        <div id="memoryBar" class="progress-bar bg-info" style="width: 0%"></div>
+                    </div>
+                    <div class="row text-center">
+                        <div class="col-md-6">
+                            <small class="text-muted">Used</small>
+                            <p id="memoryUsed" class="mb-0">-- MB</p>
+                        </div>
+                        <div class="col-md-6">
+                            <small class="text-muted">Total</small>
+                            <p id="memoryTotal" class="mb-0">-- MB</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">🌐 Network Activity</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-muted">Packets/sec</label>
+                            <h4 id="packetsPerSec" class="mb-0">--</h4>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-muted">Flows Analyzed</label>
+                            <h4 id="flowsAnalyzed" class="mb-0">--</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Stats -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">🗄️ Database & Storage</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label text-muted">Alerts in DB</label>
+                            <h5 id="dbAlerts" class="mb-0">--</h5>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label text-muted">Audit Logs</label>
+                            <h5 id="dbAudits" class="mb-0">--</h5>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label text-muted">DB Size</label>
+                            <h5 id="dbSize" class="mb-0">--</h5>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label text-muted">Last Cleanup</label>
+                            <p id="lastCleanup" class="mb-0 small">--</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Summary -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">📊 Alerts by Severity</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div class="alert alert-danger py-2 mb-0">
+                                <h6 class="mb-1">Critical</h6>
+                                <h4 id="alertsCritical" class="mb-0">--</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-warning py-2 mb-0">
+                                <h6 class="mb-1">High</h6>
+                                <h4 id="alertsHigh" class="mb-0">--</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-info py-2 mb-0">
+                                <h6 class="mb-1">Medium</h6>
+                                <h4 id="alertsMedium" class="mb-0">--</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-success py-2 mb-0">
+                                <h6 class="mb-1">Low</h6>
+                                <h4 id="alertsLow" class="mb-0">--</h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">ℹ️ System Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Version</label>
+                            <p id="systemVersion" class="mb-0">--</p>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Environment</label>
+                            <p id="systemEnv" class="mb-0">Production</p>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Python Version</label>
+                            <p id="pythonVersion" class="mb-0">--</p>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Timestamp</label>
+                            <p id="systemTime" class="mb-0 small">--</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/health.js') }}"></script>
+{% endblock %}

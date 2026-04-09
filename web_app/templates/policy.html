@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INIDS - Policy Editor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .nav-brand {
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #fff !important;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 2rem;
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 0;
+        }
+        
+        .container-main {
+            padding: 0 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .policy-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1a1a2e;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 0.75rem;
+        }
+        
+        .form-group-custom {
+            margin-bottom: 1.25rem;
+        }
+        
+        .form-group-custom label {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #333;
+            display: block;
+        }
+        
+        .form-group-custom input,
+        .form-group-custom select,
+        .form-group-custom textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+        
+        .form-group-custom input:focus,
+        .form-group-custom select:focus,
+        .form-group-custom textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+        
+        .helper-text {
+            font-size: 0.85rem;
+            color: #999;
+            margin-top: 0.3rem;
+        }
+        
+        .row-custom {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        @media (max-width: 768px) {
+            .row-custom {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .mode-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .mode-option {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        
+        .mode-option.selected {
+            border-color: #0066cc;
+            background: #f0f7ff;
+        }
+        
+        .mode-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .mode-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.25rem;
+        }
+        
+        .mode-description {
+            font-size: 0.8rem;
+            color: #999;
+        }
+        
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .toggle-label {
+            font-weight: 500;
+            margin: 0;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #28a745;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+        
+        .engine-toggles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .engine-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .engine-toggle label {
+            flex: 1;
+            margin: 0;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid #f0f0f0;
+        }
+        
+        .btn-save {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .btn-save:hover {
+            background: linear-gradient(135deg, #218838 0%, #1aa179 100%);
+            color: white;
+        }
+        
+        .btn-cancel {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            color: #333;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .btn-cancel:hover {
+            background: #e8e8e8;
+        }
+        
+        .info-banner {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            color: #0d47a1;
+        }
+        
+        .policy-history {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .history-item {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 0.9rem;
+        }
+        
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        
+        .timestamp {
+            color: #999;
+            font-size: 0.85rem;
+        }
+        
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .loading-spinner.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <a class="nav-brand" href="/">🔍 INIDS</a>
+            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Detection & Prevention Policy</h1>
+        <p style="color: #666; margin-top: 0.5rem;">Configure system detection and prevention behavior</p>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container-main">
+        <!-- Info Banner -->
+        <div class="info-banner">
+            <strong>⚙️ Policy Configuration</strong><br>
+            These settings control how INIDS detects and responds to threats. Changes are applied immediately.
+        </div>
+
+        <!-- Loading Spinner -->
+        <div class="loading-spinner active" id="loading-spinner">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p style="margin-top: 1rem; color: #666;">Loading policy...</p>
+        </div>
+
+        <!-- Policy Form -->
+        <form id="policy-form" style="display: none;">
+            <!-- Mode Selection -->
+            <div class="policy-section">
+                <div class="section-title">🛡️ Operation Mode</div>
+                <p style="color: #666; margin-bottom: 1rem;">Choose how the system responds to threats</p>
+                
+                <div class="mode-selector">
+                    <div class="mode-option selected" onclick="selectMode('detect')">
+                        <div class="mode-icon">👁️</div>
+                        <div class="mode-label">Detection Only</div>
+                        <div class="mode-description">Alert on threats</div>
+                    </div>
+                    <div class="mode-option" onclick="selectMode('prevent')">
+                        <div class="mode-icon">🛑</div>
+                        <div class="mode-label">Prevention Mode</div>
+                        <div class="mode-description">Block threats automatically</div>
+                    </div>
+                </div>
+                
+                <input type="hidden" id="mode" value="detect">
+            </div>
+
+            <!-- Detection Thresholds -->
+            <div class="policy-section">
+                <div class="section-title">⚡ Detection Thresholds</div>
+                
+                <div class="form-group-custom">
+                    <label for="detection-threshold">Detection Confidence Threshold</label>
+                    <input type="range" id="detection-threshold" min="0" max="100" value="70" 
+                           oninput="updateThresholdLabel(this.value)">
+                    <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; color: #999; font-size: 0.85rem;">
+                        <span>0%</span>
+                        <span id="threshold-display">70%</span>
+                        <span>100%</span>
+                    </div>
+                    <div class="helper-text">Minimum confidence score to generate an alert</div>
+                </div>
+                
+                <div class="row-custom">
+                    <div class="form-group-custom">
+                        <label for="alert-severity">Minimum Alert Severity</label>
+                        <select id="alert-severity">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high" selected>High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                        <div class="helper-text">Alerts below this severity are filtered</div>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="escalation-threshold">Escalation Risk Score</label>
+                        <input type="number" id="escalation-threshold" value="80" min="0" max="100" step="5">
+                        <div class="helper-text">Score triggering escalation workflow</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Approval Workflow -->
+            <div class="policy-section">
+                <div class="section-title">✅ Approval Workflow</div>
+                
+                <div class="toggle-container">
+                    <label class="toggle-label">Require Approval for Actions</label>
+                    <label class="switch">
+                        <input type="checkbox" id="approval-required" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="helper-text">When enabled, all prevention actions require analyst review before execution</div>
+                
+                <div class="form-group-custom">
+                    <label for="approval-timeout">Approval Response Timeout (minutes)</label>
+                    <input type="number" id="approval-timeout" value="30" min="1" max="1440" step="5">
+                    <div class="helper-text">Auto-escalate if no response within timeout</div>
+                </div>
+            </div>
+
+            <!-- Advanced Options -->
+            <div class="policy-section">
+                <div class="section-title">🔧 Advanced Options</div>
+                
+                <div class="toggle-container">
+                    <label class="toggle-label">Auto-Escalate High Risk Alerts</label>
+                    <label class="switch">
+                        <input type="checkbox" id="auto-escalate" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="helper-text">Automatically escalate alerts exceeding risk threshold</div>
+                
+                <div class="toggle-container">
+                    <label class="toggle-label">Enable Anomaly Detection</label>
+                    <label class="switch">
+                        <input type="checkbox" id="anomaly-detection" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="helper-text">Use ML-based anomaly detection in addition to signature matching</div>
+                
+                <div class="form-group-custom">
+                    <label for="log-level">Logging Level</label>
+                    <select id="log-level">
+                        <option value="debug">Debug</option>
+                        <option value="info" selected>Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                    </select>
+                    <div class="helper-text">System logging verbosity level</div>
+                </div>
+            </div>
+
+            <!-- Engine Selection -->
+            <div class="policy-section">
+                <div class="section-title">🔍 Detection Engines</div>
+                <p style="color: #666; margin-bottom: 1rem;">Enable/disable specific detection engines</p>
+                
+                <div class="engine-toggles" id="engine-toggles">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Policy History -->
+            <div class="policy-section">
+                <div class="section-title">📜 Policy History</div>
+                <div class="policy-history" id="policy-history">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="savePolicy()">💾 Save Policy</button>
+                <button type="button" class="btn-cancel" onclick="resetPolicy()">↺ Reset</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/policy.js') }}"></script>
+</body>
+</html>
