@@ -97,7 +97,9 @@ app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
 # Prevent DOS attacks from large uploads (16 MB limit)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 if SocketIO is not None:
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+    # Restrict CORS to localhost to prevent unauthorized cross-origin requests
+    cors_origins = ["http://localhost", "http://127.0.0.1", "http://localhost:5000", "http://127.0.0.1:5000"]
+    socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode="threading")
     SOCKETIO_ENABLED = True
 else:
     SOCKETIO_ENABLED = False
@@ -444,6 +446,9 @@ def _on_detection_event(event: DetectionEvent) -> None:
                     "confidence": event.confidence,
                     "profile": event.profile,
                     "reason": event.reason,
+                    "source_ip": event.source_ip or "",
+                    "attack_type": event.attack_type or "",
+                    "risk_score": getattr(event, 'risk_score', 0.0) or 0.0,
                 }
             )
             metrics_service.inc("alerts_total")
@@ -1448,13 +1453,15 @@ def api_predict():
             attack_type=payload.get("attack_type"),
         )
         response = result.to_dict()
+        # Correlate with prevention action: find most recent action for this target
+        # within last 60 seconds (avoids fragile timestamp correlation)
         recent_actions = ops_store.list_actions(limit=20)
         prevention_action = next(
             (
                 action
                 for action in recent_actions
                 if str(action.get("target", "")).strip() == str(source).strip()
-                and _to_epoch_seconds(action.get("created_at"), default=0.0) >= request_started_at
+                and (time.time() - _to_epoch_seconds(action.get("created_at"), default=0.0)) <= 60.0
             ),
             None,
         )
@@ -2150,6 +2157,7 @@ def api_module_multi_engine():
 
 
 @app.route("/api/modules/risk-score", methods=["GET"])
+@require_role("analyst")
 def api_module_risk_score():
     """Risk score visualization."""
     try:
@@ -2350,6 +2358,7 @@ def api_module_alert_lifecycle():
 
 
 @app.route("/api/modules/engine-playground", methods=["GET", "POST"])
+@require_role("analyst")
 def api_module_engine_playground():
     """Engine toggle playground."""
     try:
@@ -2601,6 +2610,7 @@ def api_module_behavioral_profiling():
 
 
 @app.route("/api/modules/threat-intelligence", methods=["GET"])
+@require_role("analyst")
 def api_module_threat_intelligence():
     """Threat intelligence feeds and IOC matches."""
     try:

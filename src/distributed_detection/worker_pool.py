@@ -91,9 +91,12 @@ class FlowHasher:
         if num_workers <= 0:
             return 0
         
-        # Use MD5 hash of flow ID (already computed in Phase A)
-        # Convert hex to integer, modulo worker count
-        hash_value = int(flow_id, 16) if len(flow_id) <= 16 else int(hashlib.md5(flow_id.encode()).hexdigest(), 16)
+        # Use MD5 hash of flow ID for consistent partitioning
+        # Always hash to avoid ValueError on non-hex flow IDs
+        try:
+            hash_value = int(hashlib.md5(flow_id.encode()).hexdigest(), 16)
+        except (ValueError, TypeError):
+            hash_value = hash(flow_id) & 0xFFFFFFFF
         return hash_value % num_workers
     
     @staticmethod

@@ -277,8 +277,8 @@ class OpsStore:
         if self._is_postgres:
             self._execute(
                 """
-                INSERT INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason)
-                VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason)
+                INSERT INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score)
+                VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 payload,
@@ -286,8 +286,8 @@ class OpsStore:
             return
         self._execute(
             """
-            INSERT OR IGNORE INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason)
-            VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason)
+            INSERT OR IGNORE INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score)
+            VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
             """,
             payload,
         )
@@ -300,7 +300,8 @@ class OpsStore:
     ) -> list[dict[str, Any]]:
         query = (
             "SELECT id, timestamp, severity, prediction, confidence, profile, reason, "
-            "COALESCE(status, 'open') AS status, assignee, close_reason, status_updated_at "
+            "COALESCE(status, 'open') AS status, assignee, close_reason, status_updated_at, "
+            "COALESCE(source_ip, '') AS source_ip, COALESCE(attack_type, '') AS attack_type, COALESCE(risk_score, 0.0) AS risk_score "
             "FROM alerts"
         )
         params: dict[str, Any] = {"limit": int(limit)}

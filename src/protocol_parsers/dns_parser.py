@@ -10,6 +10,7 @@ from enum import Enum
 import struct
 import re
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +361,8 @@ class DNSParser:
         
         for count in char_counts.values():
             prob = count / domain_len
-            entropy -= prob * (prob ** 0.5)  # Simplified entropy
+            if prob > 0:
+                entropy -= prob * math.log2(prob)  # Shannon entropy: -sum(p * log2(p))
         
         return entropy
     

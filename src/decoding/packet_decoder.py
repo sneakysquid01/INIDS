@@ -187,7 +187,7 @@ class PacketDecoder:
         try:
             version_ihl, dscp_ecn, total_len, ident, flags_offset, ttl, \
             protocol, checksum, src_ip_int, dst_ip_int = \
-                struct.unpack("!BHHHBBH4s4s", data[:20])
+                struct.unpack("!BBHHHBBH4s4s", data[:20])
             
             version = (version_ihl >> 4) & 0x0F
             ihl = (version_ihl & 0x0F) * 4

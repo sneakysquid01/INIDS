@@ -51,7 +51,7 @@ HTTP_SIGNATURES = {
     },
     "path_traversal": {
         "patterns": [
-            rb"(\.\./|\.\.\\\)",
+            rb"(\.\./|\.\.\\)",
             rb"(%2e%2e/|%2e%2e\\)",
             rb"(\.\.%2f|\.\.%5c)",
         ],
@@ -139,6 +139,20 @@ ENCODING_INDICATORS = {
     "url_encoded": rb"(%[0-9a-fA-F]{2})+",
     "unicode_encoded": rb"(\\u[0-9a-fA-F]{4})+",
 }
+
+# Precompile regex patterns at module load time (performance optimization)
+_COMPILED_HTTP_SIGNATURES = {}
+for sig_name, sig_data in HTTP_SIGNATURES.items():
+    _COMPILED_HTTP_SIGNATURES[sig_name] = [re.compile(p) for p in sig_data["patterns"]]
+
+_COMPILED_SCANNER_SIGNATURES = {}
+for scanner_name, scanner_data in SCANNER_SIGNATURES.items():
+    _COMPILED_SCANNER_SIGNATURES[scanner_name] = {
+        "patterns": [re.compile(p) for p in scanner_data["patterns"]],
+        "ua_patterns": [re.compile(p) for p in scanner_data["ua_patterns"]],
+    }
+
+_COMPILED_ENCODING_INDICATORS = {name: re.compile(pattern) for name, pattern in ENCODING_INDICATORS.items()}
 
 
 @dataclass

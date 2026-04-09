@@ -119,12 +119,19 @@ class ProtocolDetector:
             ProtocolClassification with detected protocol and confidence
         """
         
-        # Check well-known ports first (most reliable)
+        # Analyze payload FIRST for definitive patterns (TLS, HTTP, DNS)
+        # This prevents port-based misclassification
+        if payload and len(payload) > 0:
+            payload_result = ProtocolDetector._classify_by_payload(payload, protocol, dst_port, src_port)
+            if payload_result.confidence >= 0.95:  # High confidence payload match
+                return payload_result
+        
+        # Check well-known ports second (fallback for conn without payload analysis yet)
         if dst_port in ProtocolDetector.WELL_KNOWN_PORTS:
             proto = ProtocolDetector.WELL_KNOWN_PORTS[dst_port]
             return ProtocolClassification(
                 protocol=proto,
-                confidence=0.95,
+                confidence=0.85,
                 detection_method="well_known_port"
             )
         
@@ -133,13 +140,9 @@ class ProtocolDetector:
             proto = ProtocolDetector.WELL_KNOWN_PORTS[src_port]
             return ProtocolClassification(
                 protocol=proto,
-                confidence=0.85,
+                confidence=0.80,
                 detection_method="well_known_port_src"
             )
-        
-        # Analyze payload for protocol patterns
-        if payload and len(payload) > 0:
-            return ProtocolDetector._classify_by_payload(payload, protocol, dst_port, src_port)
         
         # Default to unknown
         return ProtocolClassification(

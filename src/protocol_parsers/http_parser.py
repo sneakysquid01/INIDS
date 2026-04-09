@@ -357,7 +357,7 @@ class HTTPParser:
             '/login', '/auth', '/api/admin', '/console'
         ]
         
-        if any(req_path.lower().startswith(ap) for ap in admin_paths):
+        if any(request.path.lower().startswith(ap) for ap in admin_paths):
             request.suspicious_indicators.append("admin_path_access")
         
         # Check SQL injection
