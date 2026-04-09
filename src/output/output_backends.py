@@ -255,7 +255,7 @@ class SyslogBackend(OutputBackend):
             if self.socket:
                 try:
                     self.socket.close()
-                except:
+                except Exception:
                     pass
                 self.socket = None
 
@@ -357,7 +357,7 @@ class RedisBackend(OutputBackend):
         if self.redis:
             try:
                 self.redis.close()
-            except:
+            except Exception:
                 pass
             self.redis = None
 
@@ -459,7 +459,7 @@ class WebhookBackend(OutputBackend):
         try:
             self.event_queue.put_nowait(event)
             return True
-        except:
+        except Exception:
             self.logger.error("Webhook queue full")
             self.stats.events_failed += 1
             return False

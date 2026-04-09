@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('noResultsSection').style.display = 'block';
 });
 
-function handleQueryKeyup() {
+function handleQueryKeyup(event) {
     if (event.key === 'Enter') {
         performLookup();
     }
@@ -55,7 +55,11 @@ async function performLookup() {
     document.getElementById('noResultsSection').style.display = 'none';
 
     try {
-        const response = await fetch(`/api/threat-intel/lookup?query=${encodeURIComponent(query)}`);
+        const response = await fetch('/api/threat-intel/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: query })
+        });
         if (!response.ok) throw new Error('Lookup failed');
         
         const data = await response.json();

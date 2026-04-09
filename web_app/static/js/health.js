@@ -13,27 +13,24 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadHealthData() {
     try {
         // Load from API endpoints
-        const [healthRes, metricsRes] = await Promise.all([
-            fetch('/api/health'),
-            fetch('/api/metrics')
-        ]);
-
-        if (!healthRes.ok || !metricsRes.ok) {
+        const healthRes = await fetch('/api/health');
+        if (!healthRes.ok) {
             throw new Error('Failed to fetch health data');
         }
 
         const healthData = await healthRes.json();
-        const metricsData = await metricsRes.json();
+        // Optional: fetch text metrics and parse if needed
+        // const metricsText = await (await fetch('/api/metrics')).text();
 
         // Update UI with data
         updateSystemStatus(healthData);
-        updateMetrics(metricsData);
+        updateMetrics(healthData);
         updateEngineStatus(healthData);
         updateServiceStatus(healthData);
-        updateResourceUsage(metricsData);
-        updateAlertsBreakdown(metricsData);
+        updateResourceUsage(healthData);
+        updateAlertsBreakdown(healthData);
         updateSystemInfo(healthData);
-        updatePerformanceChart(metricsData);
+        updatePerformanceChart(healthData);
 
         // Update timestamp
         const now = new Date();
@@ -137,8 +134,9 @@ function updateEngineStatus(data) {
     const enginesList = document.getElementById('enginesList');
     enginesList.innerHTML = '';
 
-    if (data.engines && Array.isArray(data.engines)) {
-        data.engines.forEach(engine => {
+    const engines = data.detection_engines || data.engines || [];
+    if (Array.isArray(engines)) {
+        engines.forEach(engine => {
             const engineDiv = document.createElement('div');
             engineDiv.className = 'alert mb-2';
             

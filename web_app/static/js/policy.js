@@ -19,8 +19,8 @@ async function loadPolicy() {
             throw new Error(`HTTP ${response.status}`);
         }
         
-        const data = response.json();
-        currentPolicy = await data;
+        const data = await response.json();
+        currentPolicy = data;
         
         populateForm(currentPolicy);
         loadPolicyHistory();
@@ -46,7 +46,7 @@ function populateForm(policy) {
     
     // Thresholds
     document.getElementById('detection-threshold').value = 
-        (policy.detection_threshold || 0.7) * 100;
+        ((policy.confidence_block_threshold || policy.detection_threshold || 0.7) * 100);
     updateThresholdLabel(document.getElementById('detection-threshold').value);
     
     document.getElementById('alert-severity').value = 
@@ -57,7 +57,7 @@ function populateForm(policy) {
     
     // Approval
     document.getElementById('approval-required').checked = 
-        policy.approval_required !== false;
+        (policy.block_requires_approval !== false && policy.approval_required !== false);
     
     document.getElementById('approval-timeout').value = 
         policy.approval_timeout_minutes || 30;
@@ -202,10 +202,10 @@ async function savePolicy() {
     
     const payload = {
         mode,
-        detection_threshold: detectionThreshold,
+        confidence_block_threshold: detectionThreshold,
         min_severity: alertSeverity,
         escalation_threshold: escalationThreshold,
-        approval_required: approvalRequired,
+        block_requires_approval: approvalRequired,
         approval_timeout_minutes: approvalTimeout,
         auto_escalate: autoEscalate,
         ml_enabled: anomalyDetection,

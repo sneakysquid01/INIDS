@@ -13,7 +13,8 @@ async function loadAllowlist() {
         const response = await fetch('/api/allowlist');
         if (!response.ok) throw new Error('Failed to load allowlist');
         
-        allAllowlist = await response.json();
+        const data = await response.json();
+        allAllowlist = data.entries || [];
         filteredAllowlist = [...allAllowlist];
         currentPage = 1;
         
@@ -76,7 +77,7 @@ function renderAllowlist() {
     }
     
     tbody.innerHTML = pageItems.map(item => `
-        <tr style="cursor: pointer;" onclick="showDetails('${item.id}')">
+        <tr style="cursor: pointer;" onclick="showDetails('${escapeHtml(item.entry)}')">
             <td>
                 <strong>${escapeHtml(item.entry)}</strong>
                 <br><small class="text-muted">${isIP(item.entry) ? '📍 IP Address' : '🌐 Domain'}</small>
@@ -86,7 +87,7 @@ function renderAllowlist() {
             <td>${escapeHtml(item.added_by || 'system')}</td>
             <td><small>${new Date(item.added_at).toLocaleString()}</small></td>
             <td>
-                <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); openDeleteModal('${item.id}')" title="Remove">
+                <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); openDeleteModal('${escapeHtml(item.entry)}');" title="Remove">
                     🗑️
                 </button>
             </td>
@@ -191,11 +192,11 @@ function isValidEntry(entry) {
     return false;
 }
 
-function showDetails(id) {
-    const item = allAllowlist.find(a => a.id === id);
+function showDetails(entry) {
+    const item = allAllowlist.find(a => a.entry === entry);
     if (!item) return;
     
-    currentDetailId = id;
+    currentDetailId = entry;
     
     document.getElementById('detailEntry').textContent = escapeHtml(item.entry);
     document.getElementById('detailType').textContent = getTypeLabel(item.entry);
@@ -207,9 +208,9 @@ function showDetails(id) {
     new bootstrap.Modal(document.getElementById('detailsModal')).show();
 }
 
-function openDeleteModal(id) {
-    deleteId = id;
-    const item = allAllowlist.find(a => a.id === id);
+function openDeleteModal(entry) {
+    deleteId = entry;
+    const item = allAllowlist.find(a => a.entry === entry);
     if (!item) return;
     
     document.getElementById('deleteItemText').textContent = escapeHtml(item.entry);
@@ -220,7 +221,7 @@ async function confirmDelete() {
     if (!deleteId) return;
     
     try {
-        const response = await fetch(`/api/allowlist/${deleteId}`, {
+        const response = await fetch(`/api/allowlist/${encodeURIComponent(deleteId)}`, {
             method: 'DELETE'
         });
         

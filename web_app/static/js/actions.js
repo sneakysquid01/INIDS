@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
 /**
  * Switch between tabs
  */
-function switchTab(tabName) {
+function switchTab(tabName, evt) {
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
@@ -42,7 +42,7 @@ function switchTab(tabName) {
     document.getElementById(`tab-${tabName}`).classList.add('active');
     
     // Activate selected button
-    event.target.classList.add('active');
+    evt.target.classList.add('active');
 }
 
 /**
@@ -148,13 +148,14 @@ function renderActions(containerId, actions, showApproveButton = false) {
     
     filtered.forEach(action => {
         const status = (action.status || 'pending').toLowerCase();
-        const isPending = status === 'pending';
+        const isPending = ['pending', 'pending_approval'].includes(status);
+        const actionType = action.action_type || action.action || 'unknown';
         
         html += `
             <div class="action-card">
                 <div class="action-header">
                     <div>
-                        <span class="action-type">${escapeHtml(action.action_type || 'unknown')}</span>
+                        <span class="action-type">${escapeHtml(actionType)}</span>
                         <span class="status-badge status-${status}">${status}</span>
                     </div>
                     <small class="action-timestamp">${formatTimestamp(action.created_at)}</small>

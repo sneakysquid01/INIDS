@@ -41,7 +41,7 @@ from src.ha.leader_election import LeaderElection
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     _socketio_available = True
-except Exception as e:
+except Exception:
     _socketio_available = False
     SocketIO = None
 
@@ -58,8 +58,6 @@ RESULTS_DIR = os.path.join(BASE_DIR, "results")
 TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
 
 from src.detection_service import DetectionService, InMemoryAlertStore
 from src.prevention_service import PreventionService

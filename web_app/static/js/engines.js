@@ -59,10 +59,10 @@ function createEngineCard(engine) {
     const card = document.createElement('div');
     card.className = 'engine-card';
     
-    const engineId = engine.id || 'unknown';
-    const engineType = engine.type || 'unknown';
+    const engineId = engine.engine_id || engine.id || 'unknown';
+    const engineType = engine.engine_type || engine.type || 'unknown';
     const isEnabled = engine.enabled === true;
-    const isReady = engine.is_ready !== false;
+    const isReady = (engine.ready ?? engine.is_ready) !== false;
     
     const descriptions = {
         'ml_engine': 'Machine Learning-based detection using trained models',
