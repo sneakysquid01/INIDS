@@ -24,6 +24,9 @@ class Settings:
     json_logging: bool = False
     ti_feed_dir: str = ""
     ti_refresh_interval_seconds: int = 3600
+    honeypot_ips: str = ""
+    honeypot_ports: str = ""
+    honeypot_enabled: bool = True
 
 
 def _safe_int(env_key: str, default: int) -> int:
@@ -56,6 +59,9 @@ def load_settings() -> Settings:
     require_secret_key = os.getenv("INIDS_REQUIRE_SECRET_KEY", "0") == "1"
     require_api_keys = os.getenv("INIDS_REQUIRE_API_KEYS", "0") == "1"
     json_logging = _safe_bool("INIDS_JSON_LOGGING", False)
+    honeypot_ips = os.getenv("INIDS_HONEYPOT_IPS", "").strip()
+    honeypot_ports = os.getenv("INIDS_HONEYPOT_PORTS", "").strip()
+    honeypot_enabled = _safe_bool("INIDS_HONEYPOT_ENABLED", True)
     if require_secret_key and not secret:
         raise ValueError("SECRET_KEY environment variable is required when INIDS_REQUIRE_SECRET_KEY=1")
     if not secret:
@@ -87,4 +93,7 @@ def load_settings() -> Settings:
         json_logging=json_logging,
         ti_feed_dir=ti_feed_dir,
         ti_refresh_interval_seconds=max(60, ti_refresh_interval_seconds),
+        honeypot_ips=honeypot_ips,
+        honeypot_ports=honeypot_ports,
+        honeypot_enabled=honeypot_enabled,
     )

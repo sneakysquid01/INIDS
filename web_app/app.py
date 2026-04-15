@@ -88,9 +88,14 @@ from src.detection.engines.ml_engine import MLEngine
 from src.detection.engines.signature_engine import SignatureEngine
 from src.detection.engines.anomaly_engine import AnomalyEngine
 from src.detection.engines.threshold_engine import ThresholdEngine
+from src.detection.engines.honeypot_engine import HoneypotDetectionEngine
 from src.pipeline.backpressure import BackpressureController, BackpressureLevel
 from src.pipeline.stream_processor import StreamProcessor
 from src.pipeline.worker import PipelineWorker
+from src.ips.incident_aggregator import IncidentAggregator
+from src.detection.temporal_correlation import TemporalCorrelationEngine, create_example_patterns
+from src.ips.entity_enrichment import EntityEnrichmentEngine
+from src.ips.alert_filter import ThreeLayerAlertFilter, create_default_rules
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
@@ -147,6 +152,7 @@ alert_store = InMemoryAlertStore(max_items=1000)
 detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
+incident_aggregator = IncidentAggregator(ops_store)
 allowlist = Allowlist(ops_store)
 escalation_tracker = EscalationTracker(cooldown_seconds=300.0)
 fp_manager = FalsePositiveManager(ops_store=ops_store)
@@ -180,6 +186,62 @@ engine_registry.register(anomaly_engine, enabled=anomaly_engine.is_ready())
 ti_manager = ThreatIntelManager()
 ti_engine = TIEngine(ti_manager)
 engine_registry.register(ti_engine)  # enabled=True; gated by is_ready() returning False when cache is empty
+
+# Honeypot detection engine — detects access to canary IPs/ports
+honeypot_ips = [ip.strip() for ip in SETTINGS.honeypot_ips.split(",") if ip.strip()]
+honeypot_ports = []
+if SETTINGS.honeypot_ports:
+    try:
+        honeypot_ports = [int(p.strip()) for p in SETTINGS.honeypot_ports.split(",") if p.strip()]
+    except ValueError:
+        logger.warning("Invalid honeypot ports configuration: %s", SETTINGS.honeypot_ports)
+honeypot_engine = HoneypotDetectionEngine(
+    engine_id="honeypot",
+    honeypot_ips=honeypot_ips,
+    honeypot_ports=honeypot_ports,
+)
+engine_registry.register(honeypot_engine, enabled=SETTINGS.honeypot_enabled)
+
+# Temporal correlation engine — detects multi-stage attacks across time
+temporal_correlation_engine = TemporalCorrelationEngine()
+# Register example patterns for common attack flows
+temporal_correlation_engine.register_pattern(
+    "port_scan_to_brute_force",
+    [
+        {"type": "port_scan", "confidence_min": 0.7},
+        {"type": "brute_force", "confidence_min": 0.8, "time_offset_seconds": 300}
+    ]
+)
+temporal_correlation_engine.register_pattern(
+    "c2_to_data_exfil",
+    [
+        {"type": "c2_communication", "confidence_min": 0.75},
+        {"type": "data_exfil", "confidence_min": 0.75, "time_offset_seconds": 600}
+    ]
+)
+
+# Entity context enrichment engine — enriches alerts with GeoIP, threat intel, history
+entity_enrichment_engine = EntityEnrichmentEngine(
+    ops_store=ops_store,
+    ti_manager=ti_manager,
+    internal_cidrs=SETTINGS.internal_cidrs if hasattr(SETTINGS, "internal_cidrs") else None
+)
+logger.info("Entity enrichment engine initialized with threat intel manager")
+
+# Three-layer alert filtering engine — exclude/ignore/merge alerts
+alert_filter = ThreeLayerAlertFilter(ops_store=ops_store)
+# Load persisted rules and add default recommendations
+alert_filter.load_rules_from_storage()
+if not alert_filter.exclude_rules and not alert_filter.ignore_rules:
+    exclude_rules, ignore_rules, merge_rules = create_default_rules()
+    for rule in exclude_rules:
+        alert_filter.add_exclude_rule(rule)
+    for rule in ignore_rules:
+        alert_filter.add_ignore_rule(rule)
+    for rule in merge_rules:
+        alert_filter.add_merge_rule(rule)
+logger.info("Three-layer alert filter initialized with %d rules", 
+            len(alert_filter.exclude_rules) + len(alert_filter.ignore_rules) + len(alert_filter.merge_rules))
 
 risk_engine = RiskEngine()
 policy_engine = PolicyEngine()
@@ -435,17 +497,97 @@ def _on_detection_event(event: DetectionEvent) -> None:
     # Persist alerts from all event-bus paths, including streaming detections.
     if pred_lower in ("attack", "suspicious") or event.suspicious:
         try:
-            ops_store.save_alert(
-                {
-                    "id": f"al_{uuid.uuid4().hex[:10]}",
-                    "timestamp": event.timestamp,
-                    "severity": event.severity,
-                    "prediction": event.prediction,
+            alert_id = f"al_{uuid.uuid4().hex[:10]}"
+            alert_data = {
+                "id": alert_id,
+                "timestamp": event.timestamp,
+                "severity": event.severity,
+                "prediction": event.prediction,
+                "confidence": event.confidence,
+                "profile": event.profile,
+                "reason": event.reason,
+                "source_ip": event.source_ip,
+                "attack_type": event.attack_type,
+            }
+            
+            # Apply three-layer alert filtering (EXCLUDE / IGNORE / MERGE)
+            filter_result = alert_filter.filter_alert(alert_data)
+            
+            if filter_result.action.value == "exclude":
+                # Alert is completely blocked
+                logger.info(f"Alert {alert_id} excluded: {filter_result.reason}")
+                metrics_service.inc("alerts_excluded_total")
+                return
+            
+            # Apply any severity modifications from IGNORE filter
+            if filter_result.action.value == "ignore":
+                alert_data["severity"] = filter_result.modified_severity or alert_data["severity"]
+                alert_data["ignored"] = True
+                logger.debug(f"Alert {alert_id} deprioritized: {filter_result.reason}")
+                metrics_service.inc("alerts_ignored_total")
+            
+            # Apply merge logic
+            if filter_result.action.value == "merge":
+                alert_data["merged_with"] = filter_result.merged_with_alert_id
+                logger.debug(f"Alert {alert_id} merged with {filter_result.merged_with_alert_id}")
+                metrics_service.inc("alerts_merged_total")
+            
+            # Track alert for future merge operations
+            alert_filter.track_alert(alert_data)
+            
+            # Enrich alert with entity context (GeoIP, threat intel, history)
+            try:
+                enriched_entity = entity_enrichment_engine.enrich(event.source_ip)
+                threat_level = entity_enrichment_engine.get_threat_level(enriched_entity)
+                alert_data["enriched_entity"] = enriched_entity.to_dict()
+                alert_data["threat_level"] = threat_level
+                logger.debug(f"Alert {alert_id} enriched with threat level: {threat_level}")
+                metrics_service.inc("alerts_enriched_total")
+            except Exception:
+                logger.debug("Entity enrichment failed for alert", exc_info=True)
+            
+            # Save enriched alert
+            ops_store.save_alert(alert_data)
+            
+            # Aggregate alert into hierarchical incident structure
+            try:
+                alert_code = f"CODE_{event.attack_type.upper()}"
+                activity_id, incident_id = incident_aggregator.aggregate_alert(
+                    alert_id=alert_id,
+                    alert_code=alert_code,
+                    source_ip=event.source_ip,
+                    attack_type=event.attack_type,
+                    severity=alert_data.get("severity", event.severity),
+                    timestamp=event.timestamp,
+                    description=event.reason,
+                )
+                logger.debug(
+                    "Alert %s -> Activity %s -> Incident %s",
+                    alert_id, activity_id, incident_id
+                )
+                metrics_service.inc("incidents_total")
+            except Exception:
+                logger.exception("Failed to aggregate alert into incident hierarchy")
+            
+            # Evaluate for temporal correlation patterns (multi-stage attacks)
+            try:
+                correlation_result = temporal_correlation_engine.evaluate({
+                    "type": event.attack_type,
+                    "source_ip": event.source_ip,
                     "confidence": event.confidence,
-                    "profile": event.profile,
-                    "reason": event.reason,
-                }
-            )
+                    "timestamp": event.timestamp,
+                    "severity": alert_data.get("severity", event.severity),
+                })
+                if correlation_result:
+                    pattern_name, description = correlation_result
+                    logger.warning(
+                        "Temporal correlation detected: %s for %s (Pattern: %s)",
+                        description, event.source_ip, pattern_name
+                    )
+                    metrics_service.inc("temporal_correlation_matches_total")
+            except Exception:
+                logger.debug("Temporal correlation evaluation failed", exc_info=True)
+            
             metrics_service.inc("alerts_total")
         except Exception:
             logger.exception("Failed to persist alert from detection event")
@@ -1665,6 +1807,326 @@ def api_policy_rollback():
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     return jsonify({"policy": policy.to_dict(), "version": pv.to_dict()})
+
+
+# ====================================================================
+# Honeypot Configuration Endpoints (Hot-Reloadable)
+# ====================================================================
+
+@app.route("/api/honeypot/config", methods=["GET"])
+@require_role("analyst")
+def api_honeypot_config_get():
+    """Get current honeypot configuration."""
+    ips = honeypot_engine.get_config()["honeypot_ips"]
+    ports = honeypot_engine.get_config()["honeypot_ports"]
+    return jsonify({
+        "honeypot_ips": ips,
+        "honeypot_ports": ports,
+        "enabled": honeypot_engine.is_ready(),
+        "engine_id": honeypot_engine.engine_id,
+    })
+
+
+@app.route("/api/honeypot/config", methods=["POST", "PATCH"])
+@require_role("admin")
+def api_honeypot_config_update():
+    """Update honeypot configuration (hot-reload - no restart needed)."""
+    payload = request.get_json(silent=True) or {}
+    
+    # Update IPs if provided
+    if "honeypot_ips" in payload:
+        new_ips = payload.get("honeypot_ips", [])
+        if not isinstance(new_ips, list):
+            return jsonify({"error": "'honeypot_ips' must be a list"}), 400
+        honeypot_engine.update_honeypot_ips(new_ips)
+        ops_store.add_audit(
+            event_type="honeypot_config_update",
+            message=f"honeypot_ips updated: {new_ips}",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        metrics_service.inc("honeypot_config_updates_total")
+    
+    # Update ports if provided
+    if "honeypot_ports" in payload:
+        new_ports = payload.get("honeypot_ports", [])
+        if not isinstance(new_ports, list):
+            return jsonify({"error": "'honeypot_ports' must be a list"}), 400
+        try:
+            new_ports = [int(p) for p in new_ports]
+        except (ValueError, TypeError):
+            return jsonify({"error": "honeypot_ports must be integers"}), 400
+        honeypot_engine.update_honeypot_ports(new_ports)
+        ops_store.add_audit(
+            event_type="honeypot_config_update",
+            message=f"honeypot_ports updated: {new_ports}",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        metrics_service.inc("honeypot_config_updates_total")
+    
+    # Return updated config
+    config = honeypot_engine.get_config()
+    return jsonify({
+        "honeypot_ips": config["honeypot_ips"],
+        "honeypot_ports": config["honeypot_ports"],
+        "enabled": config["enabled"],
+        "updated": True,
+    }), 200
+
+
+# ====================================================================
+# Incident and Activity Management Endpoints
+# ====================================================================
+
+@app.route("/api/incidents", methods=["GET"])
+@require_role("analyst")
+def api_incidents_list():
+    """List all incidents with hierarchical grouping."""
+    limit = request.args.get("limit", default=50, type=int)
+    incidents = incident_aggregator.get_incidents(limit=max(1, min(limit, 500)))
+    return jsonify({"count": len(incidents), "incidents": incidents})
+
+
+@app.route("/api/incidents/<incident_id>", methods=["GET"])
+@require_role("analyst")
+def api_incident_details(incident_id: str):
+    """Get detailed incident with all activities and alerts."""
+    details = incident_aggregator.get_incident_details(incident_id)
+    if details is None:
+        return jsonify({"error": "incident not found"}), 404
+    return jsonify(details)
+
+
+@app.route("/api/activities", methods=["GET"])
+@require_role("analyst")
+def api_activities_list():
+    """List all activities (alert groupings)."""
+    limit = request.args.get("limit", default=50, type=int)
+    activities = incident_aggregator.get_activities(limit=max(1, min(limit, 500)))
+    return jsonify({"count": len(activities), "activities": activities})
+
+
+@app.route("/api/temporal/patterns", methods=["GET"])
+@require_role("analyst")
+def api_temporal_patterns_list():
+    """List all registered temporal correlation patterns for multi-stage attack detection."""
+    patterns = []
+    for pattern_name, pattern in temporal_correlation_engine.patterns.items():
+        patterns.append({
+            "name": pattern_name,
+            "steps": pattern.steps,
+            "description": pattern.description,
+        })
+    return jsonify({"count": len(patterns), "patterns": patterns})
+
+
+@app.route("/api/temporal/patterns", methods=["POST"])
+@require_role("admin")
+def api_temporal_patterns_register():
+    """Register a new temporal correlation pattern."""
+    body = request.get_json(silent=True) or {}
+    pattern_name = body.get("name", "").strip()
+    pattern_steps = body.get("steps", [])
+    description = body.get("description", "")
+    
+    if not pattern_name or not pattern_steps:
+        return jsonify({"error": "name and steps are required"}), 400
+    
+    if not isinstance(pattern_steps, list) or len(pattern_steps) < 2:
+        return jsonify({"error": "pattern must have at least 2 steps"}), 400
+    
+    try:
+        temporal_correlation_engine.register_pattern(pattern_name, pattern_steps)
+        ops_store.add_audit(
+            event_type="temporal_pattern_registered",
+            message=f"pattern={pattern_name}",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        metrics_service.inc("temporal_patterns_registered_total")
+        return jsonify({
+            "ok": True,
+            "pattern_name": pattern_name,
+            "message": "Temporal correlation pattern registered successfully"
+        }), 201
+    except Exception as e:
+        logger.exception("Failed to register temporal pattern: %s", pattern_name)
+        return jsonify({"error": f"Failed to register pattern: {str(e)}"}), 500
+
+
+@app.route("/api/temporal/state/<source_ip>", methods=["GET"])
+@require_role("analyst")
+def api_temporal_state(source_ip: str):
+    """Get current temporal correlation state for a source IP."""
+    if source_ip not in temporal_correlation_engine.temporal_store.events_by_ip:
+        return jsonify({"source_ip": source_ip, "events": [], "status": "no_events"}), 200
+    
+    events = temporal_correlation_engine.temporal_store.events_by_ip[source_ip]
+    return jsonify({
+        "source_ip": source_ip,
+        "event_count": len(events),
+        "events": [{"type": e["type"], "timestamp": e["timestamp"], "confidence": e.get("confidence")} for e in events[-20:]],  # Last 20 events
+        "status": "tracking"
+    })
+
+
+# ============ Entity Enrichment Endpoints ============
+
+@app.route("/api/entity/enrich/<source_ip>", methods=["GET"])
+@require_role("analyst")
+def api_entity_enrich(source_ip: str):
+    """Enrich an IP with context (GeoIP, threat intel, historical data)."""
+    try:
+        enriched = entity_enrichment_engine.enrich(source_ip)
+        threat_level = entity_enrichment_engine.get_threat_level(enriched)
+        result = enriched.to_dict()
+        result["threat_level"] = threat_level
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("Enrichment failed for IP %s", source_ip)
+        return jsonify({"error": f"Enrichment failed: {str(e)}"}), 500
+
+
+@app.route("/api/entity/<source_ip>/threat-level", methods=["GET"])
+@require_role("analyst")
+def api_entity_threat_level(source_ip: str):
+    """Get threat level assessment for an IP."""
+    try:
+        enriched = entity_enrichment_engine.enrich(source_ip)
+        threat_level = entity_enrichment_engine.get_threat_level(enriched)
+        confidence = enriched.enrichment_confidence
+        return jsonify({
+            "source_ip": source_ip,
+            "threat_level": threat_level,
+            "confidence": confidence,
+            "last_enriched": enriched.timestamp,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============ Alert Filtering Endpoints ============
+
+@app.route("/api/alerts/filter-rules", methods=["GET"])
+@require_role("analyst")
+def api_alert_filter_rules():
+    """List all alert filtering rules."""
+    all_rules = alert_filter.get_all_rules()
+    stats = alert_filter.get_rule_stats()
+    return jsonify({
+        "rules": all_rules,
+        "stats": stats,
+    })
+
+
+@app.route("/api/alerts/filter-rules/exclude", methods=["POST"])
+@require_role("admin")
+def api_alert_add_exclude_rule():
+    """Add an exclude rule (blocks alerts completely)."""
+    body = request.get_json(silent=True) or {}
+    from src.ips.alert_filter import ExcludeRule
+    
+    try:
+        rule = ExcludeRule(
+            rule_id=body.get("rule_id", f"exclude_{int(datetime.utcnow().timestamp())}"),
+            name=body.get("name", "Unnamed exclude rule"),
+            description=body.get("description", ""),
+            conditions=body.get("conditions", {}),
+            priority=body.get("priority", 0),
+        )
+        if alert_filter.add_exclude_rule(rule):
+            ops_store.add_audit(
+                event_type="exclude_rule_added",
+                message=f"rule={rule.rule_id}",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            metrics_service.inc("alert_filter_rules_created_total")
+            return jsonify({"ok": True, "rule_id": rule.rule_id}), 201
+        return jsonify({"error": "Rule with this ID already exists"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/alerts/filter-rules/ignore", methods=["POST"])
+@require_role("admin")
+def api_alert_add_ignore_rule():
+    """Add an ignore rule (deprioritizes alerts)."""
+    body = request.get_json(silent=True) or {}
+    from src.ips.alert_filter import IgnoreRule
+    
+    try:
+        rule = IgnoreRule(
+            rule_id=body.get("rule_id", f"ignore_{int(datetime.utcnow().timestamp())}"),
+            name=body.get("name", "Unnamed ignore rule"),
+            description=body.get("description", ""),
+            conditions=body.get("conditions", {}),
+            severity_reduction=body.get("severity_reduction", 1),
+            suppress_notifications=body.get("suppress_notifications", True),
+            priority=body.get("priority", 0),
+        )
+        if alert_filter.add_ignore_rule(rule):
+            ops_store.add_audit(
+                event_type="ignore_rule_added",
+                message=f"rule={rule.rule_id}",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            metrics_service.inc("alert_filter_rules_created_total")
+            return jsonify({"ok": True, "rule_id": rule.rule_id}), 201
+        return jsonify({"error": "Rule with this ID already exists"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/alerts/filter-rules/merge", methods=["POST"])
+@require_role("admin")
+def api_alert_add_merge_rule():
+    """Add a merge rule (combines similar alerts)."""
+    body = request.get_json(silent=True) or {}
+    from src.ips.alert_filter import MergeRule
+    
+    try:
+        rule = MergeRule(
+            rule_id=body.get("rule_id", f"merge_{int(datetime.utcnow().timestamp())}"),
+            name=body.get("name", "Unnamed merge rule"),
+            description=body.get("description", ""),
+            conditions=body.get("conditions", {}),
+            merge_window_seconds=body.get("merge_window_seconds", 300),
+            merge_key=body.get("merge_key", "source_ip"),
+            similarity_fields=body.get("similarity_fields", ["attack_type", "source_ip"]),
+            priority=body.get("priority", 0),
+        )
+        if alert_filter.add_merge_rule(rule):
+            ops_store.add_audit(
+                event_type="merge_rule_added",
+                message=f"rule={rule.rule_id}",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            metrics_service.inc("alert_filter_rules_created_total")
+            return jsonify({"ok": True, "rule_id": rule.rule_id}), 201
+        return jsonify({"error": "Rule with this ID already exists"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/alerts/filter-rules/<rule_id>", methods=["DELETE"])
+@require_role("admin")
+def api_alert_delete_rule(rule_id: str):
+    """Delete a filter rule."""
+    if alert_filter.remove_rule(rule_id):
+        ops_store.add_audit(
+            event_type="filter_rule_deleted",
+            message=f"rule={rule_id}",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        metrics_service.inc("alert_filter_rules_deleted_total")
+        return jsonify({"ok": True, "message": f"Rule {rule_id} deleted"})
+    return jsonify({"error": "Rule not found"}), 404
+
+
+@app.route("/api/alerts/filter-stats", methods=["GET"])
+@require_role("analyst")
+def api_alert_filter_stats():
+    """Get alert filtering statistics."""
+    stats = alert_filter.get_rule_stats()
+    return jsonify(stats)
 
 
 @app.route("/api/actions", methods=["GET"])

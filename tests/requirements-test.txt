@@ -1,0 +1,16 @@
+# Test Requirements for INIDS
+
+# Testing framework
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-xdist==3.3.1
+pytest-timeout==2.1.0
+
+# Task/Assertion libraries
+pytest-mock==3.11.1
+
+# Mocking and fixtures
+faker==19.3.0
+
+# Code quality
+coverage==7.2.0

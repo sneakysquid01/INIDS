@@ -1,4 +1,7 @@
-"""Signature-based Detection Engine — matches flows against YAML rule definitions."""
+"""Signature-based Detection Engine — matches flows against YAML rule definitions.
+
+Supports advanced operators: regex, contains, in, range, and logical combinations (AND/OR).
+"""
 from __future__ import annotations
 
 import logging
@@ -9,6 +12,7 @@ from typing import Any
 import yaml
 
 from src.detection.engine_base import DetectionEngine, EngineResult
+from src.detection.rule_compiler import RuleCompiler
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,8 @@ _OPS = {
 class SignatureEngine(DetectionEngine):
     """Evaluate traffic features against a set of YAML-defined signature rules.
 
+    Supports advanced operators: regex, contains, in, range, AND/OR logic.
+    
     Each rule has the form::
 
         - id: SIG-001
@@ -32,18 +38,20 @@ class SignatureEngine(DetectionEngine):
           severity: high
           attack_type: dos
           conditions:
-            - field: serror_rate
-              op: ">"
-              value: 0.8
-            - field: count
-              op: ">"
-              value: 200
+            - and:
+              - field: serror_rate
+                operator: ">"
+                value: 0.8
+              - field: count
+                operator: ">"
+                value: 200
     """
 
     def __init__(self, rules_path: str | Path | None = None, *, engine_id: str = "signature", fp_manager=None) -> None:
         self._engine_id = engine_id
         self._rules: list[dict[str, Any]] = []
         self._fp_manager = fp_manager
+        self._rule_compiler = RuleCompiler()
         if rules_path is not None:
             self.load_rules(rules_path)
 
@@ -122,8 +130,25 @@ class SignatureEngine(DetectionEngine):
     # Internal
     # ------------------------------------------------------------------
 
+    def _match_rule(self, rule: dict[str, Any], features: dict[str, Any]) -> bool:
+        """Match rule using advanced rule compiler with backward compatibility."""
+        conditions = rule.get("conditions", [])
+        if not conditions:
+            return False
+        
+        # Try to use the advanced rule compiler first
+        try:
+            predicate = self._rule_compiler.compile_rule(rule)
+            return predicate(features)
+        except Exception as e:
+            logger.debug("Advanced rule compilation failed for %s, falling back to legacy: %s", 
+                        rule.get("id"), e)
+            # Fall back to legacy _match_rule_legacy
+            return self._match_rule_legacy(rule, features)
+
     @staticmethod
-    def _match_rule(rule: dict[str, Any], features: dict[str, Any]) -> bool:
+    def _match_rule_legacy(rule: dict[str, Any], features: dict[str, Any]) -> bool:
+        """Legacy rule matching (backward compatibility)."""
         conditions = rule.get("conditions", [])
         if not conditions:
             return False
