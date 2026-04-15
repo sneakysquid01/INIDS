@@ -24,7 +24,9 @@ ROLE_RANK = {
 class AuthService:
     def __init__(self):
         self.principals: dict[str, Principal] = {}
-        self.require_api_keys = os.getenv("INIDS_REQUIRE_API_KEYS", "0") == "1"
+        # Default: ON (require API keys unless explicitly disabled)
+        self.require_api_keys = os.getenv("INIDS_REQUIRE_API_KEYS", "1") == "1"
+        self.allow_unauthenticated = os.getenv("INIDS_ALLOW_UNAUTHENTICATED", "0") == "1"
         self._load_from_env()
 
     def _load_from_env(self) -> None:
@@ -44,13 +46,20 @@ class AuthService:
 
     @property
     def enabled(self) -> bool:
+        if self.allow_unauthenticated:
+            return False
         return self.require_api_keys or len(self.principals) > 0
 
     def authorize(self, required_role: str) -> tuple[bool, str]:
         if required_role not in ROLE_RANK:
             return False, "unknown_role"
+        
+        if self.allow_unauthenticated:
+            return True, "unauthenticated_allowed"
+        
         if not self.enabled:
             return True, "auth_disabled"
+        
         if self.require_api_keys and not self.principals:
             return False, "auth_not_configured"
 

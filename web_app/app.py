@@ -37,11 +37,15 @@ from src.ips.scheduler import PreventionScheduler
 from src.policy.policy_store import PolicyStore
 from src.ha.health_check import HealthCheck
 from src.ha.leader_election import LeaderElection
+from src.input_sanitizer import SanitizationError, sanitize_id, sanitize_ip_address
+from src.correlation_tracing import correlation_id_middleware, get_correlation_id
+from src.csrf_protection import csrf_protect_middleware, require_csrf_token
 
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     _socketio_available = True
-except Exception:
+except ImportError:
+    logger.debug("flask_socketio not available; WebSocket features disabled")
     _socketio_available = False
     SocketIO = None
 
@@ -108,6 +112,11 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
 # Prevent DOS attacks from large uploads (16 MB limit)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+# Register security middleware
+correlation_id_middleware(app)
+csrf_protect_middleware(app)
+
 if SocketIO is not None:
     # Restrict CORS to localhost to prevent unauthorized cross-origin requests
     cors_origins = ["http://localhost", "http://127.0.0.1", "http://localhost:5000", "http://127.0.0.1:5000"]
@@ -356,8 +365,8 @@ def _get_redis_client():
         client.ping()
         app._redis_client = client
         return client
-    except Exception:
-        logger.warning("Redis unavailable for pipeline runtime; continuing without streaming", exc_info=True)
+    except (ConnectionError, TimeoutError, OSError) as e:
+        logger.warning("Redis unavailable for pipeline runtime; continuing without streaming: %s", e)
         app._redis_client = None
         return None
 
@@ -372,8 +381,8 @@ def _close_redis_client() -> None:
     if callable(close_fn):
         try:
             close_fn()
-        except Exception:
-            logger.exception("Failed to close Redis client")
+        except (ConnectionError, OSError, RuntimeError) as e:
+            logger.debug("Error closing Redis client: %s", e)
 
 
 def _stream_source_ip(features: dict) -> str:

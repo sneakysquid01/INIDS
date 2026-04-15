@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from src.detection.engine_base import DetectionEngine, EngineResult
-from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS
+from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS, NUMERIC_FEATURES
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,42 @@ class MLEngine(DetectionEngine):
         return self._model is not None and hasattr(self._model, "predict")
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
+        # Validate required columns
+        required_columns = set(FEATURE_COLUMNS)
+        provided_columns = set(features.keys())
+        missing_columns = required_columns - provided_columns
+        
+        if missing_columns:
+            logger.warning(
+                "Missing features for ML evaluation: %s (using defaults)",
+                ", ".join(sorted(missing_columns)),
+            )
+            # If too many features missing, return low-confidence result
+            if len(missing_columns) > 10:
+                return EngineResult(
+                    engine_id=self._engine_id,
+                    engine_type=self.engine_type,
+                    verdict="unknown",
+                    confidence=0.0,
+                    severity="low",
+                    attack_type="unknown",
+                    metadata={
+                        "error": f"too_many_missing_features ({len(missing_columns)})",
+                        "missing": list(sorted(missing_columns)),
+                    },
+                )
+        
         row = DEFAULT_FEATURE_ROW.copy()
         for key, value in features.items():
             if key in FEATURE_COLUMNS:
-                row[key] = value
+                try:
+                    # Type-check numeric columns
+                    if key in NUMERIC_FEATURES:
+                        row[key] = float(value)
+                    else:
+                        row[key] = str(value)
+                except (ValueError, TypeError):
+                    logger.debug("Type conversion failed for %s=%s, using default", key, value)
 
         df = pd.DataFrame([row], columns=FEATURE_COLUMNS)
         pred = int(self._model.predict(df)[0])

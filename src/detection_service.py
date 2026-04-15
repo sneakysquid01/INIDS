@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 import uuid
 
@@ -51,17 +53,19 @@ class PredictionResult:
 
 class InMemoryAlertStore:
     def __init__(self, max_items: int = 1000):
-        self.max_items = max_items
-        self._alerts: list[Alert] = []
-        self._lock = __import__("threading").Lock()
+        self.max_items = max(1, int(max_items))
+        self._alerts: deque[Alert] = deque(maxlen=self.max_items)
+        self._lock = Lock()
 
-    def add(self, alert: Alert) -> None:
+    def add(self, alert: Alert | None) -> None:
+        if alert is None:
+            return
         with self._lock:
-            self._alerts.insert(0, alert)
-            if len(self._alerts) > self.max_items:
-                self._alerts = self._alerts[: self.max_items]
+            # deque with maxlen automatically handles truncation
+            self._alerts.appendleft(alert)
 
     def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[Alert]:
+        limit = max(1, min(limit, 1000))
         with self._lock:
             alerts = list(self._alerts)
         if severity:

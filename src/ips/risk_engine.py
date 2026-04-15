@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import defaultdict, deque, OrderedDict
 from dataclasses import dataclass
 from threading import Lock
 from time import time
@@ -31,7 +31,8 @@ class RiskEngine:
         self.weights = weights or RiskWeights()
         self.frequency_window_seconds = max(30, int(frequency_window_seconds))
         self.frequency_high_watermark = max(1, int(frequency_high_watermark))
-        self._events_by_source: dict[str, deque[float]] = defaultdict(deque)
+        self._events_by_source: dict[str, deque[float]] = {}
+        self._source_last_accessed: OrderedDict[str, float] = OrderedDict()
         self._lock = Lock()
 
     ATTACK_TYPE_SEVERITY: dict[str, float] = {
@@ -62,19 +63,39 @@ class RiskEngine:
         now = time()
         window_start = now - self.frequency_window_seconds
         source = str(source_ip or "unknown")
+        
         with self._lock:
+            # Initialize source if not exists
+            if source not in self._events_by_source:
+                self._events_by_source[source] = deque()
+            
             q = self._events_by_source[source]
             q.append(now)
+            
+            # Clean old entries within this source's window
             while q and q[0] < window_start:
                 q.popleft()
-            count = len(q)
-            # Bound in-memory source cardinality.
+            
+            # Clean up expired sources (no events in window)
             if len(self._events_by_source) > 50000:
-                excess = len(self._events_by_source) - 40000
-                keys_to_remove = list(self._events_by_source)[:excess]
-                for k in keys_to_remove:
+                # Phase 1: Remove sources with empty queues
+                empty_sources = [k for k, v in self._events_by_source.items() if not v]
+                for k in empty_sources:
                     del self._events_by_source[k]
-        return _clamp(count / self.frequency_high_watermark)
+                    self._source_last_accessed.pop(k, None)
+                
+                # Phase 2: If still over limit, remove oldest by LRU
+                if len(self._events_by_source) > 50000:
+                    # Remove oldest 10k by last access time
+                    items_to_remove = list(self._source_last_accessed.items())[:10000]
+                    for k, _ in items_to_remove:
+                        self._events_by_source.pop(k, None)
+                        self._source_last_accessed.pop(k, None)
+            
+            # Update access time for LRU
+            self._source_last_accessed[source] = now
+            count = len(q)
+            return _clamp(count / self.frequency_high_watermark)
 
     def calculate(self, detection_event: DetectionEvent, weights_override: RiskWeights | None = None) -> RiskScoreEvent:
         weights = weights_override or self.weights

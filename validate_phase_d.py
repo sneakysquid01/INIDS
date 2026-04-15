@@ -360,7 +360,7 @@ def validate_integration_with_phases():
         try:
             from src.distributed_detection import MultiThreadedPacketPipeline
             print("  ✓ Phase C imports available")
-        except:
+        except ImportError:
             print("  ⚠ Phase C not available (but Phase D is independent)")
         
         print("  ✓ Integration points validated")

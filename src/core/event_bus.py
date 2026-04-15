@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import copy
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any, Callable, TypeVar
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now_iso() -> str:
@@ -99,20 +103,32 @@ class EventBus:
 
     def __init__(self):
         self._handlers: dict[type, list[Callable[[Any], None]]] = defaultdict(list)
-        self._lock = Lock()
+        self._lock = RLock()
 
     def subscribe(self, event_type: type[EventT], handler: Callable[[EventT], None]) -> None:
+        """Register a handler for an event type. Prevents duplicate subscriptions."""
+        if not callable(handler):
+            raise TypeError(f"handler must be callable, got {type(handler)}")
+        
         with self._lock:
-            self._handlers[event_type].append(handler)
+            # Avoid duplicate subscriptions
+            if handler not in self._handlers[event_type]:
+                self._handlers[event_type].append(handler)
+                logger.debug(f"Subscribed {getattr(handler, '__name__', str(handler))} to {event_type.__name__}")
 
     def publish(self, event: Any) -> None:
+        """Publish an event to all registered handlers. Safe for concurrent access."""
         with self._lock:
-            handlers = list(self._handlers.get(type(event), []))
+            # Create a copy of handlers list to avoid modification during iteration
+            handlers = copy(self._handlers.get(type(event), []))
+        
+        # Invoke handlers outside lock to prevent deadlock
         for handler in handlers:
             try:
                 handler(event)
             except Exception:
-                import logging
-                logging.getLogger(__name__).exception(
-                    "EventBus handler %s failed for %s", handler.__name__, type(event).__name__
+                logger.exception(
+                    "EventBus handler %s failed for %s", 
+                    getattr(handler, '__name__', str(handler)), 
+                    type(event).__name__
                 )

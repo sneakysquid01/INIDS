@@ -213,8 +213,9 @@ class CertificateParser:
             elif isinstance(pub_key, dsa.DSAPublicKey):
                 pub_key_algo = "dsaEncryption"
                 pub_key_bits = pub_key.key_size
-        except:
-            pass
+        except (AttributeError, TypeError, ValueError):
+            # Could not determine public key algorithm or key size
+            logger.debug("Could not extract public key algorithm details")
         
         # Timestamps
         not_before = time.mktime(cert.not_valid_before.timetuple())
@@ -239,8 +240,9 @@ class CertificateParser:
         try:
             basic_constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
             is_ca = basic_constraints.value.ca
-        except:
-            pass
+        except (x509.ExtensionNotFound, AttributeError, ValueError):
+            # Certificate does not have BasicConstraints extension
+            logger.debug("Certificate does not have BasicConstraints extension")
         
         return CertificateInfo(
             subject=subject_cn,
