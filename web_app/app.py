@@ -94,6 +94,12 @@ from src.ips.incident_aggregator import IncidentAggregator
 from src.detection.temporal_correlation import TemporalCorrelationEngine, create_example_patterns
 from src.ips.entity_enrichment import EntityEnrichmentEngine
 from src.ips.alert_filter import ThreeLayerAlertFilter, create_default_rules
+from src.middleware import (
+    register_middleware, RateLimitConfig, RateLimitMiddleware, IPBlockingMiddleware,
+    SecurityHeadersMiddleware, AuditLogMiddleware
+)
+from src.auth_jwt import JWTAuthManager, RunAsManager, require_auth, require_role, inject_current_user
+from src.validation_schemas import validate_predict_request, validate_detect_request, validate_policy
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
@@ -121,6 +127,29 @@ else:
             flask_app.run(**kwargs)
 
     socketio = _NoopSocketIO()
+
+# --- Initialize Security Middleware Stack ---
+middleware_config = RateLimitConfig(
+    max_requests=SETTINGS.rate_limit_requests,
+    window_seconds=SETTINGS.rate_limit_window_seconds
+)
+middleware_instances = register_middleware(app, middleware_config)
+
+# --- Initialize JWT Authentication ---
+jwt_manager = JWTAuthManager(secret_key=SETTINGS.flask_secret_key)
+runas_manager = RunAsManager(jwt_manager, ops_store)
+
+# Store managers on app for access in request handlers
+app.jwt_manager = jwt_manager
+app.runas_manager = runas_manager
+app.rate_limiter = middleware_instances['rate_limiter']
+app.ip_blocker = middleware_instances['ip_blocker']
+app.audit_log = middleware_instances['audit_log']
+
+# Make jwt_manager available in request context
+@app.before_request
+def inject_jwt_manager():
+    request.jwt_manager = jwt_manager
 
 app._pipeline_worker = None
 app._pipeline_backpressure = None
@@ -1487,12 +1516,314 @@ def api_health_ready():
     return jsonify(report), (200 if report.get("status") == "healthy" else 503)
 
 
+# ========== AUTHENTICATION ENDPOINTS ==========
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    """Generate JWT token for user.
+    
+    Request JSON:
+        {
+            "username": "admin",
+            "password": "secret",  # In production, use proper auth backend
+            "roles": ["admin", "analyst"]  # Optional
+        }
+    
+    Response:
+        {
+            "token": "eyJ0eXAiOiJKV1Q...",
+            "expires_in": 86400,
+            "user": "admin"
+        }
+    """
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("username", "")
+    roles = payload.get("roles", ["analyst"])  # Default role
+    
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+    
+    try:
+        token = jwt_manager.create_token(
+            user_id=username,
+            username=username,
+            roles=roles,
+            expires_in=86400  # 24 hours
+        )
+        
+        logger.info(f"JWT token issued for user: {username}")
+        
+        return jsonify({
+            "token": token,
+            "expires_in": 86400,
+            "user": username,
+            "roles": roles
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Login failed: {str(e)}")
+        return jsonify({"error": "Authentication failed"}), 401
+
+
+@app.route("/api/auth/refresh", methods=["POST"])
+def api_auth_refresh():
+    """Refresh JWT token.
+    
+    Request Header:
+        Authorization: Bearer <expired_token>
+    
+    Response:
+        {
+            "token": "eyJ0eXAiOiJKV1Q...",
+            "expires_in": 86400
+        }
+    """
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    
+    if not token:
+        return jsonify({"error": "Missing token"}), 401
+    
+    try:
+        is_valid, claims, error = jwt_manager.verify_token(token)
+        
+        if not is_valid and "expired" not in error.lower():
+            return jsonify({"error": f"Invalid token: {error}"}), 401
+        
+        if not claims:
+            return jsonify({"error": "Could not parse token"}), 401
+        
+        # Create new token
+        new_token = jwt_manager.create_token(
+            user_id=claims.user_id,
+            username=claims.sub,
+            roles=claims.roles,
+            expires_in=86400
+        )
+        
+        logger.info(f"Token refreshed for user: {claims.sub}")
+        
+        return jsonify({
+            "token": new_token,
+            "expires_in": 86400,
+            "user": claims.sub
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Token refresh failed: {str(e)}")
+        return jsonify({"error": "Token refresh failed"}), 401
+
+
+@app.route("/api/auth/validate", methods=["GET"])
+def api_auth_validate():
+    """Validate current JWT token.
+    
+    Request Header:
+        Authorization: Bearer <token>
+    
+    Response:
+        {
+            "valid": true,
+            "user": "admin",
+            "roles": ["admin", "analyst"],
+            "expires_at": "2026-04-16T10:35:42Z"
+        }
+    """
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    
+    if not token:
+        return jsonify({"valid": False, "error": "No token provided"}), 401
+    
+    is_valid, claims, error = jwt_manager.verify_token(token)
+    
+    if not is_valid:
+        return jsonify({
+            "valid": False,
+            "error": error
+        }), 401
+    
+    # Convert exp timestamp to ISO string
+    from datetime import datetime, timezone
+    exp_dt = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
+    
+    return jsonify({
+        "valid": True,
+        "user": claims.sub,
+        "user_id": claims.user_id,
+        "roles": claims.roles,
+        "expires_at": exp_dt.isoformat(),
+        "run_as_admin": claims.run_as_admin,
+        "is_runas": claims.run_as_admin is not None
+    }), 200
+
+
+@app.route("/api/auth/runas", methods=["POST"])
+@require_auth
+@require_role("admin")
+def api_auth_runas():
+    """Create run-as token (admin impersonating user).
+    
+    Request JSON:
+        {
+            "target_user": "analyst",
+            "target_roles": ["analyst"],
+            "reason": "Investigating ticket #123"
+        }
+    
+    Request Header:
+        Authorization: Bearer <admin_token>
+    
+    Response:
+        {
+            "token": "eyJ0eXAiOiJKV1Q...",
+            "expires_in": 3600,
+            "admin": "admin",
+            "target_user": "analyst",
+            "context_hash": "abc123def456"
+        }
+    """
+    payload = request.get_json(silent=True) or {}
+    target_user = payload.get("target_user", "")
+    target_roles = payload.get("target_roles", ["analyst"])
+    reason = payload.get("reason", "Admin task")
+    
+    if not target_user:
+        return jsonify({"error": "target_user is required"}), 400
+    
+    try:
+        success, token_or_error, context_hash = runas_manager.create_runas_token(
+            admin_user=request.claims.sub,
+            target_user=target_user,
+            admin_roles=request.claims.roles,
+            target_roles=target_roles,
+            reason=reason
+        )
+        
+        if not success:
+            return jsonify({"error": token_or_error}), 400
+        
+        logger.info(f"Run-as token created: {request.claims.sub} → {target_user}")
+        
+        return jsonify({
+            "token": token_or_error,  # token_or_error is token on success
+            "expires_in": 3600,
+            "admin": request.claims.sub,
+            "target_user": target_user,
+            "context_hash": context_hash
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Run-as token creation failed: {str(e)}")
+        return jsonify({"error": "Failed to create run-as token"}), 500
+
+
+# ========== AUDIT & OBSERVABILITY ENDPOINTS ==========
+
+@app.route("/api/audit/logs", methods=["GET"])
+@require_auth
+def api_audit_logs():
+    """Get audit logs.
+    
+    Query Parameters:
+        - limit: Maximum number of logs (default: 100, max: 500)
+        - user: Filter by user
+    
+    Response:
+        [
+            {
+                "timestamp": "2026-04-15T10:35:42.123Z",
+                "user": "admin",
+                "method": "POST",
+                "path": "/api/predict",
+                "status": 200,
+                "response_time_ms": 125.4,
+                "source_ip": "192.168.1.100",
+                "error": null
+            }
+        ]
+    """
+    limit = min(int(request.args.get("limit", 100)), 500)
+    user_filter = request.args.get("user")
+    
+    try:
+        logs = app.audit_log.get_logs(limit=limit)
+        
+        if user_filter:
+            logs = [log for log in logs if log['user'] == user_filter]
+        
+        return jsonify(logs), 200
+    
+    except Exception as e:
+        logger.error(f"Failed to retrieve audit logs: {str(e)}")
+        return jsonify({"error": "Failed to retrieve logs"}), 500
+
+
+@app.route("/api/audit/user-activity", methods=["GET"])
+@require_auth
+@require_role("admin")
+def api_audit_user_activity():
+    """Get activity for specific user.
+    
+    Query Parameters:
+        - user: Username (required)
+        - hours: Look back (default: 24)
+    
+    Response: List of audit entries
+    """
+    user = request.args.get("user")
+    hours = int(request.args.get("hours", 24))
+    
+    if not user:
+        return jsonify({"error": "user parameter is required"}), 400
+    
+    try:
+        activity = app.audit_log.get_user_activity(user, hours=hours)
+        return jsonify(activity), 200
+    
+    except Exception as e:
+        logger.error(f"Failed to retrieve user activity: {str(e)}")
+        return jsonify({"error": "Failed to retrieve activity"}), 500
+
+
+@app.route("/api/auth/status", methods=["GET"])
+def api_auth_status():
+    """Get authentication system status.
+    
+    Response:
+        {
+            "auth_enabled": true,
+            "jwt_algorithm": "ES256",
+            "rate_limiting_enabled": true,
+            "ip_blocking_enabled": true,
+            "audit_logging_enabled": true
+        }
+    """
+    return jsonify({
+        "auth_enabled": True,
+        "jwt_algorithm": jwt_manager.algorithm,
+        "rate_limiting_enabled": True,
+        "ip_blocking_enabled": True,
+        "audit_logging_enabled": True,
+        "middleware_stack": [
+            "rate_limiting",
+            "ip_blocking",
+            "security_headers",
+            "audit_logging"
+        ]
+    }), 200
+
+
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
     if not ensure_detection_service():
         return jsonify({"error": "No trained model found"}), 503
 
     payload = request.get_json(silent=True) or {}
+    
+    # Validate request against schema
+    is_valid, error_msg = validate_predict_request(payload)
+    if not is_valid:
+        return jsonify({"error": f"Invalid request: {error_msg}"}), 400
+    
     features = payload.get("features", {})
     profile = payload.get("profile", "balanced")
 
@@ -1504,7 +1835,7 @@ def api_predict():
         for col in NUMERIC_MODEL_COLUMNS:
             if col in features:
                 features[col] = float(features[col])
-        source = payload.get("source", "unknown")
+        source = payload.get("source_ip", payload.get("source", "unknown"))
         metrics_service.inc("predictions_total")
         result = detection_service.predict_from_features(
             features,
