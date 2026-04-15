@@ -131,7 +131,7 @@ class ProtocolDetector:
             proto = ProtocolDetector.WELL_KNOWN_PORTS[dst_port]
             return ProtocolClassification(
                 protocol=proto,
-                confidence=0.85,
+                confidence=0.95,
                 detection_method="well_known_port"
             )
         

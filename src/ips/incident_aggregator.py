@@ -29,6 +29,10 @@ class IncidentAggregator:
         self._ops_store = ops_store
         self._ensure_tables_exist()
 
+    @property
+    def ops_store(self):
+        return self._ops_store
+
     def _ensure_tables_exist(self) -> None:
         """Create activities and incidents tables if they don't exist."""
         # Create activities table

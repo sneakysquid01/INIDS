@@ -1,0 +1,27 @@
+============================================================
+Week 5 Validation Tests - Multi-Node Clustering
+============================================================
+
+Traceback (most recent call last):
+  File "C:\Users\diwan\Desktop\INIDS\validate_phase_i_week5.py", line 258, in <module>
+    test()
+    ~~~~^^
+  File "C:\Users\diwan\Desktop\INIDS\validate_phase_i_week5.py", line 35, in test_node_info_creation
+    print("\u2713")
+    ~~~~~^^^^^
+  File "C:\Users\diwan\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\diwan\Desktop\INIDS\validate_phase_i_week5.py", line 264, in <module>
+    print(f"\u2717 ERROR: {e}")
+    ~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\diwan\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 0: character maps to <undefined>
+Testing NodeInfo Creation... 

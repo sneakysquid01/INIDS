@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 RULE_SCHEMA = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
-    "required": ["name", "pattern", "severity"],
+    "required": ["name", "severity"],
+    "anyOf": [
+        {"required": ["pattern"]},
+        {"required": ["conditions"]},
+    ],
     "properties": {
         "id": {
             "type": "string",
@@ -42,6 +46,10 @@ RULE_SCHEMA = {
             "minLength": 1,
             "maxLength": 4096,
             "description": "Regex pattern or rule logic"
+        },
+        "conditions": {
+            "type": "object",
+            "description": "Field-based matching conditions"
         },
         "severity": {
             "type": "string",
@@ -160,7 +168,19 @@ POLICY_SCHEMA = {
             "maximum": 1,
             "default": 0.4
         },
+        "risk_alert_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.4
+        },
         "rate_limit_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.6
+        },
+        "risk_rate_limit_threshold": {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
@@ -172,7 +192,19 @@ POLICY_SCHEMA = {
             "maximum": 1,
             "default": 0.75
         },
+        "risk_temp_block_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.75
+        },
         "block_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.85
+        },
+        "risk_block_threshold": {
             "type": "number",
             "minimum": 0,
             "maximum": 1,

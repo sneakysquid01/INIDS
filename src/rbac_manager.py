@@ -29,6 +29,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 if SQLALCHEMY_AVAILABLE:
     Base = declarative_base()
     
@@ -58,8 +62,8 @@ if SQLALCHEMY_AVAILABLE:
         full_name = Column(String(255))
         is_active = Column(Boolean, default=True)
         is_admin = Column(Boolean, default=False)
-        created_at = Column(DateTime, default=datetime.now(timezone.utc))
-        updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+        created_at = Column(DateTime, default=_utc_now)
+        updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
         last_login = Column(DateTime, nullable=True)
         
         roles = relationship("Role", secondary=user_roles, back_populates="users")
@@ -91,8 +95,8 @@ if SQLALCHEMY_AVAILABLE:
         name = Column(String(255), unique=True, index=True)
         description = Column(String(1024))
         is_builtin = Column(Boolean, default=False)
-        created_at = Column(DateTime, default=datetime.now(timezone.utc))
-        updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+        created_at = Column(DateTime, default=_utc_now)
+        updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
         
         users = relationship("User", secondary=user_roles, back_populates="roles")
         permissions = relationship("Permission", secondary=role_permissions, back_populates="roles")
@@ -114,7 +118,7 @@ if SQLALCHEMY_AVAILABLE:
         description = Column(String(1024))
         resource = Column(String(255), index=True)  # e.g., "alert", "rule", "policy"
         action = Column(String(255), index=True)    # e.g., "create", "read", "update", "delete"
-        created_at = Column(DateTime, default=datetime.now(timezone.utc))
+        created_at = Column(DateTime, default=_utc_now)
         
         roles = relationship("Role", secondary=role_permissions, back_populates="permissions")
     
@@ -129,7 +133,7 @@ if SQLALCHEMY_AVAILABLE:
         resource_id = Column(String(255), index=True)
         allowed = Column(Boolean)
         reason = Column(String(1024))  # Why decision was made
-        timestamp = Column(DateTime, default=datetime.now(timezone.utc), index=True)
+        timestamp = Column(DateTime, default=_utc_now, index=True)
         
         user = relationship("User", back_populates="audit_logs")
 

@@ -33,7 +33,7 @@ class FilterRule:
     """Base filter rule."""
     rule_id: str
     name: str
-    description: str
+    description: str = ""
     enabled: bool = True
     conditions: dict[str, Any] = field(default_factory=dict)  # Key-value conditions to match
     action: FilterAction = FilterAction.PASS
@@ -134,6 +134,21 @@ class ThreeLayerAlertFilter:
         self.merge_rules: list[MergeRule] = []
         self.recent_alerts: dict[str, dict] = {}  # {alert_id: alert_data}
         self.merge_groups: dict[str, list[str]] = {}  # {merge_key: [alert_ids]}
+        self._ensure_storage()
+
+    def _ensure_storage(self) -> None:
+        """Create backing table for persisted filter rules when a store is provided."""
+        if not self.ops_store:
+            return
+        self.ops_store._execute(
+            """
+            CREATE TABLE IF NOT EXISTS alert_filter_rules (
+                rule_id TEXT PRIMARY KEY,
+                layer TEXT NOT NULL,
+                rule_config TEXT NOT NULL
+            )
+            """
+        )
     
     def filter_alert(self, alert: dict[str, Any]) -> AlertFilterResult:
         """
@@ -197,12 +212,16 @@ class ThreeLayerAlertFilter:
     
     def _find_similar_alert(self, alert: dict[str, Any], rule: MergeRule) -> Optional[dict]:
         """Find a recent similar alert to merge with."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now().astimezone()
         merge_window = timedelta(seconds=rule.merge_window_seconds)
         
         # Check recent alerts
         for recent_id, recent_alert in list(self.recent_alerts.items()):
-            alert_time = datetime.fromisoformat(recent_alert.get("timestamp", datetime.utcnow().isoformat()))
+            alert_time = datetime.fromisoformat(
+                recent_alert.get("timestamp", datetime.now().astimezone().isoformat())
+            )
+            if alert_time.tzinfo is None:
+                alert_time = alert_time.replace(tzinfo=current_time.tzinfo)
             
             # Check if within merge window
             if current_time - alert_time > merge_window:
@@ -226,10 +245,14 @@ class ThreeLayerAlertFilter:
         self.recent_alerts[alert_id] = alert
         
         # Cleanup old alerts
-        current_time = datetime.utcnow()
+        current_time = datetime.now().astimezone()
         for alert_id_to_check in list(self.recent_alerts.keys()):
             alert_data = self.recent_alerts[alert_id_to_check]
-            alert_time = datetime.fromisoformat(alert_data.get("timestamp", datetime.utcnow().isoformat()))
+            alert_time = datetime.fromisoformat(
+                alert_data.get("timestamp", datetime.now().astimezone().isoformat())
+            )
+            if alert_time.tzinfo is None:
+                alert_time = alert_time.replace(tzinfo=current_time.tzinfo)
             if current_time - alert_time > timedelta(hours=1):
                 del self.recent_alerts[alert_id_to_check]
     
@@ -316,8 +339,11 @@ class ThreeLayerAlertFilter:
                     "rule_config": json.dumps(rule.to_dict()),
                 }
                 self.ops_store._execute(
-                    "INSERT OR REPLACE INTO alert_filter_rules (rule_id, layer, rule_config) VALUES (?, ?, ?)",
-                    (rule.rule_id, layer, json.dumps(rule.to_dict()))
+                    """
+                    INSERT OR REPLACE INTO alert_filter_rules (rule_id, layer, rule_config)
+                    VALUES (:rule_id, :layer, :rule_config)
+                    """,
+                    rule_data,
                 )
             except Exception as e:
                 logger.warning(f"Failed to persist rule {rule.rule_id}: {e}")

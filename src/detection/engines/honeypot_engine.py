@@ -57,6 +57,14 @@ class HoneypotDetectionEngine(DetectionEngine):
     def engine_type(self) -> str:
         return "honeypot"
 
+    @property
+    def honeypot_ips(self) -> set[str]:
+        return set(self._honeypot_ips)
+
+    @property
+    def honeypot_ports(self) -> set[int]:
+        return set(self._honeypot_ports)
+
     def is_ready(self) -> bool:
         return self._enabled
 

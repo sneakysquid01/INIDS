@@ -23,7 +23,22 @@ class EngineResult:
     timestamp: str = field(default_factory=utc_now_iso)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["prediction"] = self.verdict
+        return payload
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "prediction":
+            return self.verdict
+        if key == "confidence" and self.confidence > 1:
+            return self.confidence / 100.0
+        return self.to_dict()[key]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
 
 class DetectionEngine(ABC):

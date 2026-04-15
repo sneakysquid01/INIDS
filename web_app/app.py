@@ -98,7 +98,7 @@ from src.middleware import (
     register_middleware, RateLimitConfig, RateLimitMiddleware, IPBlockingMiddleware,
     SecurityHeadersMiddleware, AuditLogMiddleware
 )
-from src.auth_jwt import JWTAuthManager, RunAsManager, require_auth, require_role, inject_current_user
+from src.auth_jwt import JWTAuthManager, RunAsManager, require_auth, require_role as jwt_require_role, inject_current_user
 from src.validation_schemas import validate_predict_request, validate_detect_request, validate_policy
 from src.elasticsearch_client import ElasticsearchConfig, ElasticsearchStore
 from src.elasticsearch_audit_bridge import init_elasticsearch_audit_bridge, get_elasticsearch_audit_bridge
@@ -201,6 +201,14 @@ app.async_executor = async_executor
 @app.before_request
 def inject_jwt_manager():
     request.jwt_manager = jwt_manager
+    action_executor.ops_store = ops_store
+    runas_manager.audit_store = ops_store
+    incident_aggregator._ops_store = ops_store
+    allowlist._ops_store = ops_store
+    fp_manager._ops_store = ops_store
+    alert_filter.ops_store = ops_store
+    if audit_bridge is not None:
+        audit_bridge.ops_store = ops_store
 
 incident_aggregator = IncidentAggregator(ops_store)
 allowlist = Allowlist(ops_store)
@@ -1093,7 +1101,14 @@ def _after_request_metrics(response):
 @app.route("/")
 def home():
     """Landing page with navigation."""
-    return render_template("index_main.html")
+    return render_template(
+        "home.html",
+        model_ready=bool(detection_service or model or all_models),
+        loaded_models_count=len(all_models),
+        queue_size=ingestion_queue.size(),
+        firewall_adapter=SETTINGS.firewall_adapter,
+        auth_enabled=bool(auth_status().get("enabled")),
+    )
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -1348,9 +1363,10 @@ def api_dashboard_metrics():
         )
         
         # Calculate false positive rate
-        all_alerts = ops_store.list_alerts(limit=500)
-        false_positives = sum(1 for a in all_alerts if a.get("status") == "FALSE_POSITIVE")
-        fp_rate = round((false_positives / len(all_alerts) * 100) if all_alerts else 0, 1)
+        feedback_stats = fp_manager.stats()
+        false_positives = sum(int(row.get("false_positives", 0)) for row in feedback_stats)
+        total_feedback = sum(int(row.get("total", 0)) for row in feedback_stats)
+        fp_rate = round((false_positives / total_feedback * 100) if total_feedback else 0, 1)
         
         return jsonify({
             "system_uptime": "4.2h",
@@ -1606,9 +1622,9 @@ def api_auth_refresh():
         return jsonify({"error": "Missing token"}), 401
     
     try:
-        is_valid, claims, error = jwt_manager.verify_token(token)
-        
-        if not is_valid and "expired" not in error.lower():
+        is_valid, claims, error = jwt_manager.verify_token(token, allow_expired=True)
+
+        if not is_valid:
             return jsonify({"error": f"Invalid token: {error}"}), 401
         
         if not claims:
@@ -1680,7 +1696,7 @@ def api_auth_validate():
 
 @app.route("/api/auth/runas", methods=["POST"])
 @require_auth
-@require_role("admin")
+@jwt_require_role("admin")
 def api_auth_runas():
     """Create run-as token (admin impersonating user).
     
@@ -1781,7 +1797,7 @@ def api_audit_logs():
 
 @app.route("/api/audit/user-activity", methods=["GET"])
 @require_auth
-@require_role("admin")
+@jwt_require_role("admin")
 def api_audit_user_activity():
     """Get activity for specific user.
     
@@ -2072,6 +2088,10 @@ def api_policy():
             mode=payload.get("mode"),
             block_ttl_seconds=payload.get("block_ttl_seconds"),
             confidence_block_threshold=payload.get("confidence_block_threshold"),
+            risk_alert_threshold=payload.get("risk_alert_threshold", payload.get("alert_threshold")),
+            risk_rate_limit_threshold=payload.get("risk_rate_limit_threshold", payload.get("rate_limit_threshold")),
+            risk_temp_block_threshold=payload.get("risk_temp_block_threshold", payload.get("temp_block_threshold")),
+            risk_block_threshold=payload.get("risk_block_threshold", payload.get("block_threshold")),
             block_requires_approval=payload.get("block_requires_approval"),
             risk_weight_confidence=payload.get("risk_weight_confidence"),
             risk_weight_severity=payload.get("risk_weight_severity"),
@@ -2121,6 +2141,10 @@ def api_policy_rollback():
         mode=config.get("mode"),
         block_ttl_seconds=config.get("block_ttl_seconds"),
         confidence_block_threshold=config.get("confidence_block_threshold"),
+        risk_alert_threshold=config.get("risk_alert_threshold", config.get("alert_threshold")),
+        risk_rate_limit_threshold=config.get("risk_rate_limit_threshold", config.get("rate_limit_threshold")),
+        risk_temp_block_threshold=config.get("risk_temp_block_threshold", config.get("temp_block_threshold")),
+        risk_block_threshold=config.get("risk_block_threshold", config.get("block_threshold")),
         block_requires_approval=config.get("block_requires_approval"),
         risk_weight_confidence=config.get("risk_weight_confidence"),
         risk_weight_severity=config.get("risk_weight_severity"),
@@ -2939,14 +2963,16 @@ def api_module_approval_workflow():
 def api_module_false_positive():
     """False positive learning feedback."""
     try:
-        suppressions = ops_store.list_alerts(limit=100)
-        suppressions = [a for a in suppressions if a.get("status") == "FALSE_POSITIVE"]
+        suppressions = ops_store.list_fp_suppressions()
+        feedback_rows = fp_manager.stats()
+        false_positive_count = sum(int(row.get("false_positives", 0)) for row in feedback_rows)
         
         return jsonify({
             "status": "success",
             "data": {
-                "false_positives": suppressions[:10],
-                "fp_count": len(suppressions),
+                "false_positives": feedback_rows[:10],
+                "fp_count": false_positive_count,
+                "suppression_count": len(suppressions),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
         })

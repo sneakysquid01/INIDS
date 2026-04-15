@@ -54,19 +54,27 @@ class OpsStore:
         finally:
             conn.close()
 
-    def _execute(self, query: str, params: dict[str, Any] | None = None):
+    def _execute(self, query: str, params: Any = None):
         with self._connect() as conn:
             if self._is_postgres:
                 return conn.execute(text(query), params or {})
             return conn.execute(query, params or {})
 
-    def _fetchall(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def _fetchall(self, query: str, params: Any = None) -> list[dict[str, Any]]:
         with self._connect() as conn:
             if self._is_postgres:
                 rows = conn.execute(text(query), params or {}).mappings().all()
                 return [dict(row) for row in rows]
             rows = conn.execute(query, params or {}).fetchall()
             return [dict(row) for row in rows]
+
+    def _fetchone(self, query: str, params: Any = None) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            if self._is_postgres:
+                row = conn.execute(text(query), params or {}).mappings().first()
+                return dict(row) if row is not None else None
+            row = conn.execute(query, params or {}).fetchone()
+            return dict(row) if row is not None else None
 
     def _init_db(self) -> None:
         if self._is_postgres:
@@ -79,7 +87,10 @@ class OpsStore:
                     prediction TEXT NOT NULL,
                     confidence DOUBLE PRECISION NOT NULL,
                     profile TEXT NOT NULL,
-                    reason TEXT NOT NULL
+                    reason TEXT NOT NULL,
+                    source_ip TEXT NOT NULL DEFAULT '',
+                    attack_type TEXT NOT NULL DEFAULT '',
+                    risk_score DOUBLE PRECISION NOT NULL DEFAULT 0.0
                 )
                 """
             )
@@ -146,7 +157,10 @@ class OpsStore:
                         prediction TEXT NOT NULL,
                         confidence REAL NOT NULL,
                         profile TEXT NOT NULL,
-                        reason TEXT NOT NULL
+                        reason TEXT NOT NULL,
+                        source_ip TEXT NOT NULL DEFAULT '',
+                        attack_type TEXT NOT NULL DEFAULT '',
+                        risk_score REAL NOT NULL DEFAULT 0.0
                     )
                     """
                 )
@@ -256,24 +270,45 @@ class OpsStore:
             conn.execute("UPDATE actions SET executed = COALESCE(executed, 0)")
 
     def _migrate_alerts_table(self) -> None:
-        """Add alert lifecycle columns if they don't exist (non-destructive migration)."""
+        """Add alert columns if they don't exist (non-destructive migration)."""
         migrations = {
             "status": "TEXT NOT NULL DEFAULT 'open'",
             "assignee": "TEXT",
             "close_reason": "TEXT",
             "status_updated_at": "TEXT",
+            "source_ip": "TEXT NOT NULL DEFAULT ''",
+            "attack_type": "TEXT NOT NULL DEFAULT ''",
+            "risk_score": "DOUBLE PRECISION NOT NULL DEFAULT 0.0" if self._is_postgres else "REAL NOT NULL DEFAULT 0.0",
         }
         if self._is_postgres:
             for col, col_type in migrations.items():
                 self._execute(f"ALTER TABLE alerts ADD COLUMN IF NOT EXISTS {col} {col_type}")
+            self._execute("UPDATE alerts SET source_ip = COALESCE(source_ip, '')")
+            self._execute("UPDATE alerts SET attack_type = COALESCE(attack_type, '')")
+            self._execute("UPDATE alerts SET risk_score = COALESCE(risk_score, 0.0)")
             return
         with self._connect() as conn:
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(alerts)").fetchall()}
             for col, col_type in migrations.items():
                 if col not in columns:
                     conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {col_type}")
+            conn.execute("UPDATE alerts SET source_ip = COALESCE(source_ip, '')")
+            conn.execute("UPDATE alerts SET attack_type = COALESCE(attack_type, '')")
+            conn.execute("UPDATE alerts SET risk_score = COALESCE(risk_score, 0.0)")
 
     def save_alert(self, payload: dict[str, Any]) -> None:
+        insert_payload = {
+            "id": payload["id"],
+            "timestamp": payload["timestamp"],
+            "severity": str(payload["severity"]),
+            "prediction": str(payload["prediction"]),
+            "confidence": float(payload["confidence"]),
+            "profile": str(payload["profile"]),
+            "reason": str(payload["reason"]),
+            "source_ip": str(payload.get("source_ip") or payload.get("src_ip") or ""),
+            "attack_type": str(payload.get("attack_type") or ""),
+            "risk_score": float(payload.get("risk_score") or 0.0),
+        }
         if self._is_postgres:
             self._execute(
                 """
@@ -281,7 +316,7 @@ class OpsStore:
                 VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                payload,
+                insert_payload,
             )
             return
         self._execute(
@@ -289,7 +324,7 @@ class OpsStore:
             INSERT OR IGNORE INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score)
             VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
             """,
-            payload,
+            insert_payload,
         )
 
     def list_alerts(

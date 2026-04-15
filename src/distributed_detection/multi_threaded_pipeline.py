@@ -197,7 +197,13 @@ class MultiThreadedPacketPipeline:
             decode_start = time.time()
             
             # Get or create flow
+            flow_id = getattr(decoded_packet, "flow_id", "") or (
+                f"{decoded_packet.l3_info.src_ip}:{decoded_packet.l4_info.src_port}-"
+                f"{decoded_packet.l3_info.dst_ip}:{decoded_packet.l4_info.dst_port}-"
+                f"{decoded_packet.l4_info.protocol}"
+            )
             flow_context = self.flow_table.get_or_create_flow(
+                flow_id=flow_id,
                 src_ip=decoded_packet.l3_info.src_ip if decoded_packet.l3_info else "",
                 dst_ip=decoded_packet.l3_info.dst_ip if decoded_packet.l3_info else "",
                 src_port=decoded_packet.l4_info.src_port,
@@ -207,13 +213,28 @@ class MultiThreadedPacketPipeline:
             
             # Update packet stats
             self.flow_table.update_packet_stats(
-                flow_context,
-                len(decoded_packet.payload_data) if decoded_packet.payload_data else 0
+                flow_id,
+                "toserver",
+                len(decoded_packet.payload_data) if decoded_packet.payload_data else 0,
+                time.time(),
             )
             
             # Update TCP state
             if hasattr(decoded_packet.l4_info, 'tcp_flags'):
-                self.flow_table.update_tcp_state(flow_context, decoded_packet.l4_info.tcp_flags)
+                tcp_flags = decoded_packet.l4_info.tcp_flags
+                if isinstance(tcp_flags, int):
+                    names = []
+                    if tcp_flags & 0x02:
+                        names.append("SYN")
+                    if tcp_flags & 0x10:
+                        names.append("ACK")
+                    if tcp_flags & 0x01:
+                        names.append("FIN")
+                    if tcp_flags & 0x04:
+                        names.append("RST")
+                    tcp_flags = "".join(names)
+                if tcp_flags:
+                    self.flow_table.update_tcp_state(flow_id, tcp_flags)
             
             # Track statistics
             self.stats.packets_decoded += 1

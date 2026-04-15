@@ -12,9 +12,9 @@ import jwt
 import json
 import logging
 import hashlib
-from datetime import datetime, timedelta, timezone, timezone
-from typing import Optional, Dict, Any, Tuple
-from dataclasses import dataclass, asdict
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
+from dataclasses import dataclass
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -40,7 +40,20 @@ class JWTClaims:
 
 class JWTAuthManager:
     """Manage JWT token generation and validation."""
-    
+
+    @staticmethod
+    def _claims_from_payload(payload: dict) -> JWTClaims:
+        return JWTClaims(
+            sub=payload['sub'],
+            user_id=payload['user_id'],
+            roles=payload['roles'],
+            iat=payload['iat'],
+            exp=payload['exp'],
+            aud=payload['aud'],
+            run_as_admin=payload.get('run_as_admin'),
+            context_hash=payload.get('context_hash')
+        )
+
     def __init__(self, secret_key: str = None):
         """Initialize with ECC keypair."""
         self.algorithm = 'ES256'
@@ -98,32 +111,31 @@ class JWTAuthManager:
         logger.info(f"JWT token created for user {username}")
         return token
     
-    def verify_token(self, token: str) -> Tuple[bool, Optional[JWTClaims], Optional[str]]:
+    def verify_token(
+        self,
+        token: str,
+        *,
+        allow_expired: bool = False,
+    ) -> Tuple[bool, Optional[JWTClaims], Optional[str]]:
         """Verify JWT token.
         
         Returns:
             (is_valid, claims, error_message)
         """
         try:
+            decode_kwargs = {
+                "algorithms": [self.algorithm],
+                "audience": self.audience,
+            }
+            if allow_expired:
+                decode_kwargs["options"] = {"verify_exp": False}
+
             if self.algorithm == 'HS256':
-                payload = jwt.decode(token, self.private_key, algorithms=[self.algorithm],
-                                   audience=self.audience)
+                payload = jwt.decode(token, self.private_key, **decode_kwargs)
             else:
-                payload = jwt.decode(token, self.public_key, algorithms=[self.algorithm],
-                                   audience=self.audience)
-            
-            claims = JWTClaims(
-                sub=payload['sub'],
-                user_id=payload['user_id'],
-                roles=payload['roles'],
-                iat=payload['iat'],
-                exp=payload['exp'],
-                aud=payload['aud'],
-                run_as_admin=payload.get('run_as_admin'),
-                context_hash=payload.get('context_hash')
-            )
-            
-            return True, claims, None
+                payload = jwt.decode(token, self.public_key, **decode_kwargs)
+
+            return True, self._claims_from_payload(payload), None
         
         except jwt.ExpiredSignatureError:
             return False, None, "Token expired"
@@ -160,7 +172,11 @@ class JWTAuthManager:
 
 class RunAsManager:
     """Manage admin run-as functionality with audit trail."""
-    
+
+    @staticmethod
+    def _utc_now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
     def __init__(self, auth_manager: JWTAuthManager, audit_store=None):
         """Initialize.
         
@@ -191,7 +207,7 @@ class RunAsManager:
         context = {
             'admin': admin_user,
             'target': target_user,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': self._utc_now_iso(),
             'reason': reason or 'No reason provided'
         }
         
@@ -245,7 +261,7 @@ class RunAsManager:
             return
         
         audit_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': self._utc_now_iso(),
             'type': 'run_as_action',
             'admin_user': admin_user,
             'target_user': target_user,
@@ -256,7 +272,11 @@ class RunAsManager:
         }
         
         try:
-            self.audit_store.add_audit('run_as_action', audit_entry)
+            self.audit_store.add_audit(
+                'run_as_action',
+                json.dumps(audit_entry, separators=(",", ":"), sort_keys=True),
+                self._utc_now_iso(),
+            )
             logger.info(f"Run-as action logged: {admin_user} as {target_user} → {action}")
         except Exception as e:
             logger.error(f"Failed to log run-as action: {str(e)}")
@@ -268,7 +288,7 @@ class RunAsManager:
             return
         
         audit_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': self._utc_now_iso(),
             'type': 'run_as_created',
             'admin': admin_user,
             'target': target_user,
@@ -277,7 +297,11 @@ class RunAsManager:
         }
         
         try:
-            self.audit_store.add_audit('run_as_created', audit_entry)
+            self.audit_store.add_audit(
+                'run_as_created',
+                json.dumps(audit_entry, separators=(",", ":"), sort_keys=True),
+                self._utc_now_iso(),
+            )
         except Exception as e:
             logger.error(f"Failed to log run-as creation: {str(e)}")
 

@@ -482,3 +482,7 @@ class DNSParser:
             "dns_is_suspicious": response.is_suspicious,
             "dns_suspicious_indicators_count": len(response.suspicious_indicators),
         }
+
+
+DNSParser.DNSQuery = DNSQuery
+DNSParser.DNSResponse = DNSResponse

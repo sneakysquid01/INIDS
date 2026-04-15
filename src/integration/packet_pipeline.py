@@ -107,36 +107,59 @@ class PacketProcessingPipeline:
         """
         start_time = time.time()
         
-        # Step 1: Decode packet
-        decoded = PacketDecoder.decode(packet.packet_data, packet.timestamp)
-        decode_time = (time.time() - start_time) * 1000
-        self.decode_time_ms = decode_time
-        
-        if not decoded or not decoded.l3:
-            logger.debug(f"Failed to decode packet")
-            self.packets_failed += 1
-            return None
-        
-        self.packets_decoded += 1
-        
+        flow_id = packet.flow_id or ""
+        payload_len = int(packet.packet_len or len(packet.packet_data or b""))
+        tcp_flags = None
+
+        # Step 1: Decode packet when raw bytes are available. Synthetic in-memory
+        # packets used by tests may only provide structured fields.
+        if packet.packet_data:
+            decoded = PacketDecoder.decode(packet.packet_data, packet.timestamp)
+            decode_time = (time.time() - start_time) * 1000
+            self.decode_time_ms = decode_time
+
+            if not decoded or not decoded.l3:
+                logger.debug(f"Failed to decode packet")
+                self.packets_failed += 1
+                return None
+
+            self.packets_decoded += 1
+            flow_id = decoded.flow_id
+            src_ip = decoded.l3.src_ip
+            dst_ip = decoded.l3.dst_ip
+            src_port = decoded.l4.src_port if decoded.l4 else 0
+            dst_port = decoded.l4.dst_port if decoded.l4 else 0
+            protocol = decoded.l4.protocol if decoded.l4 else "other"
+            payload_len = decoded.payload_len
+            tcp_flags = decoded.l4.flags if decoded.l4 else None
+        else:
+            self.decode_time_ms = (time.time() - start_time) * 1000
+            if not packet.src_ip or not packet.dst_ip:
+                self.packets_failed += 1
+                return None
+            self.packets_decoded += 1
+            src_ip = packet.src_ip
+            dst_ip = packet.dst_ip
+            src_port = int(packet.src_port or 0)
+            dst_port = int(packet.dst_port or 0)
+            protocol = str(packet.protocol or "other")
+
         # Step 2: Extract flow info
-        flow_id = decoded.flow_id
         flow = self.flow_table.get_or_create_flow(
             flow_id=flow_id,
-            src_ip=decoded.l3.src_ip,
-            dst_ip=decoded.l3.dst_ip,
-            src_port=decoded.l4.src_port if decoded.l4 else 0,
-            dst_port=decoded.l4.dst_port if decoded.l4 else 0,
-            protocol=decoded.l4.protocol if decoded.l4 else "other"
+            src_ip=src_ip,
+            dst_ip=dst_ip,
+            src_port=src_port,
+            dst_port=dst_port,
+            protocol=protocol
         )
         
         # Step 3: Update flow state
         direction = "toserver"  # Simplified: could enhance with reverse flow detection
-        self.flow_table.update_packet_stats(flow_id, direction, 
-                                           decoded.payload_len, packet.timestamp)
-        
-        if decoded.l4 and decoded.l4.flags:
-            self.flow_table.update_tcp_state(flow_id, decoded.l4.flags)
+        self.flow_table.update_packet_stats(flow_id, direction, payload_len, packet.timestamp)
+
+        if tcp_flags:
+            self.flow_table.update_tcp_state(flow_id, tcp_flags)
         
         # Step 4: Call detection callback if provided
         detection_result = None

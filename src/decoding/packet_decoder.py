@@ -99,20 +99,33 @@ class PacketDecoder:
             DecodedPacket with parsed layers, or None if decode failed
         """
         try:
-            if len(raw_bytes) < 14:
-                logger.debug("Packet too short for Ethernet header")
+            if not raw_bytes:
+                logger.debug("Packet is empty")
                 return None
-            
-            # Decode L2: Ethernet
-            l2, payload, offset = PacketDecoder._decode_l2(raw_bytes)
-            if not l2:
+
+            version_nibble = (raw_bytes[0] >> 4) & 0x0F
+            l2 = None
+            payload = raw_bytes
+            offset = 0
+
+            # Prefer Ethernet decoding when available, but accept raw IP packets too.
+            if len(raw_bytes) >= 14:
+                l2_candidate, payload_candidate, offset_candidate = PacketDecoder._decode_l2(raw_bytes)
+                if l2_candidate and l2_candidate.ethertype in {0x0800, 0x86DD, 0x8100}:
+                    l2 = l2_candidate
+                    payload = payload_candidate
+                    offset = offset_candidate
+                elif version_nibble not in {4, 6}:
+                    return None
+            elif version_nibble not in {4, 6}:
+                logger.debug("Packet too short for L2 and not a raw IP packet")
                 return None
             
             # Decode L3: IP
             l3 = None
-            if l2.ethertype == 0x0800:  # IPv4
+            if (l2 and l2.ethertype == 0x0800) or version_nibble == 4:  # IPv4
                 l3, payload, offset = PacketDecoder._decode_ipv4(payload)
-            elif l2.ethertype == 0x86DD:  # IPv6
+            elif (l2 and l2.ethertype == 0x86DD) or version_nibble == 6:  # IPv6
                 l3, payload, offset = PacketDecoder._decode_ipv6(payload)
             
             # Decode L4: TCP/UDP
@@ -270,7 +283,7 @@ class PacketDecoder:
         
         try:
             src_port, dst_port, seq, ack, offset_flags, window, checksum, urgent = \
-                struct.unpack("!HHIIHHH", data[:20])
+                struct.unpack("!HHIIHHHH", data[:20])
             
             offset = (offset_flags >> 12) * 4
             flags = ""

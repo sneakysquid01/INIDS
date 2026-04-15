@@ -12,6 +12,10 @@ class PolicyConfig:
     mode: str = "monitor"  # monitor | auto_block
     block_ttl_seconds: int = 300
     confidence_block_threshold: float = 85.0
+    risk_alert_threshold: float = 0.4
+    risk_rate_limit_threshold: float = 0.6
+    risk_temp_block_threshold: float = 0.75
+    risk_block_threshold: float = 0.85
     dry_run: bool = True
     block_requires_approval: bool = False
     risk_weight_confidence: float = 0.5
@@ -63,6 +67,10 @@ class PreventionService:
         mode: str | None = None,
         block_ttl_seconds: int | None = None,
         confidence_block_threshold: float | None = None,
+        risk_alert_threshold: float | None = None,
+        risk_rate_limit_threshold: float | None = None,
+        risk_temp_block_threshold: float | None = None,
+        risk_block_threshold: float | None = None,
         dry_run: bool | None = None,
         block_requires_approval: bool | None = None,
         risk_weight_confidence: float | None = None,
@@ -82,6 +90,17 @@ class PreventionService:
             if confidence_block_threshold < 0 or confidence_block_threshold > 100:
                 raise ValueError("confidence_block_threshold must be between 0 and 100")
             self.policy.confidence_block_threshold = float(confidence_block_threshold)
+        for attr, val in (
+            ("risk_alert_threshold", risk_alert_threshold),
+            ("risk_rate_limit_threshold", risk_rate_limit_threshold),
+            ("risk_temp_block_threshold", risk_temp_block_threshold),
+            ("risk_block_threshold", risk_block_threshold),
+        ):
+            if val is not None:
+                fval = float(val)
+                if fval < 0 or fval > 1:
+                    raise ValueError(f"{attr} must be between 0 and 1")
+                setattr(self.policy, attr, fval)
         if dry_run is not None:
             self.policy.dry_run = bool(dry_run)
         if block_requires_approval is not None:

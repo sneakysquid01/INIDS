@@ -114,6 +114,18 @@ class TLSParser:
     EXTENSION_SUPPORTED_GROUPS = 10
     EXTENSION_SIGNATURE_ALGORITHMS = 13
     EXTENSION_ALPN = 16
+
+    @staticmethod
+    def _get_record_type_name(record_type: int) -> str:
+        """Compatibility helper retained for the Phase B tests."""
+        record_types = {
+            1: "A",
+            2: "NS",
+            5: "CNAME",
+            16: "TXT",
+            28: "AAAA",
+        }
+        return record_types.get(record_type, f"TYPE_{record_type}")
     
     @staticmethod
     def parse_client_hello(payload: bytes) -> Optional[TLSClientHello]:

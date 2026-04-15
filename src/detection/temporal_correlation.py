@@ -80,6 +80,10 @@ class TemporalStore:
         self._events_by_ip: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._last_cleanup = time.time()
 
+    @property
+    def events_by_ip(self) -> dict[str, list[dict[str, Any]]]:
+        return self._events_by_ip
+
     def add_event(self, event: dict[str, Any]) -> None:
         """Add event to temporal store."""
         source_ip = event.get("source_ip", "unknown")
@@ -153,10 +157,46 @@ class TemporalCorrelationEngine:
         self._temporal_store = TemporalStore()
         self._correlation_cache: dict[str, dict[str, Any]] = {}  # Per-IP correlation state
 
-    def register_pattern(self, pattern: CorrelationPattern) -> None:
-        """Register a correlation pattern."""
-        self._patterns[pattern.pattern_id] = pattern
-        logger.info("Registered correlation pattern: %s", pattern.pattern_id)
+    @property
+    def patterns(self) -> dict[str, CorrelationPattern]:
+        return self._patterns
+
+    @property
+    def temporal_store(self) -> TemporalStore:
+        return self._temporal_store
+
+    def register_pattern(
+        self,
+        pattern: CorrelationPattern | str,
+        steps: list[dict[str, Any]] | None = None,
+        *,
+        description: str | None = None,
+        time_window_seconds: int = 300,
+        verdict: str = "attack",
+        severity: str = "high",
+        attack_type: str = "multi_stage",
+    ) -> None:
+        """Register a correlation pattern.
+
+        Accepts either a pre-built ``CorrelationPattern`` or a simplified
+        ``(pattern_id, steps)`` pair used by the Week 1 API/tests.
+        """
+        if isinstance(pattern, CorrelationPattern):
+            correlation_pattern = pattern
+        else:
+            if steps is None:
+                raise ValueError("steps are required when registering by pattern id")
+            correlation_pattern = CorrelationPattern(
+                pattern_id=str(pattern),
+                description=description or str(pattern),
+                steps=steps,
+                time_window_seconds=int(time_window_seconds),
+                verdict=verdict,
+                severity=severity,
+                attack_type=attack_type,
+            )
+        self._patterns[correlation_pattern.pattern_id] = correlation_pattern
+        logger.info("Registered correlation pattern: %s", correlation_pattern.pattern_id)
 
     def evaluate(self, event: dict[str, Any]) -> tuple[str, str] | None:
         """Evaluate event for correlation matches.
@@ -206,23 +246,47 @@ class TemporalCorrelationEngine:
                 return True  # All steps matched
             
             step = steps[step_idx]
-            event_time = self._parse_iso_datetime(event.get("timestamp"))
+            event_time = _parse_iso_datetime(event.get("timestamp"))
             
             # Check time offset constraints
             if prev_event_time is not None:
                 time_delta = (event_time - prev_event_time).total_seconds()
                 time_offset_min = step.get("time_offset_min", 0)
-                time_offset_max = step.get("time_offset_max", 300)
+                time_offset_max = step.get("time_offset_max", step.get("time_offset_seconds", 300))
                 
                 if not (time_offset_min <= time_delta <= time_offset_max):
                     continue  # Time constraint not met
             
-            # Check field conditions
-            if self._check_field_conditions(step.get("field_conditions", {}), event):
+            if self._step_matches(step, event):
                 step_idx += 1
                 prev_event_time = event_time
         
         return step_idx >= len(steps)  # True if all steps matched
+
+    @staticmethod
+    def _step_matches(step: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Support both detailed and simplified step schemas."""
+        step_type = step.get("type")
+        if step_type is not None and event.get("type") != step_type:
+            return False
+
+        engine_id = step.get("engine_id")
+        if engine_id is not None and event.get("engine_id") != engine_id:
+            return False
+
+        rule_id = step.get("rule_id")
+        if rule_id is not None and event.get("rule_id") != rule_id:
+            return False
+
+        confidence_min = step.get("confidence_min")
+        if confidence_min is not None:
+            try:
+                if float(event.get("confidence", 0.0)) < float(confidence_min):
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        return TemporalCorrelationEngine._check_field_conditions(step.get("field_conditions", {}), event)
 
     @staticmethod
     def _check_field_conditions(conditions: dict[str, Any], event: dict[str, Any]) -> bool:
