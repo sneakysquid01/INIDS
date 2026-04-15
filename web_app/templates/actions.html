@@ -289,6 +289,20 @@
             font-weight: 600;
             color: #1a1a2e;
         }
+        
+        .navbar-subtitle {
+            color: #aaa;
+        }
+
+        .page-subtitle {
+            color: #666;
+            margin-top: 0.5rem;
+        }
+
+        .loading-text {
+            margin-top: 1rem;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -296,14 +310,14 @@
     <nav class="navbar navbar-dark">
         <div class="container-fluid">
             <a class="nav-brand" href="/">🔍 INIDS</a>
-            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
+            <span class="navbar-subtitle">Intrusion Detection & Prevention</span>
         </div>
     </nav>
 
     <!-- Page Header -->
     <div class="page-header">
         <h1 class="page-title">Prevention Actions</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Manage IPS actions, approvals, and incident response</p>
+        <p class="page-subtitle">Manage IPS actions, approvals, and incident response</p>
     </div>
 
     <!-- Main Container -->
@@ -329,7 +343,7 @@
             <div id="tab-all" class="tab-content active">
                 <div class="loading-spinner active" id="loading-all">
                     <div class="spinner-border" role="status"></div>
-                    <p style="margin-top: 1rem; color: #666;">Loading actions...</p>
+                    <p class="loading-text">Loading actions...</p>
                 </div>
                 <div id="all-actions-list"></div>
             </div>
@@ -338,7 +352,7 @@
             <div id="tab-pending" class="tab-content">
                 <div class="loading-spinner active" id="loading-pending">
                     <div class="spinner-border" role="status"></div>
-                    <p style="margin-top: 1rem; color: #666;">Loading pending actions...</p>
+                    <p class="loading-text">Loading pending actions...</p>
                 </div>
                 <div id="pending-actions-list"></div>
             </div>
@@ -347,7 +361,7 @@
             <div id="tab-executed" class="tab-content">
                 <div class="loading-spinner active" id="loading-executed">
                     <div class="spinner-border" role="status"></div>
-                    <p style="margin-top: 1rem; color: #666;">Loading executed actions...</p>
+                    <p class="loading-text">Loading executed actions...</p>
                 </div>
                 <div id="executed-actions-list"></div>
             </div>
@@ -356,7 +370,7 @@
             <div id="tab-failed" class="tab-content">
                 <div class="loading-spinner active" id="loading-failed">
                     <div class="spinner-border" role="status"></div>
-                    <p style="margin-top: 1rem; color: #666;">Loading failed actions...</p>
+                    <p class="loading-text">Loading failed actions...</p>
                 </div>
                 <div id="failed-actions-list"></div>
             </div>
@@ -369,7 +383,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Approve Action</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" title="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div id="approval-details">
