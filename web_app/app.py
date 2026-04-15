@@ -41,7 +41,7 @@ from src.ha.leader_election import LeaderElection
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     _socketio_available = True
-except Exception as e:
+except Exception:
     _socketio_available = False
     SocketIO = None
 
@@ -58,8 +58,6 @@ RESULTS_DIR = os.path.join(BASE_DIR, "results")
 TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
 
 from src.detection_service import DetectionService, InMemoryAlertStore
 from src.prevention_service import PreventionService
@@ -102,7 +100,9 @@ app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
 # Prevent DOS attacks from large uploads (16 MB limit)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 if SocketIO is not None:
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+    # Restrict CORS to localhost to prevent unauthorized cross-origin requests
+    cors_origins = ["http://localhost", "http://127.0.0.1", "http://localhost:5000", "http://127.0.0.1:5000"]
+    socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode="threading")
     SOCKETIO_ENABLED = True
 else:
     SOCKETIO_ENABLED = False
@@ -497,97 +497,20 @@ def _on_detection_event(event: DetectionEvent) -> None:
     # Persist alerts from all event-bus paths, including streaming detections.
     if pred_lower in ("attack", "suspicious") or event.suspicious:
         try:
-            alert_id = f"al_{uuid.uuid4().hex[:10]}"
-            alert_data = {
-                "id": alert_id,
-                "timestamp": event.timestamp,
-                "severity": event.severity,
-                "prediction": event.prediction,
-                "confidence": event.confidence,
-                "profile": event.profile,
-                "reason": event.reason,
-                "source_ip": event.source_ip,
-                "attack_type": event.attack_type,
-            }
-            
-            # Apply three-layer alert filtering (EXCLUDE / IGNORE / MERGE)
-            filter_result = alert_filter.filter_alert(alert_data)
-            
-            if filter_result.action.value == "exclude":
-                # Alert is completely blocked
-                logger.info(f"Alert {alert_id} excluded: {filter_result.reason}")
-                metrics_service.inc("alerts_excluded_total")
-                return
-            
-            # Apply any severity modifications from IGNORE filter
-            if filter_result.action.value == "ignore":
-                alert_data["severity"] = filter_result.modified_severity or alert_data["severity"]
-                alert_data["ignored"] = True
-                logger.debug(f"Alert {alert_id} deprioritized: {filter_result.reason}")
-                metrics_service.inc("alerts_ignored_total")
-            
-            # Apply merge logic
-            if filter_result.action.value == "merge":
-                alert_data["merged_with"] = filter_result.merged_with_alert_id
-                logger.debug(f"Alert {alert_id} merged with {filter_result.merged_with_alert_id}")
-                metrics_service.inc("alerts_merged_total")
-            
-            # Track alert for future merge operations
-            alert_filter.track_alert(alert_data)
-            
-            # Enrich alert with entity context (GeoIP, threat intel, history)
-            try:
-                enriched_entity = entity_enrichment_engine.enrich(event.source_ip)
-                threat_level = entity_enrichment_engine.get_threat_level(enriched_entity)
-                alert_data["enriched_entity"] = enriched_entity.to_dict()
-                alert_data["threat_level"] = threat_level
-                logger.debug(f"Alert {alert_id} enriched with threat level: {threat_level}")
-                metrics_service.inc("alerts_enriched_total")
-            except Exception:
-                logger.debug("Entity enrichment failed for alert", exc_info=True)
-            
-            # Save enriched alert
-            ops_store.save_alert(alert_data)
-            
-            # Aggregate alert into hierarchical incident structure
-            try:
-                alert_code = f"CODE_{event.attack_type.upper()}"
-                activity_id, incident_id = incident_aggregator.aggregate_alert(
-                    alert_id=alert_id,
-                    alert_code=alert_code,
-                    source_ip=event.source_ip,
-                    attack_type=event.attack_type,
-                    severity=alert_data.get("severity", event.severity),
-                    timestamp=event.timestamp,
-                    description=event.reason,
-                )
-                logger.debug(
-                    "Alert %s -> Activity %s -> Incident %s",
-                    alert_id, activity_id, incident_id
-                )
-                metrics_service.inc("incidents_total")
-            except Exception:
-                logger.exception("Failed to aggregate alert into incident hierarchy")
-            
-            # Evaluate for temporal correlation patterns (multi-stage attacks)
-            try:
-                correlation_result = temporal_correlation_engine.evaluate({
-                    "type": event.attack_type,
-                    "source_ip": event.source_ip,
-                    "confidence": event.confidence,
+            ops_store.save_alert(
+                {
+                    "id": f"al_{uuid.uuid4().hex[:10]}",
                     "timestamp": event.timestamp,
-                    "severity": alert_data.get("severity", event.severity),
-                })
-                if correlation_result:
-                    pattern_name, description = correlation_result
-                    logger.warning(
-                        "Temporal correlation detected: %s for %s (Pattern: %s)",
-                        description, event.source_ip, pattern_name
-                    )
-                    metrics_service.inc("temporal_correlation_matches_total")
-            except Exception:
-                logger.debug("Temporal correlation evaluation failed", exc_info=True)
-            
+                    "severity": event.severity,
+                    "prediction": event.prediction,
+                    "confidence": event.confidence,
+                    "profile": event.profile,
+                    "reason": event.reason,
+                    "source_ip": event.source_ip or "",
+                    "attack_type": event.attack_type or "",
+                    "risk_score": getattr(event, 'risk_score', 0.0) or 0.0,
+                }
+            )
             metrics_service.inc("alerts_total")
         except Exception:
             logger.exception("Failed to persist alert from detection event")
@@ -1119,7 +1042,7 @@ def _after_request_metrics(response):
 @app.route("/")
 def home():
     """Landing page with navigation."""
-    return render_template("home.html")
+    return render_template("index_main.html")
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -1169,6 +1092,54 @@ def predict():
     return render_template("predict.html", features=INPUT_FEATURES,
                            prediction=prediction, error=error_message,
                            confidence=confidence, is_suspicious=is_suspicious)
+
+
+@app.route("/alerts")
+def alerts_page():
+    """Security alerts monitoring page."""
+    return render_template("alerts.html")
+
+
+@app.route("/actions")
+def actions_page():
+    """Prevention actions and approval workflow page."""
+    return render_template("actions.html")
+
+
+@app.route("/detection")
+def detection_page():
+    """Detection console for running multi-engine detection."""
+    return render_template("detection.html")
+
+
+@app.route("/engines")
+def engines_page():
+    """Detection engines management page."""
+    return render_template("engines.html")
+
+
+@app.route("/policy")
+def policy_page():
+    """Policy editor and configuration page."""
+    return render_template("policy.html")
+
+
+@app.route("/allowlist")
+def allowlist_page():
+    """Allowlist manager page for trusted IPs and domains."""
+    return render_template("allowlist.html")
+
+
+@app.route("/threat-intel")
+def threat_intel_page():
+    """Threat intelligence lookup page."""
+    return render_template("threat_intel.html")
+
+
+@app.route("/health")
+def health_page():
+    """System health monitoring dashboard."""
+    return render_template("health.html")
 
 
 @app.route("/dashboard")
@@ -1542,13 +1513,15 @@ def api_predict():
             attack_type=payload.get("attack_type"),
         )
         response = result.to_dict()
+        # Correlate with prevention action: find most recent action for this target
+        # within last 60 seconds (avoids fragile timestamp correlation)
         recent_actions = ops_store.list_actions(limit=20)
         prevention_action = next(
             (
                 action
                 for action in recent_actions
                 if str(action.get("target", "")).strip() == str(source).strip()
-                and _to_epoch_seconds(action.get("created_at"), default=0.0) >= request_started_at
+                and (time.time() - _to_epoch_seconds(action.get("created_at"), default=0.0)) <= 60.0
             ),
             None,
         )
@@ -2564,6 +2537,7 @@ def api_module_multi_engine():
 
 
 @app.route("/api/modules/risk-score", methods=["GET"])
+@require_role("analyst")
 def api_module_risk_score():
     """Risk score visualization."""
     try:
@@ -2764,6 +2738,7 @@ def api_module_alert_lifecycle():
 
 
 @app.route("/api/modules/engine-playground", methods=["GET", "POST"])
+@require_role("analyst")
 def api_module_engine_playground():
     """Engine toggle playground."""
     try:
@@ -3015,6 +2990,7 @@ def api_module_behavioral_profiling():
 
 
 @app.route("/api/modules/threat-intelligence", methods=["GET"])
+@require_role("analyst")
 def api_module_threat_intelligence():
     """Threat intelligence feeds and IOC matches."""
     try:

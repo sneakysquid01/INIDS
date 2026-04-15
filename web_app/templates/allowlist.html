@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Allowlist Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>🛡️ Allowlist Manager</h1>
+            <p class="text-muted">Manage trusted IPs and domains</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-primary" onclick="openAddModal()">+ Add Entry</button>
+            <button class="btn btn-secondary" onclick="loadAllowlist()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Total Entries</h6>
+                    <h2 id="totalCount">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">IPs Allowlisted</h6>
+                    <h2 id="ipCount">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Domains Allowlisted</h6>
+                    <h2 id="domainCount">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Last Updated</h6>
+                    <p id="lastUpdated" class="mb-0 small">--</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search & Filter -->
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <input type="text" id="searchBox" class="form-control" placeholder="🔍 Search by IP or domain..." onkeyup="filterAllowlist()">
+        </div>
+        <div class="col-md-3">
+            <select id="typeFilter" class="form-select" onchange="filterAllowlist()">
+                <option value="">All Types</option>
+                <option value="ip">IP Address</option>
+                <option value="domain">Domain</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="reasonFilter" class="form-select" onchange="filterAllowlist()">
+                <option value="">All Reasons</option>
+                <option value="internal">Internal Network</option>
+                <option value="trusted_partner">Trusted Partner</option>
+                <option value="monitoring">Monitoring Tool</option>
+                <option value="false_positive">False Positive</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Allowlist Table -->
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Entry</th>
+                        <th>Type</th>
+                        <th>Reason</th>
+                        <th>Added By</th>
+                        <th>Added Date</th>
+                        <th style="width: 100px">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="allowlistTable">
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading allowlist...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <nav class="mt-3" id="pagination" style="display:none;">
+        <ul class="pagination justify-content-center">
+            <li class="page-item" id="prevBtn"><a class="page-link" href="#" onclick="previousPage()">Previous</a></li>
+            <li class="page-item active"><span class="page-link" id="pageInfo">Page 1</span></li>
+            <li class="page-item" id="nextBtn"><a class="page-link" href="#" onclick="nextPage()">Next</a></li>
+        </ul>
+    </nav>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Allowlist Entry</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addForm">
+                    <div class="mb-3">
+                        <label for="entryInput" class="form-label">IP Address or Domain *</label>
+                        <input type="text" class="form-control" id="entryInput" placeholder="e.g., 192.168.1.10 or trusted.com" required>
+                        <small class="text-muted">Type will be auto-detected</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="reasonSelect" class="form-label">Reason *</label>
+                        <select class="form-select" id="reasonSelect" required>
+                            <option value="">Select a reason...</option>
+                            <option value="internal">Internal Network</option>
+                            <option value="trusted_partner">Trusted Partner</option>
+                            <option value="monitoring">Monitoring Tool</option>
+                            <option value="false_positive">False Positive</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notesInput" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" id="notesInput" rows="3" placeholder="Additional notes..."></textarea>
+                    </div>
+
+                    <div class="alert alert-info small">
+                        <strong>Tip:</strong> Allowlisted entries will bypass threat detection and may not generate alerts.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEntry()">Add Entry</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Remove Entry?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to remove this allowlist entry?</p>
+                <p><strong id="deleteItemText"></strong></p>
+                <p class="text-danger small">This action cannot be undone. Alerts will be generated for this entry.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">Remove Entry</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Entry Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label text-muted">Entry</label>
+                    <p id="detailEntry" class="fs-5 fw-bold"></p>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Type</label>
+                        <p id="detailType" class="mb-0"></p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Reason</label>
+                        <p id="detailReason" class="mb-0"></p>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Added By</label>
+                        <p id="detailAddedBy" class="mb-0"></p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Added Date</label>
+                        <p id="detailAddedDate" class="mb-0"></p>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted">Notes</label>
+                    <p id="detailNotes" class="mb-0"></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-danger" onclick="openDeleteModal(currentDetailId)">Remove Entry</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/allowlist.js') }}"></script>
+{% endblock %}
