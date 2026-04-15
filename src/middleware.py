@@ -27,9 +27,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RateLimitConfig:
     """Rate limit configuration."""
-    max_requests: int = 300  # Per window
+    requests: int = 300  # Per window (compatible with rate_limiter.py)
     window_seconds: int = 60
     burst_allowance: int = 10  # Allow burst up to this % over limit temporarily
+    # Alias support
+    max_requests: int = None
+    
+    def __post_init__(self):
+        if self.max_requests is not None and self.requests == 300:
+            object.__setattr__(self, 'requests', self.max_requests)
 
 
 @dataclass
@@ -85,7 +91,7 @@ class RateLimitMiddleware:
             request_count = len(self.requests[key])
             
             # Check if over limit
-            if request_count >= self.config.max_requests:
+            if request_count >= self.config.requests:
                 # Calculate retry-after
                 oldest_request = self.requests[key][0]
                 retry_after = int(oldest_request + self.config.window_seconds - now) + 1

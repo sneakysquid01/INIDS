@@ -27,6 +27,12 @@ class Settings:
     honeypot_ips: str = ""
     honeypot_ports: str = ""
     honeypot_enabled: bool = True
+    elasticsearch_hosts: str = "localhost"
+    elasticsearch_port: int = 9200
+    elasticsearch_use_ssl: bool = False
+    elasticsearch_verify_certs: bool = False
+    elasticsearch_username: str = ""
+    elasticsearch_password: str = ""
 
 
 def _safe_int(env_key: str, default: int) -> int:
@@ -74,6 +80,12 @@ def load_settings() -> Settings:
     firewall_webhook_url = os.getenv("FIREWALL_WEBHOOK_URL", "").strip()
     ti_feed_dir = os.getenv("INIDS_TI_FEED_DIR", "").strip()
     ti_refresh_interval_seconds = _safe_int("INIDS_TI_REFRESH_INTERVAL", 3600)
+    elasticsearch_hosts = os.getenv("ELASTICSEARCH_HOSTS", "localhost").strip()
+    elasticsearch_port = _safe_int("ELASTICSEARCH_PORT", 9200)
+    elasticsearch_use_ssl = _safe_bool("ELASTICSEARCH_USE_SSL", False)
+    elasticsearch_verify_certs = _safe_bool("ELASTICSEARCH_VERIFY_CERTS", False)
+    elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME", "").strip()
+    elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD", "").strip()
     return Settings(
         host=host,
         port=port,
@@ -96,4 +108,10 @@ def load_settings() -> Settings:
         honeypot_ips=honeypot_ips,
         honeypot_ports=honeypot_ports,
         honeypot_enabled=honeypot_enabled,
+        elasticsearch_hosts=elasticsearch_hosts,
+        elasticsearch_port=elasticsearch_port,
+        elasticsearch_use_ssl=elasticsearch_use_ssl,
+        elasticsearch_verify_certs=elasticsearch_verify_certs,
+        elasticsearch_username=elasticsearch_username,
+        elasticsearch_password=elasticsearch_password,
     )
