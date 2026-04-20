@@ -10,34 +10,65 @@ import pandas as pd
 
 from src.schema import FEATURE_COLUMNS, NUMERIC_FEATURES, DEFAULT_FEATURE_ROW
 
+# Import from storage module for INIDS 2.0 (persistent storage)
+try:
+    from src.storage import SQLiteIngestionQueue, IngestionRecord
+    _USE_SQLITE = True
+except ImportError:
+    _USE_SQLITE = False
+    
+    @dataclass
+    class IngestionRecord:
+        source: str
+        payload: dict[str, Any]
+
 
 @dataclass
-class IngestionRecord:
+class _InMemoryRecord:
     source: str
     payload: dict[str, Any]
 
 
 class InMemoryIngestionQueue:
+    """
+    Backward compatibility wrapper.
+    Uses SQLite instead of in-memory storage for INIDS 2.0 persistence.
+    """
     def __init__(self, max_items: int = 10000):
-        self.max_items = max_items
-        self._queue: deque[IngestionRecord] = deque()
-        self._lock = Lock()
+        if _USE_SQLITE:
+            # Use SQLite for persistence
+            self._impl = SQLiteIngestionQueue(db_path="data/ingestion.db", max_items=max_items)
+        else:
+            # Fallback to in-memory
+            self.max_items = max_items
+            self._queue: deque = deque()
+            self._lock = Lock()
+            self._impl = None
 
     def enqueue(self, record: IngestionRecord) -> None:
-        with self._lock:
-            self._queue.append(record)
-            while len(self._queue) > self.max_items:
-                self._queue.popleft()
+        if self._impl:
+            self._impl.enqueue(record)
+        else:
+            with self._lock:
+                self._queue.append(record)
+                while len(self._queue) > self.max_items:
+                    self._queue.popleft()
 
     def dequeue(self) -> IngestionRecord | None:
-        with self._lock:
-            if not self._queue:
-                return None
-            return self._queue.popleft()
+        if self._impl:
+            return self._impl.dequeue()
+        else:
+            with self._lock:
+                if not self._queue:
+                    return None
+                return self._queue.popleft()
 
     def size(self) -> int:
-        with self._lock:
-            return len(self._queue)
+        if self._impl:
+            return self._impl.size()
+        else:
+            with self._lock:
+                return len(self._queue)
 
 
 class RedisStreamIngestionQueue:

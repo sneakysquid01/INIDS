@@ -43,11 +43,11 @@ from src.csrf_protection import csrf_protect_middleware, require_csrf_token
 
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
-    _socketio_available = True
-except ImportError:
-    logger.debug("flask_socketio not available; WebSocket features disabled")
-    _socketio_available = False
-    SocketIO = None
+except ImportError as e:
+    raise ImportError(
+        "flask_socketio is required for INIDS 2.0. WebSocket is mandatory. "
+        "Install with: pip install flask-socketio python-socketio"
+    ) from e
 
 
 configure_logging()
@@ -63,7 +63,8 @@ TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
 
-from src.detection_service import DetectionService, InMemoryAlertStore
+from src.detection_service import DetectionService
+from src.storage import InMemoryAlertStore
 from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
 from src.auth_service import require_role, auth_status
@@ -98,6 +99,10 @@ from src.ips.incident_aggregator import IncidentAggregator
 from src.detection.temporal_correlation import TemporalCorrelationEngine, create_example_patterns
 from src.ips.entity_enrichment import EntityEnrichmentEngine
 from src.ips.alert_filter import ThreeLayerAlertFilter, create_default_rules
+from src.realtime.broadcaster import RealTimeStreamer
+from src.training import DatasetCollector, RertrainingScheduler
+from src.perception import AttackStoryEngine, ConfidenceBreakdownEngine, LiveSystemPulse
+from src.perception.perception_integration import PerceptionIntegration
 from src.middleware import (
     register_middleware, RateLimitConfig, RateLimitMiddleware, IPBlockingMiddleware,
     SecurityHeadersMiddleware, AuditLogMiddleware
@@ -117,28 +122,12 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 correlation_id_middleware(app)
 csrf_protect_middleware(app)
 
-if SocketIO is not None:
-    # Restrict CORS to localhost to prevent unauthorized cross-origin requests
-    cors_origins = ["http://localhost", "http://127.0.0.1", "http://localhost:5000", "http://127.0.0.1:5000"]
-    socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode="threading")
-    SOCKETIO_ENABLED = True
-else:
-    SOCKETIO_ENABLED = False
-
-    class _NoopSocketIO:
-        def emit(self, *args, **kwargs):
-            return None
-
-        def on(self, *_args, **_kwargs):
-            def _decorator(fn):
-                return fn
-
-            return _decorator
-
-        def run(self, flask_app, **kwargs):
-            flask_app.run(**kwargs)
-
-    socketio = _NoopSocketIO()
+# WebSocket is MANDATORY for INIDS 2.0
+# If SocketIO is None, the import would have already failed above
+cors_origins = ["http://localhost", "http://127.0.0.1", "http://localhost:5000", "http://127.0.0.1:5000"]
+socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode="threading")
+SOCKETIO_ENABLED = True
+logger.info("WebSocket (SocketIO) initialized successfully - REQUIRED for INIDS 2.0")
 
 # --- Initialize Security Middleware Stack ---
 middleware_config = RateLimitConfig(
@@ -320,6 +309,41 @@ action_executor = ActionExecutor(
     ops_store=ops_store,
     event_bus=event_bus,
 )
+
+# --- Initialize RealTimeStreamer for INIDS 2.0 ---
+realtime_streamer = RealTimeStreamer(event_bus=event_bus, socketio=socketio, namespace="/events")
+realtime_streamer.start()
+logger.info("RealTimeStreamer initialized and started for real-time event broadcasting")
+
+# --- Initialize ML Lifecycle Components for INIDS 2.0 ---
+dataset_collector = DatasetCollector(
+    db_path=os.path.join(DATA_DIR, "training.db"),
+    retention_days=30
+)
+logger.info("DatasetCollector initialized for training data collection")
+
+# Note: RertrainingScheduler will be initialized after models are loaded in load_models()
+retraining_scheduler = None  # Will be set after model loading
+
+# --- Initialize Perception Layer Components for INIDS 2.0 ---
+attack_story_engine = AttackStoryEngine()
+confidence_breakdown_engine = ConfidenceBreakdownEngine()
+live_system_pulse = LiveSystemPulse(window_minutes=60)
+logger.info("Perception layer initialized: AttackStory, ConfidenceBreakdown, LivePulse")
+
+# --- Real-time Integration: Connect Perception Engines to EventBus ---
+perception_integration = PerceptionIntegration(
+    event_bus=event_bus,
+    attack_story_engine=attack_story_engine,
+    confidence_breakdown_engine=confidence_breakdown_engine,
+    live_system_pulse=live_system_pulse,
+    queue_size=1000,
+    batch_size=10,
+    worker_threads=2
+)
+perception_integration.start()
+logger.info("Perception integration layer started for real-time event processing")
+
 prevention_scheduler = PreventionScheduler(
     action_executor,
     interval_seconds=30,
@@ -676,8 +700,7 @@ def _on_policy_decision_event(event: PolicyDecisionEvent) -> None:
 
 
 def _emit_realtime(event_name: str, payload: dict) -> None:
-    if not SOCKETIO_ENABLED:
-        return
+    """Emit real-time event via WebSocket (always enabled in INIDS 2.0)."""
     try:
         socketio.emit(event_name, payload, namespace="/events")
     except Exception:
@@ -968,6 +991,19 @@ def load_models():
         # Register the primary ML model as a detection engine.
         ml_engine = MLEngine(model, engine_id="ml_primary")
         engine_registry.register(ml_engine)
+        
+        # --- Initialize RertrainingScheduler for INIDS 2.0 ---
+        global retraining_scheduler
+        if retraining_scheduler is None:
+            retraining_scheduler = RertrainingScheduler(
+                dataset_collector=dataset_collector,
+                model_registry=model_registry,
+                ml_engine=ml_engine,
+                models_dir=MODELS_DIR,
+                schedule_hour=2  # Daily at 2 AM UTC
+            )
+            retraining_scheduler.start()
+            logger.info("RertrainingScheduler initialized and started for daily model retraining")
 
 
 def _model_stats() -> dict:
@@ -1109,15 +1145,9 @@ def _after_request_metrics(response):
 
 @app.route("/")
 def home():
-    """Landing page with navigation."""
-    return render_template(
-        "home.html",
-        model_ready=bool(detection_service or model or all_models),
-        loaded_models_count=len(all_models),
-        queue_size=ingestion_queue.size(),
-        firewall_adapter=SETTINGS.firewall_adapter,
-        auth_enabled=bool(auth_status().get("enabled")),
-    )
+    """INIDS 2.0 Landing page - redirect to Monitor dashboard."""
+    from flask import redirect
+    return redirect("/monitor")
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -1325,6 +1355,46 @@ def dashboard():
             action_timeline=[],
             reconcile_summary={"db_active": 0, "firewall_rules": 0, "missing_in_firewall": 0, "orphan_firewall_rules": 0},
         ), 200
+
+
+@app.route("/monitor")
+def monitor():
+    """INIDS 2.0 Monitor - Real-time threat dashboard."""
+    try:
+        return render_template("monitor.html")
+    except Exception:
+        logger.exception("Monitor page rendering failed")
+        return "Monitor page error", 500
+
+
+@app.route("/investigate")
+def investigate():
+    """INIDS 2.0 Investigate - Alert analysis and deep-dive."""
+    try:
+        return render_template("investigate.html")
+    except Exception:
+        logger.exception("Investigate page rendering failed")
+        return "Investigate page error", 500
+
+
+@app.route("/respond")
+def respond():
+    """INIDS 2.0 Respond - Action management and approvals."""
+    try:
+        return render_template("respond.html")
+    except Exception:
+        logger.exception("Respond page rendering failed")
+        return "Respond page error", 500
+
+
+@app.route("/learn")
+def learn():
+    """INIDS 2.0 Learn - ML model management and training."""
+    try:
+        return render_template("learn.html")
+    except Exception:
+        logger.exception("Learn page rendering failed")
+        return "Learn page error", 500
 
 
 @app.route("/dashboard/main")
@@ -1561,6 +1631,105 @@ def api_health_ready():
     _ensure_pipeline_started()
     report = health_check.check()
     return jsonify(report), (200 if report.get("status") == "healthy" else 503)
+
+
+# ========== PERCEPTION LAYER ENDPOINTS ==========
+
+@app.route("/api/perception/pulse", methods=["GET"])
+def api_perception_pulse():
+    """Get current system pulse status (real-time metrics)."""
+    try:
+        pulse = live_system_pulse.get_pulse_status()
+        return jsonify(pulse), 200
+    except Exception as e:
+        logger.exception("Error getting system pulse")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/pulse/timeseries/<metric>", methods=["GET"])
+def api_perception_pulse_timeseries(metric):
+    """Get time-series data for a specific metric."""
+    try:
+        series = live_system_pulse.get_time_series(metric)
+        return jsonify({
+            "metric": metric,
+            "data": series,
+            "count": len(series)
+        }), 200
+    except Exception as e:
+        logger.exception(f"Error getting timeseries for {metric}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/confidence/<detection_id>", methods=["GET"])
+def api_perception_confidence(detection_id):
+    """Get confidence breakdown for a specific detection."""
+    try:
+        breakdown = confidence_breakdown_engine.get_breakdown(detection_id)
+        if not breakdown:
+            return jsonify({"error": "Detection not found"}), 404
+        return jsonify(breakdown), 200
+    except Exception as e:
+        logger.exception(f"Error getting confidence breakdown for {detection_id}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/attack-story/<attack_id>", methods=["GET"])
+def api_perception_attack_story(attack_id):
+    """Get the narrative story for an attack."""
+    try:
+        story = attack_story_engine.get_attack_story(attack_id)
+        return jsonify(story), 200
+    except Exception as e:
+        logger.exception(f"Error getting attack story for {attack_id}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/attack-stories", methods=["GET"])
+def api_perception_attack_stories():
+    """Get recent attack stories."""
+    try:
+        limit = request.args.get("limit", 10, type=int)
+        stories = attack_story_engine.get_recent_stories(limit=limit)
+        return jsonify({
+            "stories": stories,
+            "count": len(stories)
+        }), 200
+    except Exception as e:
+        logger.exception("Error getting attack stories")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/feature-importance", methods=["GET"])
+def api_perception_feature_importance():
+    """Get feature importance ranking across all detections."""
+    try:
+        ranking = confidence_breakdown_engine.get_feature_importance_ranking()
+        return jsonify({
+            "features": [
+                {
+                    "rank": i + 1,
+                    "feature_name": name,
+                    "total_contribution": score
+                }
+                for i, (name, score) in enumerate(ranking)
+            ],
+            "count": len(ranking)
+        }), 200
+    except Exception as e:
+        logger.exception("Error getting feature importance")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/perception/integration-status", methods=["GET"])
+def api_perception_integration_status():
+    """Get real-time integration status including latency metrics and throughput."""
+    try:
+        status = perception_integration.get_status()
+        return jsonify(status), 200
+    except Exception as e:
+        logger.exception("Error getting perception integration status")
+        return jsonify({"error": str(e)}), 500
 
 
 # ========== AUTHENTICATION ENDPOINTS ==========
@@ -2831,7 +3000,7 @@ def api_fp_stats():
 
 @app.route("/realtime")
 def realtime():
-    return render_template("realtime.html", socketio_enabled=SOCKETIO_ENABLED)
+    return render_template("realtime.html", socketio_enabled=True)
 
 
 @app.route("/capture")
@@ -3279,10 +3448,8 @@ _update_thread_stop = False
 
 
 def _start_module_update_broadcaster() -> None:
-    """Start module websocket broadcaster if SocketIO is enabled."""
+    """Start module websocket broadcaster (WebSocket is mandatory in INIDS 2.0)."""
     global _update_thread, _update_thread_stop
-    if not SOCKETIO_ENABLED:
-        return
     if _update_thread is not None and _update_thread.is_alive():
         return
     _update_thread_stop = False
@@ -3627,6 +3794,116 @@ def broadcast_module_update(module_id, data):
         'data': data,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }, to=room, skip_sid=None)
+
+
+# --- WebSocket Event Namespace Handlers (INIDS 2.0 Real-Time Events) ---
+
+@socketio.on('connect', namespace='/events')
+def handle_events_connect():
+    """Client connected to /events namespace for real-time events."""
+    logger.info(f"Real-time events client connected: {request.sid}")
+    emit('connection_response', {
+        'status': 'connected',
+        'message': 'Connected to real-time event stream',
+        'namespace': '/events'
+    })
+
+
+@socketio.on('disconnect', namespace='/events')
+def handle_events_disconnect():
+    """Client disconnected from /events namespace."""
+    logger.info(f"Real-time events client disconnected: {request.sid}")
+
+
+@socketio.on('subscribe_alerts', namespace='/events')
+def handle_subscribe_alerts():
+    """Subscribe to real-time alert events."""
+    join_room('alerts')
+    logger.debug(f"Client {request.sid} subscribed to alerts")
+    emit('subscription_confirmed', {'subscription': 'alerts'})
+
+
+@socketio.on('unsubscribe_alerts', namespace='/events')
+def handle_unsubscribe_alerts():
+    """Unsubscribe from alert events."""
+    leave_room('alerts')
+    logger.debug(f"Client {request.sid} unsubscribed from alerts")
+
+
+@socketio.on('subscribe_actions', namespace='/events')
+def handle_subscribe_actions():
+    """Subscribe to real-time action events."""
+    join_room('actions')
+    logger.debug(f"Client {request.sid} subscribed to actions")
+    emit('subscription_confirmed', {'subscription': 'actions'})
+
+
+@socketio.on('unsubscribe_actions', namespace='/events')
+def handle_unsubscribe_actions():
+    """Unsubscribe from action events."""
+    leave_room('actions')
+    logger.debug(f"Client {request.sid} unsubscribed from actions")
+
+
+@socketio.on('subscribe_metrics', namespace='/events')
+def handle_subscribe_metrics():
+    """Subscribe to real-time metrics events."""
+    join_room('metrics')
+    logger.debug(f"Client {request.sid} subscribed to metrics")
+    emit('subscription_confirmed', {'subscription': 'metrics'})
+
+
+@socketio.on('unsubscribe_metrics', namespace='/events')
+def handle_unsubscribe_metrics():
+    """Unsubscribe from metrics events."""
+    leave_room('metrics')
+    logger.debug(f"Client {request.sid} unsubscribed from metrics")
+
+
+@socketio.on('subscribe_perception', namespace='/events')
+def handle_subscribe_perception():
+    """Subscribe to real-time perception layer events (pulse, confidence, attack_story)."""
+    join_room('perception')
+    logger.debug(f"Client {request.sid} subscribed to perception events")
+    # Send initial pulse data
+    pulse = live_system_pulse.get_pulse_status()
+    emit('perception_pulse', pulse)
+    emit('subscription_confirmed', {'subscription': 'perception'})
+
+
+@socketio.on('unsubscribe_perception', namespace='/events')
+def handle_unsubscribe_perception():
+    """Unsubscribe from perception events."""
+    leave_room('perception')
+    logger.debug(f"Client {request.sid} unsubscribed from perception events")
+
+
+@socketio.on('request_pulse', namespace='/events')
+def handle_request_pulse():
+    """Client requests current system pulse."""
+    pulse = live_system_pulse.get_pulse_status()
+    emit('perception_pulse', pulse)
+
+
+@socketio.on('request_confidence', namespace='/events')
+def handle_request_confidence(data):
+    """Client requests confidence breakdown for a detection."""
+    detection_id = data.get('detection_id')
+    if detection_id:
+        breakdown = confidence_breakdown_engine.get_breakdown(detection_id)
+        if breakdown:
+            emit('perception_confidence', breakdown)
+        else:
+            emit('error', {'message': f'Detection {detection_id} not found'})
+
+
+@socketio.on('request_attack_story', namespace='/events')
+def handle_request_attack_story(data):
+    """Client requests attack story for an attack."""
+    attack_id = data.get('attack_id')
+    if attack_id:
+        story = attack_story_engine.get_attack_story(attack_id)
+        emit('perception_attack_story', story)
 
 
 @app.errorhandler(404)
