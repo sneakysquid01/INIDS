@@ -174,9 +174,7 @@
       padding: 1px 6px;
       border-radius: 10px;
     }
-    .badge-danger { background: rgba(232,65,58,0.15); color: var(--red-lt); }
     .badge-warn   { background: rgba(240,165,0,0.15);  color: var(--amber-lt); }
-    .badge-ok     { background: rgba(39,201,122,0.12); color: var(--green-lt); }
 
     .stat-mini {
       display: flex; justify-content: space-between; align-items: baseline;
@@ -245,8 +243,6 @@
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
-    .span-2 { grid-column: span 2; }
-    .span-full { grid-column: 1 / -1; }
 
     /* ── PANEL ── */
     .panel {
@@ -373,6 +369,7 @@
       background: var(--border);
       border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
     }
+    .reconcile-strip-spaced { margin-bottom: 28px; }
     .rec-cell {
       background: var(--bg-card); padding: 14px 16px;
     }
@@ -418,6 +415,7 @@
       color: var(--text-muted);
       font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
     }
+    .empty-state-tight { padding: 12px 0; }
 
     /* ── SCROLLBAR GLOBAL ── */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -445,7 +443,7 @@
   <div class="topbar-meta">
     <span><span class="pulse-dot"></span>LIVE</span>
     <span>{{ generated_at }}</span>
-    <span style="color: var(--text-muted);">|</span>
+    <span>|</span>
     <span>UTC+00:00</span>
   </div>
 </nav>
@@ -714,7 +712,7 @@
                   <tr>
                     <td class="mono-val">{{ item.name }}</td>
                     <td><span class="val-cyan" style="font-family: var(--mono);">{{ "%.2f"|format(item.accuracy * 100) }}%</span></td>
-                    <td><span style="font-family: var(--mono); color: var(--text-secondary);">{{ "%.4f"|format(item.f1_score) }}</span></td>
+                    <td><span style="font-family: var(--mono);color: var(--text-secondary);">{{ "%.4f"|format(item.f1_score) }}</span></td>
                   </tr>
                   {% endfor %}
                 </tbody>
@@ -808,7 +806,7 @@
               <tbody>
                 {% for action in recent_actions %}
                 <tr>
-                  <td><span class="panel-tag tag-red" style="white-space:nowrap;">{{ action.action | upper }}</span></td>
+                  <td><span class="panel-tag tag-red" style="white-space: nowrap;">{{ action.action | upper }}</span></td>
                   <td class="mono-val">{{ action.target }}</td>
                   <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">{{ action.reason }}</td>
                 </tr>
@@ -913,13 +911,7 @@
           {% for item in action_timeline %}
           <div class="timeline-item">
             <div class="timeline-when">{{ item.when }}</div>
-            <div class="timeline-dot
-              {% if item.type == 'alert' %}ind-red
-              {% elif item.type == 'block' %}ind-amber
-              {% else %}ind-cyan{% endif %}
-            " style="width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px;
-              background:{% if item.type == 'alert' %}var(--red){% elif item.type == 'block' %}var(--amber){% else %}var(--cyan){% endif %};">
-            </div>
+            <div class="timeline-dot" style="background:{% if item.type == 'alert' %}var(--red){% elif item.type == 'block' %}var(--amber){% else %}var(--cyan){% endif %};"></div>
             <div class="timeline-content">
               <div class="timeline-type">{{ item.type | upper }}</div>
               <div class="timeline-msg">{{ item.message }}</div>
@@ -928,7 +920,7 @@
           {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state" style="padding: 12px 0;">No timeline events</div>
+        <div class="empty-state empty-state-tight">No timeline events</div>
         {% endif %}
       </div>
     </div>
@@ -940,7 +932,7 @@
       <div class="section-divider-line"></div>
     </div>
 
-    <div class="reconcile-strip" style="margin-bottom: 28px;">
+    <div class="reconcile-strip reconcile-strip-spaced">
       <div class="rec-cell">
         <div class="rec-label">DB Active</div>
         <div class="rec-val val-white">{{ reconcile_summary.db_active }}</div>
