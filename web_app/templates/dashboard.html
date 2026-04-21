@@ -1,379 +1,966 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-    <title>INIDS Analytics Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
-    <style>
-      body { background-color: #f8f9fa; }
-      .main-box {
-        background: #fff;
-        border-radius: 15px;
-        padding: 2rem;
-        margin: 2rem 0;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-      }
-      .section-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 0.9rem;
-      }
-      .metric-card {
-        border-radius: 10px;
-        border: 1px solid #e7ebf0;
-        background: #fff;
-        padding: 1rem;
-        height: 100%;
-      }
-      .metric-label {
-        font-size: 0.78rem;
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-        color: #6c757d;
-      }
-      .metric-value {
-        font-size: 1.5rem;
-        font-weight: 700;
-      }
-      .table-wrap {
-        max-height: 270px;
-        overflow: auto;
-      }
-      .soft-box {
-        border-radius: 10px;
-        background: #f8f9fb;
-        border: 1px solid #e6ecf3;
-        padding: 0.9rem;
-      }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INIDS — Intrusion Detection & Prevention System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
+  <style>
+    :root {
+      --bg-base:       #0b0d11;
+      --bg-panel:      #10131a;
+      --bg-card:       #13161f;
+      --bg-hover:      #1a1e2a;
+      --border:        rgba(255,255,255,0.07);
+      --border-bright: rgba(255,255,255,0.13);
+
+      --cyan:    #00d4c8;
+      --cyan-dk: #00a89e;
+      --amber:   #f0a500;
+      --amber-lt:#ffc84a;
+      --red:     #e8413a;
+      --red-lt:  #ff6b64;
+      --green:   #27c97a;
+      --green-lt:#5dde9c;
+      --blue:    #3b8cf0;
+
+      --text-primary:   #e8ecf3;
+      --text-secondary: #7c8799;
+      --text-muted:     #4a5265;
+
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--sans);
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      height: 52px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-brand {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .brand-sigil {
+      width: 28px; height: 28px;
+      border: 1.5px solid var(--cyan);
+      border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .brand-sigil::after {
+      content: '';
+      width: 10px; height: 10px;
+      border: 1.5px solid var(--cyan);
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+    .brand-name {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: var(--text-primary);
+    }
+    .brand-sub {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .topbar-nav { display: flex; align-items: center; gap: 4px; }
+    .nav-btn {
+      padding: 5px 14px;
+      border: 1px solid var(--border-bright);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-decoration: none;
+      border-radius: 3px;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--cyan); }
+    .nav-btn.active { background: rgba(0,212,200,0.08); color: var(--cyan); border-color: var(--cyan); }
+
+    .topbar-meta {
+      display: flex; align-items: center; gap: 16px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .pulse-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+      display: inline-block; margin-right: 5px;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    /* ── LAYOUT ── */
+    .dash-layout {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 0;
+      min-height: calc(100vh - 52px);
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+    }
+    .sidebar-section {
+      padding: 0 14px 20px;
+    }
+    .sidebar-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 0 8px;
+      margin-bottom: 6px;
+    }
+    .sidebar-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.12s;
+      text-decoration: none;
+    }
+    .sidebar-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .sidebar-item.active { background: rgba(0,212,200,0.07); color: var(--cyan); }
+    .sidebar-icon {
+      width: 16px; height: 16px;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .sidebar-item.active .sidebar-icon { opacity: 1; }
+    .sidebar-badge {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+    .badge-danger { background: rgba(232,65,58,0.15); color: var(--red-lt); }
+    .badge-warn   { background: rgba(240,165,0,0.15);  color: var(--amber-lt); }
+    .badge-ok     { background: rgba(39,201,122,0.12); color: var(--green-lt); }
+
+    .stat-mini {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 5px 8px;
+      margin: 2px 0;
+      border-radius: 3px;
+    }
+    .stat-mini-label { font-size: 11px; color: var(--text-muted); }
+    .stat-mini-val { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+
+    /* ── MAIN CONTENT ── */
+    .main-content { padding: 24px; overflow-x: hidden; }
+
+    .page-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .page-title {
+      font-size: 18px; font-weight: 500;
+      letter-spacing: 0.3px;
+      margin: 0 0 2px;
+    }
+    .page-subtitle {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    /* ── STATUS BAR ── */
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .status-cell {
+      background: var(--bg-card);
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .status-indicator {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .ind-green { background: var(--green); }
+    .ind-amber { background: var(--amber); }
+    .ind-red   { background: var(--red);   }
+    .ind-cyan  { background: var(--cyan);  }
+    .status-cell-label {
+      font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 1px;
+    }
+    .status-cell-value {
+      font-family: var(--mono); font-size: 14px; font-weight: 500;
+      color: var(--text-primary);
+    }
+    .status-cell-sub {
+      font-size: 10px; font-family: var(--mono); color: var(--text-muted);
+    }
+
+    /* ── GRID ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .span-2 { grid-column: span 2; }
+    .span-full { grid-column: 1 / -1; }
+
+    /* ── PANEL ── */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-title {
+      font-size: 11px; font-weight: 500;
+      letter-spacing: 1.2px; text-transform: uppercase;
+      color: var(--text-secondary);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .panel-title-accent {
+      width: 3px; height: 14px; border-radius: 2px;
+    }
+    .accent-cyan   { background: var(--cyan); }
+    .accent-amber  { background: var(--amber); }
+    .accent-red    { background: var(--red); }
+    .accent-green  { background: var(--green); }
+    .accent-blue   { background: var(--blue); }
+
+    .panel-tag {
+      font-family: var(--mono);
+      font-size: 10px; letter-spacing: 0.5px;
+      padding: 2px 8px; border-radius: 2px;
+    }
+    .tag-green  { background: rgba(39,201,122,0.1); color: var(--green-lt); border: 1px solid rgba(39,201,122,0.2); }
+    .tag-amber  { background: rgba(240,165,0,0.1);  color: var(--amber-lt); border: 1px solid rgba(240,165,0,0.2); }
+    .tag-red    { background: rgba(232,65,58,0.1);  color: var(--red-lt);   border: 1px solid rgba(232,65,58,0.2); }
+    .tag-cyan   { background: rgba(0,212,200,0.08); color: var(--cyan);     border: 1px solid rgba(0,212,200,0.15); }
+    .tag-muted  { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid var(--border); }
+
+    .panel-body { padding: 16px; }
+    .panel-body-sm { padding: 0; }
+
+    /* ── METRICS ROW ── */
+    .metric-row {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+      background: var(--border);
+    }
+    .metric-cell {
+      background: var(--bg-card); padding: 14px 16px;
+    }
+    .metric-cell-label {
+      font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 6px;
+    }
+    .metric-cell-value {
+      font-family: var(--mono); font-size: 22px; font-weight: 600;
+      line-height: 1; margin-bottom: 4px;
+    }
+    .metric-cell-sub {
+      font-size: 10px; font-family: var(--mono); color: var(--text-muted);
+    }
+    .val-cyan   { color: var(--cyan); }
+    .val-green  { color: var(--green-lt); }
+    .val-red    { color: var(--red-lt); }
+    .val-amber  { color: var(--amber-lt); }
+    .val-white  { color: var(--text-primary); }
+
+    /* ── TABLE ── */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead tr th {
+      background: rgba(255,255,255,0.02);
+      padding: 7px 12px;
+      font-family: var(--mono);
+      font-size: 9px; font-weight: 500;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      text-align: left;
+    }
+    .data-table tbody tr { border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .data-table tbody tr:last-child { border-bottom: none; }
+    .data-table tbody tr:hover { background: var(--bg-hover); }
+    .data-table tbody td {
+      padding: 7px 12px;
+      font-size: 12px; color: var(--text-secondary);
+      vertical-align: middle;
+    }
+    .mono-val { font-family: var(--mono); color: var(--text-primary); font-size: 11px; }
+    .table-wrap { max-height: 240px; overflow-y: auto; }
+    .table-wrap::-webkit-scrollbar { width: 4px; }
+    .table-wrap::-webkit-scrollbar-track { background: transparent; }
+    .table-wrap::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+    /* ── KV LIST ── */
+    .kv-list { list-style: none; padding: 0; margin: 0; }
+    .kv-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .kv-item:last-child { border-bottom: none; }
+    .kv-key { font-size: 12px; color: var(--text-muted); }
+    .kv-val { font-family: var(--mono); font-size: 12px; color: var(--text-primary); }
+
+    /* ── MINI CHART BARS ── */
+    .spark-row { display: flex; align-items: flex-end; gap: 3px; height: 36px; }
+    .spark-bar { flex: 1; border-radius: 2px 2px 0 0; background: rgba(0,212,200,0.3); transition: height 0.3s; min-height: 2px; }
+    .spark-bar.hi { background: rgba(0,212,200,0.7); }
+
+    /* ── MODEL CHART IMAGE ── */
+    .chart-container {
+      background: rgba(255,255,255,0.01);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden; text-align: center;
+      margin: 12px 0;
+    }
+    .chart-container img { max-height: 260px; width: 100%; object-fit: contain; }
+
+    /* ── RECONCILE STRIP ── */
+    .reconcile-strip {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    }
+    .rec-cell {
+      background: var(--bg-card); padding: 14px 16px;
+    }
+    .rec-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+    .rec-val { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--text-primary); }
+
+    /* ── TIMELINE ── */
+    .timeline-item {
+      display: flex; gap: 12px; padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .timeline-item:last-child { border-bottom: none; }
+    .timeline-when {
+      font-family: var(--mono); font-size: 10px; color: var(--text-muted);
+      white-space: nowrap; padding-top: 1px; min-width: 52px;
+    }
+    .timeline-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      flex-shrink: 0; margin-top: 4px;
+    }
+    .timeline-content { flex: 1; }
+    .timeline-type { font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); }
+    .timeline-msg { font-size: 12px; color: var(--text-secondary); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+
+    /* ── DIVIDER ── */
+    .section-divider { margin: 20px 0 16px; display: flex; align-items: center; gap: 10px; }
+    .section-divider-line { flex: 1; height: 1px; background: var(--border); }
+    .section-divider-label { font-family: var(--mono); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); }
+
+    /* ── MATCH BADGE ── */
+    .match-ok   { font-family: var(--mono); font-size: 10px; color: var(--green); }
+    .match-miss { font-family: var(--mono); font-size: 10px; color: var(--red-lt); }
+
+    /* ── SEVERITY ── */
+    .sev-critical { color: var(--red-lt); }
+    .sev-high     { color: var(--amber-lt); }
+    .sev-medium   { color: var(--cyan); }
+    .sev-low      { color: var(--text-secondary); }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      padding: 24px; text-align: center;
+      color: var(--text-muted);
+      font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+    }
+
+    /* ── SCROLLBAR GLOBAL ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">INIDS</a>
-            <div>
-                <a href="/predict" class="btn btn-outline-light btn-sm">Predict</a>
-                <a href="/models" class="btn btn-outline-light btn-sm">Models</a>
-            </div>
-        </div>
-    </nav>
 
-    <div class="container">
-        <div class="main-box">
-            <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
-                <h2 class="mb-0">Analytics Dashboard</h2>
-                <small class="text-muted">Generated: {{ generated_at }}</small>
-            </div>
-
-            <div class="row g-3 mb-4">
-                <div class="col-6 col-md-3">
-                    <div class="metric-card">
-                        <div class="metric-label">Auth</div>
-                        <div class="metric-value">{{ "On" if auth_info.enabled else "Off" }}</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="metric-card">
-                        <div class="metric-label">Queue Size</div>
-                        <div class="metric-value">{{ queue_size }}</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="metric-card">
-                        <div class="metric-label">Rate Limit</div>
-                        <div class="metric-value">{{ rate_limit_requests }}</div>
-                        <small class="text-muted">per {{ rate_limit_window_seconds }}s</small>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="metric-card">
-                        <div class="metric-label">Firewall</div>
-                        <div class="metric-value text-capitalize">{{ firewall_adapter }}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="row g-3 mb-4">
-                <div class="col-lg-8">
-                    <div class="soft-box h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div class="section-title mb-0">Model Analytics</div>
-                            {% if model_stats.available %}
-                            <span class="badge bg-success">Ready</span>
-                            {% else %}
-                            <span class="badge bg-warning text-dark">Unavailable</span>
-                            {% endif %}
-                        </div>
-
-                        {% if model_stats.available %}
-                        <div class="row g-2 mb-3">
-                            <div class="col-6 col-md-3">
-                                <div class="metric-card p-2">
-                                    <div class="metric-label">Samples</div>
-                                    <div class="h5 mb-0">{{ model_stats.total }}</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="metric-card p-2">
-                                    <div class="metric-label">Normal</div>
-                                    <div class="h5 text-success mb-0">{{ model_stats.normal }}</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="metric-card p-2">
-                                    <div class="metric-label">Attack</div>
-                                    <div class="h5 text-danger mb-0">{{ model_stats.attacks }}</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="metric-card p-2">
-                                    <div class="metric-label">Accuracy</div>
-                                    <div class="h5 mb-0">{{ model_stats.accuracy }}%</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="text-center mb-3">
-                            <img class="img-fluid rounded border" style="max-height: 320px;" src="data:image/png;base64,{{ model_stats.chart_data }}" alt="Prediction distribution chart">
-                        </div>
-
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                  <tr>
-                                    <th>Index</th>
-                                    <th>True</th>
-                                    <th>Predicted</th>
-                                    <th>Match</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {% for row in model_stats.results %}
-                                  <tr>
-                                    <td>{{ row.Index }}</td>
-                                    <td>{{ row.True }}</td>
-                                    <td>{{ row.Predicted }}</td>
-                                    <td>
-                                      {% if row.Match == "OK" %}
-                                      <span class="badge bg-success">OK</span>
-                                      {% else %}
-                                      <span class="badge bg-danger">MISS</span>
-                                      {% endif %}
-                                    </td>
-                                  </tr>
-                                  {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <div class="alert alert-warning mb-0">{{ model_stats.error }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-4">
-                    <div class="soft-box mb-3">
-                        <div class="section-title">Policy and Access</div>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between"><span>Mode</span><strong class="text-capitalize">{{ policy.mode }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Dry Run</span><strong>{{ "Yes" if policy.dry_run else "No" }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Block TTL</span><strong>{{ policy.block_ttl_seconds }}s</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Threshold</span><strong>{{ policy.confidence_block_threshold }}%</strong></li>
-                            <li class="list-group-item"><span class="text-muted">Roles:</span>
-                                {% if auth_info.configured_roles %}
-                                  {{ auth_info.configured_roles|join(", ") }}
-                                {% else %}
-                                  none
-                                {% endif %}
-                            </li>
-                        </ul>
-                    </div>
-
-                    <div class="soft-box">
-                        <div class="section-title">Metrics Counters</div>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between"><span>API Requests</span><strong>{{ metrics_snapshot.requests_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Predictions</span><strong>{{ metrics_snapshot.predictions_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Alerts</span><strong>{{ metrics_snapshot.alerts_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Prevention Actions</span><strong>{{ metrics_snapshot.prevention_actions_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Ingested</span><strong>{{ metrics_snapshot.ingested_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Processed</span><strong>{{ metrics_snapshot.processed_ingestion_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Rate Limited</span><strong>{{ metrics_snapshot.rate_limited_total }}</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Unauthorized</span><strong>{{ metrics_snapshot.unauthorized_total }}</strong></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="row g-3">
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Recent Alerts</div>
-                        {% if recent_alerts %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>ID</th><th>Severity</th><th>Prediction</th><th>Confidence</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for alert in recent_alerts %}
-                                    <tr>
-                                        <td>{{ alert.id }}</td>
-                                        <td class="text-capitalize">{{ alert.severity }}</td>
-                                        <td>{{ alert.prediction }}</td>
-                                        <td>{{ alert.confidence }}%</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No alerts captured yet.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Recent Prevention Actions</div>
-                        {% if recent_actions %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>Action</th><th>Target</th><th>Reason</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for action in recent_actions %}
-                                    <tr>
-                                        <td class="text-capitalize">{{ action.action }}</td>
-                                        <td>{{ action.target }}</td>
-                                        <td class="text-truncate" style="max-width: 220px;">{{ action.reason }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No prevention actions yet.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Recent Audit Events</div>
-                        {% if recent_audits %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>Event</th><th>Message</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for audit in recent_audits %}
-                                    <tr>
-                                        <td>{{ audit.event_type }}</td>
-                                        <td class="text-truncate" style="max-width: 340px;">{{ audit.message }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No audit records yet.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Model Registry</div>
-                        {% if recent_registry %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>Name</th><th>Accuracy</th><th>F1</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in recent_registry %}
-                                    <tr>
-                                        <td>{{ item.name }}</td>
-                                        <td>{{ "%.2f"|format(item.accuracy * 100) }}%</td>
-                                        <td>{{ "%.4f"|format(item.f1_score) }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No models registered yet.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Active Blocks</div>
-                        {% if active_blocks %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>Target</th><th>Status</th><th>Expires</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for block in active_blocks %}
-                                    <tr>
-                                        <td>{{ block.target }}</td>
-                                        <td class="text-capitalize">{{ block.status }}</td>
-                                        <td>{{ block.expires_at or "-" }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No active blocks.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="soft-box h-100">
-                        <div class="section-title">Action Timeline</div>
-                        {% if action_timeline %}
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped table-bordered mb-0">
-                                <thead>
-                                    <tr><th>Time</th><th>Type</th><th>Message</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in action_timeline %}
-                                    <tr>
-                                        <td>{{ item.when }}</td>
-                                        <td class="text-capitalize">{{ item.type }}</td>
-                                        <td class="text-truncate" style="max-width: 320px;">{{ item.message }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <p class="text-muted mb-0">No timeline events available.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="col-12">
-                    <div class="soft-box">
-                        <div class="section-title">Prevention Reconciliation</div>
-                        <div class="row g-2">
-                            <div class="col-6 col-md-3"><strong>DB Active:</strong> {{ reconcile_summary.db_active }}</div>
-                            <div class="col-6 col-md-3"><strong>Firewall Rules:</strong> {{ reconcile_summary.firewall_rules }}</div>
-                            <div class="col-6 col-md-3"><strong>Missing in FW:</strong> {{ reconcile_summary.missing_in_firewall }}</div>
-                            <div class="col-6 col-md-3"><strong>Orphan FW Rules:</strong> {{ reconcile_summary.orphan_firewall_rules }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+<nav class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-sigil"></div>
+    <div>
+      <div class="brand-name">INIDS</div>
+      <div class="brand-sub">Intrusion Detection &amp; Prevention</div>
     </div>
+  </div>
+
+  <div class="topbar-nav">
+    <a href="/" class="nav-btn active">Dashboard</a>
+    <a href="/predict" class="nav-btn">Predict</a>
+    <a href="/models" class="nav-btn">Models</a>
+  </div>
+
+  <div class="topbar-meta">
+    <span><span class="pulse-dot"></span>LIVE</span>
+    <span>{{ generated_at }}</span>
+    <span style="color: var(--text-muted);">|</span>
+    <span>UTC+00:00</span>
+  </div>
+</nav>
+
+<div class="dash-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+      <a class="sidebar-item active" href="/">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        Overview
+      </a>
+      <a class="sidebar-item" href="/predict">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        Predictions
+        <span class="sidebar-badge badge-warn">{{ metrics_snapshot.predictions_total }}</span>
+      </a>
+      <a class="sidebar-item" href="/models">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+          <path d="M2 12L6 6l3 4 2-3 3 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Models
+      </a>
+    </div>
+
+    <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
+      <div class="sidebar-label">System</div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Auth</span>
+        {% if auth_info.enabled %}
+        <span class="stat-mini-val" style="color: var(--green);">Enabled</span>
+        {% else %}
+        <span class="stat-mini-val" style="color: var(--amber);">Disabled</span>
+        {% endif %}
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Mode</span>
+        <span class="stat-mini-val">{{ policy.mode }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Dry Run</span>
+        <span class="stat-mini-val">{{ "Yes" if policy.dry_run else "No" }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Firewall</span>
+        <span class="stat-mini-val">{{ firewall_adapter }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Queue</span>
+        <span class="stat-mini-val">{{ queue_size }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Rate Limit</span>
+        <span class="stat-mini-val">{{ rate_limit_requests }}/{{ rate_limit_window_seconds }}s</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
+      <div class="sidebar-label">Event Counters</div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Requests</span>
+        <span class="stat-mini-val">{{ metrics_snapshot.requests_total }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Alerts</span>
+        <span class="stat-mini-val" style="color: var(--red-lt);">{{ metrics_snapshot.alerts_total }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Actions</span>
+        <span class="stat-mini-val" style="color: var(--amber-lt);">{{ metrics_snapshot.prevention_actions_total }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Rate Ltd</span>
+        <span class="stat-mini-val">{{ metrics_snapshot.rate_limited_total }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="stat-mini-label">Unauth</span>
+        <span class="stat-mini-val">{{ metrics_snapshot.unauthorized_total }}</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main-content">
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Analytics Dashboard</h1>
+        <div class="page-subtitle">THREAT MONITORING — REAL-TIME ANALYSIS ENGINE</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        {% if policy.dry_run %}
+        <span class="panel-tag tag-amber">DRY RUN</span>
+        {% endif %}
+        <span class="panel-tag tag-cyan">{{ policy.mode | upper }}</span>
+        <span class="panel-tag tag-muted">THRESHOLD {{ policy.confidence_block_threshold }}%</span>
+      </div>
+    </div>
+
+    <!-- STATUS STRIP -->
+    <div class="status-strip" style="margin-bottom: 20px;">
+      <div class="status-cell">
+        <div class="status-indicator ind-cyan"></div>
+        <div>
+          <div class="status-cell-label">Ingested</div>
+          <div class="status-cell-value">{{ metrics_snapshot.ingested_total }}</div>
+          <div class="status-cell-sub">total events</div>
+        </div>
+      </div>
+      <div class="status-cell">
+        <div class="status-indicator ind-green"></div>
+        <div>
+          <div class="status-cell-label">Processed</div>
+          <div class="status-cell-value">{{ metrics_snapshot.processed_ingestion_total }}</div>
+          <div class="status-cell-sub">analysed</div>
+        </div>
+      </div>
+      <div class="status-cell">
+        <div class="status-indicator ind-red"></div>
+        <div>
+          <div class="status-cell-label">Alerts</div>
+          <div class="status-cell-value">{{ metrics_snapshot.alerts_total }}</div>
+          <div class="status-cell-sub">triggered</div>
+        </div>
+      </div>
+      <div class="status-cell">
+        <div class="status-indicator ind-amber"></div>
+        <div>
+          <div class="status-cell-label">Blocked</div>
+          <div class="status-cell-value">{{ metrics_snapshot.prevention_actions_total }}</div>
+          <div class="status-cell-sub">prevention actions</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODEL ANALYTICS + POLICY -->
+    <div class="grid-main">
+
+      <!-- MODEL ANALYTICS -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-cyan"></span>
+            Model Analytics
+          </div>
+          {% if model_stats.available %}
+          <span class="panel-tag tag-green">READY</span>
+          {% else %}
+          <span class="panel-tag tag-amber">UNAVAILABLE</span>
+          {% endif %}
+        </div>
+
+        {% if model_stats.available %}
+        <div class="metric-row">
+          <div class="metric-cell">
+            <div class="metric-cell-label">Samples</div>
+            <div class="metric-cell-value val-white">{{ model_stats.total }}</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-cell-label">Normal</div>
+            <div class="metric-cell-value val-green">{{ model_stats.normal }}</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-cell-label">Attacks</div>
+            <div class="metric-cell-value val-red">{{ model_stats.attacks }}</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-cell-label">Accuracy</div>
+            <div class="metric-cell-value val-cyan">{{ model_stats.accuracy }}%</div>
+          </div>
+        </div>
+
+        <div class="panel-body" style="padding-top: 12px;">
+          <div class="chart-container">
+            <img src="data:image/png;base64,{{ model_stats.chart_data }}" alt="Prediction distribution">
+          </div>
+
+          <div class="table-wrap" style="margin-top: 12px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>True Label</th>
+                  <th>Predicted</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in model_stats.results %}
+                <tr>
+                  <td class="mono-val">{{ row.Index }}</td>
+                  <td>{{ row.True }}</td>
+                  <td>{{ row.Predicted }}</td>
+                  <td>
+                    {% if row.Match == "OK" %}
+                    <span class="match-ok">▲ MATCH</span>
+                    {% else %}
+                    <span class="match-miss">✕ MISS</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="empty-state">{{ model_stats.error }}</div>
+        {% endif %}
+      </div>
+
+      <!-- POLICY + REGISTRY STACK -->
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+
+        <!-- POLICY -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-title-accent accent-amber"></span>
+              Policy &amp; Access
+            </div>
+          </div>
+          <div class="panel-body">
+            <ul class="kv-list">
+              <li class="kv-item"><span class="kv-key">Enforcement Mode</span><span class="kv-val">{{ policy.mode }}</span></li>
+              <li class="kv-item"><span class="kv-key">Dry Run</span><span class="kv-val">{{ "Enabled" if policy.dry_run else "Disabled" }}</span></li>
+              <li class="kv-item"><span class="kv-key">Block TTL</span><span class="kv-val">{{ policy.block_ttl_seconds }}s</span></li>
+              <li class="kv-item"><span class="kv-key">Block Threshold</span><span class="kv-val">{{ policy.confidence_block_threshold }}%</span></li>
+              <li class="kv-item">
+                <span class="kv-key">Configured Roles</span>
+                <span class="kv-val" style="font-size:11px;">
+                  {% if auth_info.configured_roles %}{{ auth_info.configured_roles|join(", ") }}{% else %}—{% endif %}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- MODEL REGISTRY -->
+        <div class="panel" style="flex: 1;">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-title-accent accent-blue"></span>
+              Model Registry
+            </div>
+          </div>
+          <div class="panel-body-sm">
+            {% if recent_registry %}
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Name</th><th>Accuracy</th><th>F1 Score</th></tr>
+                </thead>
+                <tbody>
+                  {% for item in recent_registry %}
+                  <tr>
+                    <td class="mono-val">{{ item.name }}</td>
+                    <td><span class="val-cyan" style="font-family: var(--mono);">{{ "%.2f"|format(item.accuracy * 100) }}%</span></td>
+                    <td><span style="font-family: var(--mono); color: var(--text-secondary);">{{ "%.4f"|format(item.f1_score) }}</span></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="empty-state">No models registered</div>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SECTION: THREAT INTELLIGENCE -->
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-label">Threat Intelligence</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="grid-2">
+
+      <!-- RECENT ALERTS -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-red"></span>
+            Recent Alerts
+          </div>
+          {% if recent_alerts %}
+          <span class="panel-tag tag-red">{{ recent_alerts|length }} ACTIVE</span>
+          {% else %}
+          <span class="panel-tag tag-muted">CLEAR</span>
+          {% endif %}
+        </div>
+        <div class="panel-body-sm">
+          {% if recent_alerts %}
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr><th>ID</th><th>Severity</th><th>Classification</th><th>Confidence</th></tr>
+              </thead>
+              <tbody>
+                {% for alert in recent_alerts %}
+                <tr>
+                  <td class="mono-val">{{ alert.id }}</td>
+                  <td>
+                    <span class="
+                      {% if alert.severity == 'critical' %}sev-critical
+                      {% elif alert.severity == 'high' %}sev-high
+                      {% elif alert.severity == 'medium' %}sev-medium
+                      {% else %}sev-low{% endif %}
+                    " style="font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                      {{ alert.severity }}
+                    </span>
+                  </td>
+                  <td>{{ alert.prediction }}</td>
+                  <td><span class="mono-val">{{ alert.confidence }}%</span></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state">No alerts captured</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- PREVENTION ACTIONS -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-amber"></span>
+            Prevention Actions
+          </div>
+          {% if recent_actions %}
+          <span class="panel-tag tag-amber">{{ recent_actions|length }} LOGGED</span>
+          {% else %}
+          <span class="panel-tag tag-muted">NONE</span>
+          {% endif %}
+        </div>
+        <div class="panel-body-sm">
+          {% if recent_actions %}
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr><th>Action</th><th>Target</th><th>Reason</th></tr>
+              </thead>
+              <tbody>
+                {% for action in recent_actions %}
+                <tr>
+                  <td><span class="panel-tag tag-red" style="white-space:nowrap;">{{ action.action | upper }}</span></td>
+                  <td class="mono-val">{{ action.target }}</td>
+                  <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">{{ action.reason }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state">No prevention actions</div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SECTION: OPERATIONS -->
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-label">Operations</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="grid-2">
+
+      <!-- ACTIVE BLOCKS -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-red"></span>
+            Active Blocks
+          </div>
+          {% if active_blocks %}
+          <span class="panel-tag tag-red">{{ active_blocks|length }} BLOCKED</span>
+          {% else %}
+          <span class="panel-tag tag-green">CLEAR</span>
+          {% endif %}
+        </div>
+        <div class="panel-body-sm">
+          {% if active_blocks %}
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Target</th><th>Status</th><th>Expires</th></tr></thead>
+              <tbody>
+                {% for block in active_blocks %}
+                <tr>
+                  <td class="mono-val">{{ block.target }}</td>
+                  <td><span class="panel-tag tag-red">{{ block.status | upper }}</span></td>
+                  <td class="mono-val" style="color: var(--text-muted);">{{ block.expires_at or "—" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state">No active blocks</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- AUDIT LOG -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-cyan"></span>
+            Audit Log
+          </div>
+        </div>
+        <div class="panel-body-sm">
+          {% if recent_audits %}
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Event Type</th><th>Message</th></tr></thead>
+              <tbody>
+                {% for audit in recent_audits %}
+                <tr>
+                  <td class="mono-val" style="white-space:nowrap; color: var(--cyan);">{{ audit.event_type }}</td>
+                  <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">{{ audit.message }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state">No audit records</div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ACTION TIMELINE -->
+    <div class="panel" style="margin-bottom: 16px;">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-title-accent accent-green"></span>
+          Action Timeline
+        </div>
+      </div>
+      <div class="panel-body">
+        {% if action_timeline %}
+        <div class="table-wrap">
+          {% for item in action_timeline %}
+          <div class="timeline-item">
+            <div class="timeline-when">{{ item.when }}</div>
+            <div class="timeline-dot
+              {% if item.type == 'alert' %}ind-red
+              {% elif item.type == 'block' %}ind-amber
+              {% else %}ind-cyan{% endif %}
+            " style="width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px;
+              background:{% if item.type == 'alert' %}var(--red){% elif item.type == 'block' %}var(--amber){% else %}var(--cyan){% endif %};">
+            </div>
+            <div class="timeline-content">
+              <div class="timeline-type">{{ item.type | upper }}</div>
+              <div class="timeline-msg">{{ item.message }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state" style="padding: 12px 0;">No timeline events</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- RECONCILIATION -->
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-label">Prevention Reconciliation</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="reconcile-strip" style="margin-bottom: 28px;">
+      <div class="rec-cell">
+        <div class="rec-label">DB Active</div>
+        <div class="rec-val val-white">{{ reconcile_summary.db_active }}</div>
+      </div>
+      <div class="rec-cell">
+        <div class="rec-label">Firewall Rules</div>
+        <div class="rec-val val-cyan">{{ reconcile_summary.firewall_rules }}</div>
+      </div>
+      <div class="rec-cell">
+        <div class="rec-label">Missing in FW</div>
+        <div class="rec-val {% if reconcile_summary.missing_in_firewall > 0 %}val-red{% else %}val-green{% endif %}">{{ reconcile_summary.missing_in_firewall }}</div>
+      </div>
+      <div class="rec-cell">
+        <div class="rec-label">Orphan FW Rules</div>
+        <div class="rec-val {% if reconcile_summary.orphan_firewall_rules > 0 %}val-amber{% else %}val-green{% endif %}">{{ reconcile_summary.orphan_firewall_rules }}</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
 </body>
 </html>
