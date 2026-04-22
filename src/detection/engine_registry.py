@@ -34,7 +34,8 @@ class EngineRegistry:
                 logger.warning("Replacing existing engine %s", eid)
             self._engines[eid] = engine
             self._enabled[eid] = enabled
-            logger.info("Registered engine %s (type=%s, enabled=%s)", eid, engine.engine_type, enabled)
+            ready = engine.is_ready()
+            logger.info("Registered engine %s (type=%s, enabled=%s, ready=%s)", eid, engine.engine_type, enabled, ready)
 
     def unregister(self, engine_id: str) -> bool:
         with self._lock:
@@ -71,16 +72,26 @@ class EngineRegistry:
         executing.
         """
         with self._lock:
+            # Debug: log all engines and their status
+            logger.debug(f"evaluate_all: {len(self._engines)} engines registered")
+            for eid, eng in self._engines.items():
+                enabled = self._enabled.get(eid, False)
+                ready = eng.is_ready()
+                logger.debug(f"  {eid}: enabled={enabled}, ready={ready}")
+            
             active = [
                 (eid, eng)
                 for eid, eng in self._engines.items()
                 if self._enabled.get(eid, False) and eng.is_ready()
             ]
+            logger.debug(f"evaluate_all: {len(active)} engines active (out of {len(self._engines)})")
 
         results: list[EngineResult] = []
         for eid, engine in active:
             try:
+                logger.debug(f"Evaluating engine: {eid}")
                 result = engine.evaluate(features)
+                logger.debug(f"Engine {eid} result: {result.verdict} ({result.confidence}%)")
                 results.append(result)
             except Exception:
                 logger.exception("Engine %s failed during evaluate", eid)

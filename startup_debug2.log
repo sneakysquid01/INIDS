@@ -1,0 +1,56 @@
+DEBUG: INIDS_ALLOW_UNAUTHENTICATED = 1
+2026-04-22 22:32:49,361 matplotlib DEBUG: matplotlib data path: C:\Users\diwan\Desktop\INIDS\venv\Lib\site-packages\matplotlib\mpl-data
+2026-04-22 22:32:49,367 matplotlib DEBUG: CONFIGDIR=C:\Users\diwan\.matplotlib
+2026-04-22 22:32:49,368 matplotlib DEBUG: interactive is False
+2026-04-22 22:32:49,369 matplotlib DEBUG: platform is win32
+2026-04-22 22:32:49,411 matplotlib DEBUG: CACHEDIR=C:\Users\diwan\.matplotlib
+2026-04-22 22:32:49,414 matplotlib.font_manager DEBUG: Using fontManager instance from C:\Users\diwan\.matplotlib\fontlist-v390.json
+timestamp=2026-04-22 22:32:50,830 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=WebSocket (SocketIO) initialized successfully - REQUIRED for INIDS 2.0
+timestamp=2026-04-22 22:32:50,830 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Security middleware stack registered
+timestamp=2026-04-22 22:32:50,831 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=SQLite alert store initialized at data/alerts.db
+timestamp=2026-04-22 22:32:50,831 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=InMemoryAlertStore initialized (actually using SQLite for persistence)
+timestamp=2026-04-22 22:32:50,834 level=WARNING request_id=- source_ip=- risk_score=- action=- endpoint=- message=Could not connect to Elasticsearch: There is no current event loop in thread 'MainThread'.
+timestamp=2026-04-22 22:32:50,837 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Allowlist: loaded 2 entries from store
+timestamp=2026-04-22 22:32:50,839 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded 2 FP suppressions from persistent store
+timestamp=2026-04-22 22:32:50,839 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=SQLite ingestion queue initialized at data/ingestion.db
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded 11 signature rules from C:\Users\diwan\Desktop\INIDS\rules\default_rules.yaml
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine signature (type=signature, enabled=True, ready=True)
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine threshold (type=threshold, enabled=True, ready=True)
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine anomaly (type=anomaly, enabled=False, ready=False)
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine threat_intel (type=ti, enabled=True, ready=False)
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=HoneypotDetectionEngine initialized: ips=set(), ports=set(), enabled=False
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine honeypot (type=honeypot, enabled=True, ready=False)
+timestamp=2026-04-22 22:32:50,849 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Entity enrichment engine initialized with threat intel manager
+timestamp=2026-04-22 22:32:50,851 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Three-layer alert filter initialized with 6 rules
+timestamp=2026-04-22 22:32:50,851 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RealTimeStreamer started - real-time event broadcasting enabled
+timestamp=2026-04-22 22:32:50,851 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RealTimeStreamer initialized and started for real-time event broadcasting
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=DatasetCollector initialized at C:\Users\diwan\Desktop\INIDS\data\training.db
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=DatasetCollector initialized for training data collection
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=AttackStoryEngine initialized
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=ConfidenceBreakdownEngine initialized
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=LiveSystemPulse initialized with 60min window
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Perception layer initialized: AttackStory, ConfidenceBreakdown, LivePulse
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Starting perception integration...
+timestamp=2026-04-22 22:32:50,852 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Subscribed to DetectionEvent from EventBus
+timestamp=2026-04-22 22:32:50,854 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Started 2 perception worker threads
+timestamp=2026-04-22 22:32:50,854 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Perception integration layer started for real-time event processing
+DEBUG: auth_service.allow_unauthenticated = True
+DEBUG: auth_service.enabled = False
+DEBUG: Calling load_models() at startup to register ml_engine
+timestamp=2026-04-22 22:32:52,134 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model rf_nsl_kdd
+timestamp=2026-04-22 22:32:52,145 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model gb_nsl_kdd
+timestamp=2026-04-22 22:32:52,147 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model dt_nsl_kdd
+timestamp=2026-04-22 22:32:52,158 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model ab_nsl_kdd
+timestamp=2026-04-22 22:32:52,169 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model mlp_nsl_kdd
+timestamp=2026-04-22 22:32:52,211 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model rf_nsl_kdd_multi
+timestamp=2026-04-22 22:32:52,211 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine ml_primary (type=ml, enabled=True, ready=True)
+timestamp=2026-04-22 22:32:52,212 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Retraining scheduler started
+timestamp=2026-04-22 22:32:52,212 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RertrainingScheduler initialized and started for daily model retraining
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'web_app.app'
+ * Debug mode: off
+timestamp=2026-04-22 22:32:52,222 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.29.110:5000
+timestamp=2026-04-22 22:32:52,222 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Press CTRL+C to quit

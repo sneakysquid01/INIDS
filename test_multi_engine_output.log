@@ -1,0 +1,130 @@
+======================================================================
+MULTI-ENGINE DETECTION TEST SUITE
+======================================================================
+Base URL: http://localhost:5000/api/detect
+Total scenarios: 7
+======================================================================
+
+Testing: Normal HTTP traffic... Γ£ô OK
+
+Testing: Port Scan (SYN scan with S flag)... Γ£ô OK
+
+Testing: DoS Attack (high packet rate)... Γ£ô OK
+
+Testing: Failed Login Attempts... Γ£ô OK
+
+Testing: Privilege Escalation (root_shell attempt)... Γ£ô OK
+
+Testing: Suspicious File Creation... Γ£ô OK
+
+Testing: High Entropy Traffic (encrypted/tunneled)... Γ£ô OK
+
+
+======================================================================
+DETAILED RESULTS
+======================================================================
+
+======================================================================
+SCENARIO: normal_http
+Description: Normal HTTP traffic
+Status: 200
+
+  Verdict: normal (confidence: 100.0%)
+  Severity: low
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): normal     (conf: 100.0%) [normal]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: port_scan
+Description: Port Scan (SYN scan with S flag)
+Status: 200
+
+  Verdict: normal (confidence: 100.0%)
+  Severity: low
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): normal     (conf: 100.0%) [normal]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: dos_attack
+Description: DoS Attack (high packet rate)
+Status: 200
+
+  Verdict: normal (confidence: 100.0%)
+  Severity: low
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): normal     (conf: 100.0%) [normal]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: failed_login
+Description: Failed Login Attempts
+Status: 200
+
+  Verdict: attack (confidence: 95.0%)
+  Severity: high
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): attack     (conf:  90.0%) [r2l]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: privilege_escalation
+Description: Privilege Escalation (root_shell attempt)
+Status: 200
+
+  Verdict: attack (confidence: 99.0%)
+  Severity: critical
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): attack     (conf:  98.0%) [u2r]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: file_creation_attack
+Description: Suspicious File Creation
+Status: 200
+
+  Verdict: attack (confidence: 99.0%)
+  Severity: critical
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): attack     (conf:  98.0%) [u2r]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+======================================================================
+SCENARIO: high_entropy
+Description: High Entropy Traffic (encrypted/tunneled)
+Status: 200
+
+  Verdict: normal (confidence: 100.0%)
+  Severity: low
+  Engines participating: 2
+
+  Engine Verdicts:
+    ΓÇó signature            (signature ): normal     (conf: 100.0%) [normal]
+    ΓÇó threshold            (threshold ): normal     (conf: 100.0%) [normal]
+
+
+======================================================================
+SUMMARY
+======================================================================
+Successful requests: 7/7
+Total engine verdicts: 14
+
+Engine Participation:
+  ΓÇó signature             7x  [normal:4, attack:3]
+  ΓÇó threshold             7x  [normal:7]
+
+Missing/Not Responding: anomaly, honeypot, ml_primary, threat_intel
+======================================================================

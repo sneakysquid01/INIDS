@@ -37,10 +37,13 @@ class MLEngine(DetectionEngine):
         return "ml"
 
     def is_ready(self) -> bool:
-        return self._model is not None and hasattr(self._model, "predict")
+        ready = self._model is not None and hasattr(self._model, "predict")
+        logger.debug(f"MLEngine.is_ready() = {ready} (model={self._model is not None}, predict={hasattr(self._model, 'predict') if self._model else False})")
+        return ready
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
         # Validate required columns
+        logger.debug(f"MLEngine.evaluate() called with {len(features)} features")
         required_columns = set(FEATURE_COLUMNS)
         provided_columns = set(features.keys())
         missing_columns = required_columns - provided_columns
@@ -52,6 +55,7 @@ class MLEngine(DetectionEngine):
             )
             # If too many features missing, return low-confidence result
             if len(missing_columns) > 10:
+                logger.debug(f"Too many missing features ({len(missing_columns)}), returning unknown verdict")
                 return EngineResult(
                     engine_id=self._engine_id,
                     engine_type=self.engine_type,
@@ -78,9 +82,24 @@ class MLEngine(DetectionEngine):
                     logger.debug("Type conversion failed for %s=%s, using default", key, value)
 
         df = pd.DataFrame([row], columns=FEATURE_COLUMNS)
-        pred = int(self._model.predict(df)[0])
-        proba = self._model.predict_proba(df)[0]
+        logger.debug(f"Created DataFrame shape: {df.shape}, columns: {len(df.columns)}")
+        
+        try:
+            pred = int(self._model.predict(df)[0])
+            logger.debug(f"Model prediction: {pred}")
+        except Exception as e:
+            logger.exception(f"Model.predict() failed: {e}")
+            raise
+        
+        try:
+            proba = self._model.predict_proba(df)[0]
+            logger.debug(f"Model predict_proba: {proba}")
+        except Exception as e:
+            logger.exception(f"Model.predict_proba() failed: {e}")
+            raise
+            
         confidence = round(float(max(proba)) * 100, 2)
+        logger.debug(f"Confidence: {confidence}%")
 
         verdict = "attack" if pred == 1 else "normal"
         attack_type = features.get("attack_type", "unknown") if pred == 1 else "normal"

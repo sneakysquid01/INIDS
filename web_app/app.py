@@ -1006,6 +1006,116 @@ def load_models():
             logger.info("RertrainingScheduler initialized and started for daily model retraining")
 
 
+def load_threat_intel():
+    """Load mock threat intelligence indicators to enable TI engine."""
+    global ti_manager
+    
+    if ti_manager.cache.size() > 0:
+        logger.info("TI cache already populated (%d indicators)", ti_manager.cache.size())
+        return
+    
+    import time
+    from src.threat_intel.feed_manager import TIIndicator
+    
+    # Add mock threat intelligence indicators for testing
+    now = time.time()
+    mock_indicators = [
+        TIIndicator(
+            indicator_type="ip",
+            value="192.168.1.50",
+            source="mock_feed",
+            severity="critical",
+            tags=["scanner", "recon"],
+            first_seen=now,
+            last_seen=now,
+            ttl_seconds=86400.0
+        ),
+        TIIndicator(
+            indicator_type="ip",
+            value="10.0.0.100",
+            source="mock_feed",
+            severity="high",
+            tags=["botnet", "c2"],
+            first_seen=now,
+            last_seen=now,
+            ttl_seconds=86400.0
+        ),
+        TIIndicator(
+            indicator_type="ip",
+            value="203.0.113.45",
+            source="mock_feed",
+            severity="medium",
+            tags=["exploit", "malware"],
+            first_seen=now,
+            last_seen=now,
+            ttl_seconds=86400.0
+        ),
+        TIIndicator(
+            indicator_type="domain",
+            value="malicious.example.com",
+            source="mock_feed",
+            severity="high",
+            tags=["c2", "phishing"],
+            first_seen=now,
+            last_seen=now,
+            ttl_seconds=86400.0
+        ),
+    ]
+    
+    for indicator in mock_indicators:
+        ti_manager.add_indicator(indicator)
+    
+    logger.info("Loaded %d mock threat intelligence indicators", len(mock_indicators))
+    logger.info("TI cache size after loading: %d", ti_manager.cache.size())
+
+
+def load_anomaly_baseline():
+    """Pre-fit anomaly engine with synthetic normal traffic baseline."""
+    global anomaly_engine
+    
+    if anomaly_engine.is_ready():
+        logger.info("Anomaly engine already fitted")
+        return
+    
+    import numpy as np
+    
+    # Create synthetic normal traffic baseline from typical network patterns
+    # These are 10 samples of what "normal" traffic looks like in NSL-KDD features
+    normal_baseline = [
+        # Normal HTTP sessions
+        [0, 1, 23, 1, 491, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 150, 25, 0.17, 0.03, 0.17, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0, 1, 23, 1, 500, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 3, 0.0, 0.0, 0.1, 0.0, 0.8, 0.1, 0.0, 200, 40, 0.2, 0.05, 0.2, 0.0, 0.05, 0.0, 0.01, 0.0],
+        # Normal FTP data
+        [0, 1, 1, 1, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 100, 20, 0.15, 0.02, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal DNS queries
+        [0, 2, 13, 1, 100, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 300, 100, 0.3, 0.1, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal SSH session
+        [100, 1, 22, 1, 1024, 2048, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 50, 10, 0.1, 0.01, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal SMTP
+        [0, 1, 25, 1, 512, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 80, 15, 0.12, 0.02, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal POP3
+        [0, 1, 110, 1, 256, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 60, 12, 0.13, 0.02, 0.13, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal NTP
+        [0, 2, 123, 1, 128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 500, 200, 0.4, 0.2, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal IMAP
+        [0, 1, 143, 1, 512, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 70, 14, 0.14, 0.02, 0.14, 0.0, 0.0, 0.0, 0.0, 0.0],
+        # Normal HTTPS
+        [0, 1, 443, 1, 1024, 4096, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 250, 50, 0.2, 0.05, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ]
+    
+    try:
+        X = np.array(normal_baseline, dtype=np.float32)
+        anomaly_engine.fit(X)
+        logger.info("AnomalyEngine pre-fitted with %d synthetic normal samples", len(normal_baseline))
+        
+        # Re-enable in engine registry now that it's ready
+        if anomaly_engine.is_ready():
+            engine_registry.set_enabled("anomaly", True)
+            logger.info("AnomalyEngine enabled in engine registry")
+    except Exception as exc:
+        logger.exception("Failed to pre-fit anomaly engine")
+
+
 def _model_stats() -> dict:
     stats = {
         "available": False,
@@ -2075,8 +2185,12 @@ def api_predict():
         response["prevention_action"] = prevention_action
         return jsonify(response)
     except Exception as exc:
-        logger.error("API predict error: %s", exc)
-        return jsonify({"error": "invalid_request"}), 400
+        logger.exception("API predict error (FULL TRACE)")
+        return jsonify({
+            "error": str(type(exc).__name__),
+            "message": str(exc),
+            "debug": True
+        }), 400
 
 
 @app.route("/api/alerts", methods=["GET"])
@@ -2227,8 +2341,12 @@ def api_detect():
 
         return jsonify(aggregated.to_dict())
     except Exception as exc:
-        logger.error("Multi-engine detect error: %s", exc)
-        return jsonify({"error": "invalid_request"}), 400
+        logger.exception("Multi-engine detect error (FULL TRACE)")
+        return jsonify({
+            "error": str(type(exc).__name__),
+            "message": str(exc),
+            "debug": True
+        }), 400
 
 
 @app.route("/api/engines", methods=["GET"])

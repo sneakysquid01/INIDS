@@ -51,10 +51,14 @@ class AuthService:
         return self.require_api_keys or len(self.principals) > 0
 
     def authorize(self, required_role: str) -> tuple[bool, str]:
+        import sys
+        print(f"DEBUG authorize: required_role={required_role}, allow_unauthenticated={self.allow_unauthenticated}, enabled={self.enabled}", file=sys.stderr)
+        
         if required_role not in ROLE_RANK:
             return False, "unknown_role"
         
         if self.allow_unauthenticated:
+            print(f"DEBUG authorize: RETURNING TRUE due to allow_unauthenticated", file=sys.stderr)
             return True, "unauthenticated_allowed"
         
         if not self.enabled:
@@ -83,6 +87,11 @@ def require_role(required_role: str) -> Callable:
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # TEMPORARY DEBUG: Force bypass for all requests
+            print(f"FORCE BYPASS: allow_unauthenticated={_auth_service.allow_unauthenticated}")
+            if _auth_service.allow_unauthenticated:
+                return func(*args, **kwargs)
+            
             ok, reason = _auth_service.authorize(required_role)
             if not ok:
                 return jsonify({"error": "unauthorized", "reason": "access_denied"}), 401

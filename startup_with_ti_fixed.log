@@ -1,0 +1,126 @@
+DEBUG: INIDS_ALLOW_UNAUTHENTICATED = 1
+2026-04-23 02:21:18,631 matplotlib DEBUG: matplotlib data path: C:\Users\diwan\Desktop\INIDS\venv\Lib\site-packages\matplotlib\mpl-data
+2026-04-23 02:21:18,638 matplotlib DEBUG: CONFIGDIR=C:\Users\diwan\.matplotlib
+2026-04-23 02:21:18,640 matplotlib DEBUG: interactive is False
+2026-04-23 02:21:18,640 matplotlib DEBUG: platform is win32
+2026-04-23 02:21:18,690 matplotlib DEBUG: CACHEDIR=C:\Users\diwan\.matplotlib
+2026-04-23 02:21:18,693 matplotlib.font_manager DEBUG: Using fontManager instance from C:\Users\diwan\.matplotlib\fontlist-v390.json
+timestamp=2026-04-23 02:21:20,404 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=WebSocket (SocketIO) initialized successfully - REQUIRED for INIDS 2.0
+timestamp=2026-04-23 02:21:20,404 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Security middleware stack registered
+timestamp=2026-04-23 02:21:20,411 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=SQLite alert store initialized at data/alerts.db
+timestamp=2026-04-23 02:21:20,411 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=InMemoryAlertStore initialized (actually using SQLite for persistence)
+timestamp=2026-04-23 02:21:20,416 level=WARNING request_id=- source_ip=- risk_score=- action=- endpoint=- message=Could not connect to Elasticsearch: There is no current event loop in thread 'MainThread'.
+timestamp=2026-04-23 02:21:20,419 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Allowlist: loaded 2 entries from store
+timestamp=2026-04-23 02:21:20,420 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded 2 FP suppressions from persistent store
+timestamp=2026-04-23 02:21:20,421 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=SQLite ingestion queue initialized at data/ingestion.db
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded 11 signature rules from C:\Users\diwan\Desktop\INIDS\rules\default_rules.yaml
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine signature (type=signature, enabled=True, ready=True)
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine threshold (type=threshold, enabled=True, ready=True)
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine anomaly (type=anomaly, enabled=False, ready=False)
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine threat_intel (type=ti, enabled=True, ready=False)
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=HoneypotDetectionEngine initialized: ips=set(), ports=set(), enabled=False
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine honeypot (type=honeypot, enabled=True, ready=False)
+timestamp=2026-04-23 02:21:20,431 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Entity enrichment engine initialized with threat intel manager
+timestamp=2026-04-23 02:21:20,433 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Three-layer alert filter initialized with 6 rules
+timestamp=2026-04-23 02:21:20,433 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RealTimeStreamer started - real-time event broadcasting enabled
+timestamp=2026-04-23 02:21:20,433 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RealTimeStreamer initialized and started for real-time event broadcasting
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=DatasetCollector initialized at C:\Users\diwan\Desktop\INIDS\data\training.db
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=DatasetCollector initialized for training data collection
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=AttackStoryEngine initialized
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=ConfidenceBreakdownEngine initialized
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=LiveSystemPulse initialized with 60min window
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Perception layer initialized: AttackStory, ConfidenceBreakdown, LivePulse
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Starting perception integration...
+timestamp=2026-04-23 02:21:20,435 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Subscribed to DetectionEvent from EventBus
+timestamp=2026-04-23 02:21:20,437 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Started 2 perception worker threads
+timestamp=2026-04-23 02:21:20,437 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Perception integration layer started for real-time event processing
+DEBUG: auth_service.allow_unauthenticated = True
+DEBUG: auth_service.enabled = False
+DEBUG: Calling load_models() at startup to register ml_engine
+timestamp=2026-04-23 02:21:22,344 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model rf_nsl_kdd
+timestamp=2026-04-23 02:21:22,356 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model gb_nsl_kdd
+timestamp=2026-04-23 02:21:22,358 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model dt_nsl_kdd
+timestamp=2026-04-23 02:21:22,369 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model ab_nsl_kdd
+timestamp=2026-04-23 02:21:22,382 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model mlp_nsl_kdd
+timestamp=2026-04-23 02:21:22,424 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded model rf_nsl_kdd_multi
+timestamp=2026-04-23 02:21:22,424 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Registered engine ml_primary (type=ml, enabled=True, ready=True)
+timestamp=2026-04-23 02:21:22,425 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Retraining scheduler started
+timestamp=2026-04-23 02:21:22,425 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=RertrainingScheduler initialized and started for daily model retraining
+DEBUG: Calling load_threat_intel() at startup to enable threat_intel engine
+timestamp=2026-04-23 02:21:22,425 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Loaded 4 mock threat intelligence indicators
+timestamp=2026-04-23 02:21:22,426 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=TI cache size after loading: 4
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'web_app.app'
+ * Debug mode: off
+timestamp=2026-04-23 02:21:22,437 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.29.110:5000
+timestamp=2026-04-23 02:21:22,437 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=Press CTRL+C to quit
+timestamp=2026-04-23 02:21:39,121 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=LeaderElection: no Redis ù running as standalone leader
+timestamp=2026-04-23 02:21:39,124 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 400 (2.2ms) from 127.0.0.1
+timestamp=2026-04-23 02:21:39,125 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:21:39] "POST /api/detect HTTP/1.1" 400 -
+timestamp=2026-04-23 02:21:43,128 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 0 derived columns
+timestamp=2026-04-23 02:21:43,130 level=WARNING request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Missing features for ML evaluation: count, diff_srv_rate, dst_bytes, dst_host_count, dst_host_diff_srv_rate, dst_host_rerror_rate, dst_host_same_src_port_rate, dst_host_same_srv_rate, dst_host_serror_rate, dst_host_srv_count, dst_host_srv_diff_host_rate, dst_host_srv_rerror_rate, dst_host_srv_serror_rate, duration, flag, hot, is_guest_login, is_host_login, land, logged_in, num_access_files, num_compromised, num_failed_logins, num_file_creations, num_outbound_cmds, num_root, num_shells, protocol_type, rerror_rate, root_shell, same_srv_rate, serror_rate, service, src_bytes, srv_count, srv_diff_host_rate, srv_rerror_rate, srv_serror_rate, su_attempted, urgent, wrong_fragment (using defaults)
+timestamp=2026-04-23 02:21:43,130 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (8.9ms) from 127.0.0.1
+timestamp=2026-04-23 02:21:43,131 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:21:43] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:22:23,548 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/ti/feeds/mock message=POST /api/ti/feeds/mock -> 404 (5.3ms) from 127.0.0.1
+timestamp=2026-04-23 02:22:23,548 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:22:23] "POST /api/ti/feeds/mock HTTP/1.1" 404 -
+timestamp=2026-04-23 02:22:27,403 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/engines message=GET /api/engines -> 200 (0.2ms) from 127.0.0.1
+timestamp=2026-04-23 02:22:27,404 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:22:27] "GET /api/engines HTTP/1.1" 200 -
+timestamp=2026-04-23 02:22:36,870 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/ti/stats message=GET /api/ti/stats -> 404 (0.2ms) from 127.0.0.1
+timestamp=2026-04-23 02:22:36,870 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:22:36] "GET /api/ti/stats HTTP/1.1" 404 -
+timestamp=2026-04-23 02:22:51,065 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/threat-intel/stats message=GET /api/threat-intel/stats -> 200 (0.1ms) from 127.0.0.1
+timestamp=2026-04-23 02:22:51,066 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:22:51] "GET /api/threat-intel/stats HTTP/1.1" 200 -
+timestamp=2026-04-23 02:22:53,028 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/threat-intel/lookup message=POST /api/threat-intel/lookup -> 200 (0.2ms) from 127.0.0.1
+timestamp=2026-04-23 02:22:53,029 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:22:53] "POST /api/threat-intel/lookup HTTP/1.1" 200 -
+timestamp=2026-04-23 02:23:05,374 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/threat-intel/lookup message=POST /api/threat-intel/lookup -> 200 (0.2ms) from 127.0.0.1
+timestamp=2026-04-23 02:23:05,375 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:23:05] "POST /api/threat-intel/lookup HTTP/1.1" 200 -
+timestamp=2026-04-23 02:23:29,380 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:23:29,477 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (109.3ms) from 127.0.0.1
+timestamp=2026-04-23 02:23:29,478 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:23:29] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:24:54,495 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:24:54,579 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (92.5ms) from 127.0.0.1
+timestamp=2026-04-23 02:24:54,579 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:24:54] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:11,721 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:11,800 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (88.8ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:11,801 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:11] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:13,850 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:13,930 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (86.7ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:13,930 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:13] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:15,976 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:16,056 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (87.5ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:16,057 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:16] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:18,100 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:18,177 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (84.7ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:18,178 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:18] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:20,215 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:20,297 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (89.3ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:20,298 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:20] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:22,351 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:22,429 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (85.0ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:22,429 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:22] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:24,484 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:24,575 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (99.7ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:24,576 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:24] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:31,428 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:31,509 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (87.5ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:31,509 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:31] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:33,557 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:33,635 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (88.0ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:33,635 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:33] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:35,669 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:35,735 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (72.3ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:35,735 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:35] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:37,771 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:37,852 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (89.7ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:37,853 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:37] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:39,908 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:39,991 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (92.5ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:39,991 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:39] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:42,030 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:42,111 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (88.3ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:42,112 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:42] "POST /api/detect HTTP/1.1" 200 -
+timestamp=2026-04-23 02:25:44,158 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=Feature engineering: added 10 derived columns
+timestamp=2026-04-23 02:25:44,227 level=INFO request_id=- source_ip=127.0.0.1 risk_score=- action=- endpoint=/api/detect message=POST /api/detect -> 200 (76.1ms) from 127.0.0.1
+timestamp=2026-04-23 02:25:44,227 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=127.0.0.1 - - [23/Apr/2026 02:25:44] "POST /api/detect HTTP/1.1" 200 -

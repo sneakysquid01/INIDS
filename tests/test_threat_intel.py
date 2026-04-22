@@ -288,7 +288,7 @@ class TestLoadTiFeeds:
 def ti_app_client(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("appc")
     os.environ["INIDS_OPS_DB_PATH"] = str(tmp_path / "test_ops.db")
-    os.environ["INIDS_PIPELINE_ENABLED"] = "false"
+    os.environ["INIDS_PIPELINE_ENABLED"] = "true"
     from web_app.app import app as flask_app
     flask_app.config["TESTING"] = True
     with flask_app.test_client() as client:

@@ -12,7 +12,7 @@ class Settings:
     ops_db_path: str = "data/inids_ops.db"
     flask_secret_key: str = ""
     redis_url: str = ""
-    pipeline_enabled: bool = False
+    pipeline_enabled: bool = True
     pipeline_batch_size: int = 50
     pipeline_stream_key: str = "inids:flows"
     rate_limit_requests: int = 120
@@ -59,7 +59,7 @@ def load_settings() -> Settings:
     ops_db_path = os.getenv("OPS_DB_PATH", os.getenv("INIDS_OPS_DB_PATH", "data/inids_ops.db"))
     secret = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "")).strip()
     redis_url = os.getenv("REDIS_URL", "").strip()
-    pipeline_enabled = _safe_bool("INIDS_PIPELINE_ENABLED", False)
+    pipeline_enabled = _safe_bool("INIDS_PIPELINE_ENABLED", True)
     pipeline_batch_size = _safe_int("INIDS_PIPELINE_BATCH_SIZE", 50)
     pipeline_stream_key = os.getenv("INIDS_PIPELINE_STREAM_KEY", "inids:flows").strip() or "inids:flows"
     require_secret_key = os.getenv("INIDS_REQUIRE_SECRET_KEY", "0") == "1"
