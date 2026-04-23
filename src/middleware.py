@@ -216,8 +216,15 @@ class AuditLogMiddleware:
         elapsed_ms = (time.time() - request.start_time) * 1000
         
         # Get body sizes
-        request_body_size = int(request.environ.get('CONTENT_LENGTH', 0))
-        response_body_size = len(response.get_data()) if hasattr(response, 'get_data') else 0
+        request_body_size = int(request.environ.get('CONTENT_LENGTH', 0) or 0)
+
+        # Safe handling for streamed/static responses
+        response_body_size = 0
+        if not getattr(response, "direct_passthrough", False):
+            try:
+                response_body_size = len(response.get_data())
+            except Exception:
+                response_body_size = 0
         
         # Extract user from JWT or request
         user = request.headers.get('X-User-ID', 'anonymous')
@@ -227,7 +234,7 @@ class AuditLogMiddleware:
         if response.status_code >= 400:
             try:
                 error = response.get_json().get('error') if response.is_json else None
-            except:
+            except Exception:
                 error = None
         
         entry = AuditLogEntry(
@@ -267,7 +274,6 @@ class AuditLogMiddleware:
                 asdict(log) for log in self.logs
                 if log.user == user and log.timestamp > cutoff_iso
             ]
-
 
 class CORSMiddleware:
     """CORS middleware with security controls."""
