@@ -1,20 +1,87 @@
-<!doctype html>
-<html>
-<head>
-    <title>INIDS - Realtime Events</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-5.2.3-dist/css/bootstrap.min.css') }}">
-    <style>
-        body { background: #0f172a; color: #e2e8f0; }
+{% extends "base.html" %}
+
+{% block title %}Realtime Events{% endblock %}
+{% block page_title %}Realtime Events{% endblock %}
+
+{% block extra_css %}
+body { background: #0f172a; color: #e2e8f0; }
         .panel { background: #111c36; border: 1px solid #2b3b63; border-radius: 12px; padding: 16px; }
         .metric { font-size: 1.8rem; font-weight: 700; }
         .muted { color: #9fb0d3; }
         .feed { max-height: 420px; overflow-y: auto; }
         .feed-item { border-bottom: 1px solid #233155; padding: 8px 0; }
         .badge-soft { background: #24355f; color: #d8e4ff; }
-    </style>
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-dark">
+
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.page-title {
+    margin: 0;
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    line-height: 1.1;
+}
+
+.page-subtitle {
+    margin-top: 6px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+}
+
+.page-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.empty-state {
+    padding: 24px;
+    text-align: center;
+    color: rgba(255,255,255,0.5);
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.sev-critical-row {
+    background: rgba(239,68,68,0.08);
+}
+
+.sev-high-row {
+    background: rgba(245,158,11,0.06);
+}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Realtime Events</h1>
+    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+  </div>
+  <div class="page-meta">
+    <span class="status-chip">LIVE</span>
+    <span class="badge-info">UNIFIED UI</span>
+  </div>
+</div>
+
+{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
+<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+  <div class="pulse-dot"></div>
+  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+</div>
+{% endif %}
+
+<div class="ds-card layer-panel interactive">
+  <div class="ds-card-body">
+<nav class="navbar navbar-dark bg-dark">
         <div class="container">
             <a class="navbar-brand" href="/">INIDS</a>
             <a href="/dashboard" class="btn btn-outline-light btn-sm">Ops Dashboard</a>
@@ -74,9 +141,14 @@
         </div>
     </div>
 
-    {% if socketio_enabled %}
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if socketio_enabled %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
         let detections = 0;
         let alerts = 0;
         let blocks = 0;
@@ -154,6 +226,7 @@
             refreshMetrics(risk);
         });
     </script>
-    {% endif %}
-</body>
-</html>
+{% endif %}
+{% endblock %}
+
+

@@ -1,8 +1,59 @@
 {% extends "base.html" %}
 
 {% block title %}Allowlist Manager{% endblock %}
+{% block page_title %}Allowlist{% endblock %}
+
+{% block extra_css %}
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.page-title {
+    margin: 0;
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    line-height: 1.1;
+}
+
+.page-subtitle {
+    margin-top: 6px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+}
+
+.page-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+{% endblock %}
 
 {% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Allowlist Manager</h1>
+        <div class="page-subtitle">TRUSTED ASSET MANAGEMENT</div>
+    </div>
+    <div class="page-meta">
+        <span class="status-chip">LIVE</span>
+        <span class="badge-safe">ALLOWLIST</span>
+    </div>
+</div>
+
+{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
+<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+    <div class="pulse-dot"></div>
+    <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+</div>
+{% endif %}
+
 <div class="container-fluid mt-4">
     <!-- Header -->
     <div class="row mb-4">
@@ -19,33 +70,33 @@
     <!-- Stats Cards -->
     <div class="row mb-4">
         <div class="col-md-3 mb-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-title text-muted">Total Entries</h6>
+            <div class="ds-card layer-panel">
+                <div class="ds-card-body">
+                    <h6 class="ds-card-title text-muted">Total Entries</h6>
                     <h2 id="totalCount">0</h2>
                 </div>
             </div>
         </div>
         <div class="col-md-3 mb-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-title text-muted">IPs Allowlisted</h6>
+            <div class="ds-card layer-panel">
+                <div class="ds-card-body">
+                    <h6 class="ds-card-title text-muted">IPs Allowlisted</h6>
                     <h2 id="ipCount">0</h2>
                 </div>
             </div>
         </div>
         <div class="col-md-3 mb-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-title text-muted">Domains Allowlisted</h6>
+            <div class="ds-card layer-panel">
+                <div class="ds-card-body">
+                    <h6 class="ds-card-title text-muted">Domains Allowlisted</h6>
                     <h2 id="domainCount">0</h2>
                 </div>
             </div>
         </div>
         <div class="col-md-3 mb-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-title text-muted">Last Updated</h6>
+            <div class="ds-card layer-panel">
+                <div class="ds-card-body">
+                    <h6 class="ds-card-title text-muted">Last Updated</h6>
                     <p id="lastUpdated" class="mb-0 small">--</p>
                 </div>
             </div>
@@ -55,17 +106,17 @@
     <!-- Search & Filter -->
     <div class="row mb-3">
         <div class="col-md-6">
-            <input type="text" id="searchBox" class="form-control" placeholder="🔍 Search by IP or domain..." onkeyup="filterAllowlist()">
+            <input type="text" id="searchBox" class="ds-input" placeholder="🔍 Search by IP or domain..." onkeyup="filterAllowlist()">
         </div>
         <div class="col-md-3">
-            <select id="typeFilter" class="form-select" onchange="filterAllowlist()">
+            <select id="typeFilter" class="ds-select" onchange="filterAllowlist()">
                 <option value="">All Types</option>
                 <option value="ip">IP Address</option>
                 <option value="domain">Domain</option>
             </select>
         </div>
         <div class="col-md-3">
-            <select id="reasonFilter" class="form-select" onchange="filterAllowlist()">
+            <select id="reasonFilter" class="ds-select" onchange="filterAllowlist()">
                 <option value="">All Reasons</option>
                 <option value="internal">Internal Network</option>
                 <option value="trusted_partner">Trusted Partner</option>
@@ -77,9 +128,9 @@
     </div>
 
     <!-- Allowlist Table -->
-    <div class="card">
+    <div class="ds-card layer-panel">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 ds-table">
                 <thead class="table-light">
                     <tr>
                         <th>Entry</th>
@@ -126,13 +177,13 @@
                 <form id="addForm">
                     <div class="mb-3">
                         <label for="entryInput" class="form-label">IP Address or Domain *</label>
-                        <input type="text" class="form-control" id="entryInput" placeholder="e.g., 192.168.1.10 or trusted.com" required>
+                        <input type="text" class="ds-input" id="entryInput" placeholder="e.g., 192.168.1.10 or trusted.com" required>
                         <small class="text-muted">Type will be auto-detected</small>
                     </div>
 
                     <div class="mb-3">
                         <label for="reasonSelect" class="form-label">Reason *</label>
-                        <select class="form-select" id="reasonSelect" required>
+                        <select class="ds-select" id="reasonSelect" required>
                             <option value="">Select a reason...</option>
                             <option value="internal">Internal Network</option>
                             <option value="trusted_partner">Trusted Partner</option>
@@ -144,7 +195,7 @@
 
                     <div class="mb-3">
                         <label for="notesInput" class="form-label">Notes (Optional)</label>
-                        <textarea class="form-control" id="notesInput" rows="3" placeholder="Additional notes..."></textarea>
+                        <textarea class="ds-input" id="notesInput" rows="3" placeholder="Additional notes..."></textarea>
                     </div>
 
                     <div class="alert alert-info small">
@@ -232,3 +283,4 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/allowlist.js') }}"></script>
 {% endblock %}
+
