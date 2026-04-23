@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -421,6 +422,83 @@
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+    /* ───────── SOC ENHANCEMENT SYSTEM ───────── */
+
+.threat-active {
+  box-shadow: 0 0 0 1px rgba(232,65,58,0.4),
+              0 0 16px rgba(232,65,58,0.25);
+}
+
+.pulse-soft {
+  animation: pulseSoft 2.5s infinite;
+}
+@keyframes pulseSoft {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.panel-elevated {
+  background: linear-gradient(180deg, #141826, #10131a);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.panel.alert-panel-active {
+  box-shadow: 0 0 18px rgba(232,65,58,0.25);
+}
+
+.status-cell.alerts {
+  border-left: 2px solid var(--red);
+}
+.status-cell.blocked {
+  border-left: 2px solid var(--amber);
+}
+
+tr.sev-critical-row {
+  background: rgba(232,65,58,0.08);
+}
+tr.sev-high-row {
+  background: rgba(240,165,0,0.06);
+}
+
+.timeline-dot.alert {
+  box-shadow: 0 0 6px var(--red);
+}
+
+.panel:hover {
+  transform: translateY(-2px);
+  transition: all 0.2s ease;
+}
+
+button:active {
+  transform: scale(0.96);
+}
+.sidebar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.dot-green { background: var(--green); }
+.dot-amber { background: var(--amber); }
+.dot-blue  { background: var(--blue); }
+.dot-red   { background: var(--red); }
+
+.btn-danger {
+  background: rgba(232,65,58,0.15);
+  color: var(--red-lt);
+  border: 1px solid rgba(232,65,58,0.3);
+  padding: 3px 8px;
+  font-size: 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn-danger:hover {
+  background: rgba(232,65,58,0.25);
+}
+
   </style>
 </head>
 <body>
@@ -451,110 +529,174 @@
 <div class="dash-layout">
 
   <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-label">Navigation</div>
-      <a class="sidebar-item active" href="/">
-        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
-          <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
-          <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
-          <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
-          <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
-        </svg>
-        Overview
-      </a>
-      <a class="sidebar-item" href="/predict">
-        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
-          <path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-        Predictions
-        <span class="sidebar-badge badge-warn">{{ metrics_snapshot.predictions_total }}</span>
-      </a>
-      <a class="sidebar-item" href="/models">
-        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
-          <path d="M2 12L6 6l3 4 2-3 3 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        Models
-      </a>
+<aside class="sidebar">
+
+  <!-- NAVIGATION -->
+<div class="sidebar-section">
+  <div class="sidebar-label">Navigation</div>
+
+  <!-- Overview -->
+  <a class="sidebar-item active" href="/" title="Dashboard Overview">
+    <span class="sidebar-dot dot-green"></span>
+    <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+    Overview
+  </a>
+
+  <!-- Predictions -->
+  <a class="sidebar-item" href="/predict" title="Run ML predictions on network data">
+    <span class="sidebar-dot dot-amber"></span>
+    <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Predictions
+    <span class="sidebar-badge badge-warn pulse-soft">
+      {{ metrics_snapshot.predictions_total }}
+    </span>
+  </a>
+
+  <!-- Models -->
+  <a class="sidebar-item" href="/models" title="View trained ML models">
+    <span class="sidebar-dot dot-blue"></span>
+    <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none">
+      <path d="M2 12L6 6l3 4 2-3 3 5"
+        stroke="currentColor"
+        stroke-width="1.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+    </svg>
+      Models
+    </a>
+  </div>
+
+  <!-- SYSTEM -->
+  <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
+    <div class="sidebar-label">System</div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Auth</span>
+      {% if auth_info.enabled %}
+      <span class="stat-mini-val" style="color: var(--green);">Enabled</span>
+      {% else %}
+      <span class="stat-mini-val" style="color: var(--amber);">Disabled</span>
+      {% endif %}
     </div>
 
-    <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
-      <div class="sidebar-label">System</div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Auth</span>
-        {% if auth_info.enabled %}
-        <span class="stat-mini-val" style="color: var(--green);">Enabled</span>
-        {% else %}
-        <span class="stat-mini-val" style="color: var(--amber);">Disabled</span>
-        {% endif %}
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Mode</span>
-        <span class="stat-mini-val">{{ policy.mode }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Dry Run</span>
-        <span class="stat-mini-val">{{ "Yes" if policy.dry_run else "No" }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Firewall</span>
-        <span class="stat-mini-val">{{ firewall_adapter }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Queue</span>
-        <span class="stat-mini-val">{{ queue_size }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Rate Limit</span>
-        <span class="stat-mini-val">{{ rate_limit_requests }}/{{ rate_limit_window_seconds }}s</span>
+    <div class="stat-mini">
+      <span class="stat-mini-label">Mode</span>
+      <span class="stat-mini-val">{{ policy.mode }}</span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Dry Run</span>
+      <span class="stat-mini-val">
+        {{ "Yes" if policy.dry_run else "No" }}
+      </span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Firewall</span>
+      <span class="stat-mini-val">{{ firewall_adapter }}</span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Queue</span>
+      <span class="stat-mini-val">{{ queue_size }}</span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Rate Limit</span>
+      <span class="stat-mini-val">
+        {{ rate_limit_requests }}/{{ rate_limit_window_seconds }}s
+      </span>
+    </div>
+  </div>
+
+  <!-- EVENT COUNTERS -->
+  <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
+    <div class="sidebar-label">Event Counters</div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Requests</span>
+      <span class="stat-mini-val">
+        {{ metrics_snapshot.requests_total }}
+      </span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Alerts</span>
+      <span class="stat-mini-val pulse-soft" style="color: var(--red-lt);">
+        {{ metrics_snapshot.alerts_total }}
+      </span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Actions</span>
+      <span class="stat-mini-val" style="color: var(--amber-lt);">
+        {{ metrics_snapshot.prevention_actions_total }}
+      </span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Rate Ltd</span>
+      <span class="stat-mini-val">
+        {{ metrics_snapshot.rate_limited_total }}
+      </span>
+    </div>
+
+    <div class="stat-mini">
+      <span class="stat-mini-label">Unauth</span>
+      <span class="stat-mini-val">
+        {{ metrics_snapshot.unauthorized_total }}
+      </span>
+    </div>
+  </div>
+
+</aside>
+
+<!-- MAIN -->
+<main class="main-content">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Analytics Dashboard</h1>
+      <div class="page-subtitle">
+        THREAT MONITORING — REAL-TIME ANALYSIS ENGINE
       </div>
     </div>
 
-    <div class="sidebar-section" style="border-top: 1px solid var(--border); padding-top: 16px;">
-      <div class="sidebar-label">Event Counters</div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Requests</span>
-        <span class="stat-mini-val">{{ metrics_snapshot.requests_total }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Alerts</span>
-        <span class="stat-mini-val" style="color: var(--red-lt);">{{ metrics_snapshot.alerts_total }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Actions</span>
-        <span class="stat-mini-val" style="color: var(--amber-lt);">{{ metrics_snapshot.prevention_actions_total }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Rate Ltd</span>
-        <span class="stat-mini-val">{{ metrics_snapshot.rate_limited_total }}</span>
-      </div>
-      <div class="stat-mini">
-        <span class="stat-mini-label">Unauth</span>
-        <span class="stat-mini-val">{{ metrics_snapshot.unauthorized_total }}</span>
-      </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      {% if policy.dry_run %}
+      <span class="panel-tag tag-amber">DRY RUN</span>
+      {% endif %}
+
+      <span class="panel-tag tag-cyan">
+        {{ policy.mode | upper }}
+      </span>
+
+      <span class="panel-tag tag-muted">
+        THRESHOLD {{ policy.confidence_block_threshold }}%
+      </span>
     </div>
-  </aside>
+  </div>
 
-  <!-- MAIN -->
-  <main class="main-content">
-
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Analytics Dashboard</h1>
-        <div class="page-subtitle">THREAT MONITORING — REAL-TIME ANALYSIS ENGINE</div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        {% if policy.dry_run %}
-        <span class="panel-tag tag-amber">DRY RUN</span>
-        {% endif %}
-        <span class="panel-tag tag-cyan">{{ policy.mode | upper }}</span>
-        <span class="panel-tag tag-muted">THRESHOLD {{ policy.confidence_block_threshold }}%</span>
-      </div>
-    </div>
-
+  <!-- SYSTEM STATUS -->
+  <div style="margin: 16px 0 20px 0;">
+    <span class="panel-tag {% if metrics_snapshot.alerts_total > 0 %}tag-red pulse-soft{% else %}tag-green{% endif %}">
+      {% if metrics_snapshot.alerts_total > 0 %}
+        🚨 UNDER ATTACK
+      {% else %}
+        ✅ NORMAL
+      {% endif %}
+    </span>
+  </div>
     <!-- STATUS STRIP -->
-    <div class="status-strip" style="margin-bottom: 20px;">
+    <div class="status-strip {% if metrics_snapshot.alerts_total > 0 %}threat-active{% endif %}" style="margin-bottom: 20px;">
       <div class="status-cell">
         <div class="status-indicator ind-cyan"></div>
         <div>
@@ -571,15 +713,15 @@
           <div class="status-cell-sub">analysed</div>
         </div>
       </div>
-      <div class="status-cell">
-        <div class="status-indicator ind-red"></div>
+      <div class="status-cell alerts">
+        <div class="status-indicator ind-red pulse-soft"></div>
         <div>
           <div class="status-cell-label">Alerts</div>
           <div class="status-cell-value">{{ metrics_snapshot.alerts_total }}</div>
           <div class="status-cell-sub">triggered</div>
         </div>
       </div>
-      <div class="status-cell">
+      <div class="status-cell blocked">
         <div class="status-indicator ind-amber"></div>
         <div>
           <div class="status-cell-label">Blocked</div>
@@ -593,7 +735,7 @@
     <div class="grid-main">
 
       <!-- MODEL ANALYTICS -->
-      <div class="panel">
+      <div class="panel panel-elevated">
         <div class="panel-header">
           <div class="panel-title">
             <span class="panel-title-accent accent-cyan"></span>
@@ -622,7 +764,7 @@
           </div>
           <div class="metric-cell">
             <div class="metric-cell-label">Accuracy</div>
-            <div class="metric-cell-value val-cyan">{{ model_stats.accuracy }}%</div>
+            <div class="metric-cell-value val-cyan val-cyan">{{ model_stats.accuracy }}%</div>
           </div>
         </div>
 
@@ -669,7 +811,7 @@
       <div style="display: flex; flex-direction: column; gap: 16px;">
 
         <!-- POLICY -->
-        <div class="panel">
+        <div class="panel panel-elevated">
           <div class="panel-header">
             <div class="panel-title">
               <span class="panel-title-accent accent-amber"></span>
@@ -737,54 +879,72 @@
     <div class="grid-2">
 
       <!-- RECENT ALERTS -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <span class="panel-title-accent accent-red"></span>
-            Recent Alerts
-          </div>
-          {% if recent_alerts %}
-          <span class="panel-tag tag-red">{{ recent_alerts|length }} ACTIVE</span>
-          {% else %}
-          <span class="panel-tag tag-muted">CLEAR</span>
-          {% endif %}
-        </div>
-        <div class="panel-body-sm">
-          {% if recent_alerts %}
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr><th>ID</th><th>Severity</th><th>Classification</th><th>Confidence</th></tr>
-              </thead>
-              <tbody>
-                {% for alert in recent_alerts %}
-                <tr>
-                  <td class="mono-val">{{ alert.id }}</td>
-                  <td>
-                    <span class="
-                      {% if alert.severity == 'critical' %}sev-critical
-                      {% elif alert.severity == 'high' %}sev-high
-                      {% elif alert.severity == 'medium' %}sev-medium
-                      {% else %}sev-low{% endif %}
-                    " style="font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
-                      {{ alert.severity }}
-                    </span>
-                  </td>
-                  <td>{{ alert.prediction }}</td>
-                  <td><span class="mono-val">{{ alert.confidence }}%</span></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <div class="empty-state">No alerts captured</div>
-          {% endif %}
-        </div>
-      </div>
+<div class="panel panel-elevated {% if recent_alerts %}alert-panel-active threat-active{% endif %}">
+  <div class="panel-header">
+    <div class="panel-title">
+      <span class="panel-title-accent accent-red"></span>
+      Recent Alerts
+    </div>
+    {% if recent_alerts %}
+    <span class="panel-tag tag-red pulse-soft">{{ recent_alerts|length }} ACTIVE</span>
+    {% else %}
+    <span class="panel-tag tag-muted">CLEAR</span>
+    {% endif %}
+  </div>
+
+  <div class="panel-body-sm">
+    {% if recent_alerts %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <!-- ✅ Added Actions column -->
+          <tr>
+            <th>ID</th>
+            <th>Severity</th>
+            <th>Classification</th>
+            <th>Confidence</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for alert in recent_alerts %}
+          <tr class="{% if alert.severity == 'critical' %}sev-critical-row pulse-soft{% elif alert.severity == 'high' %}sev-high-row{% endif %}">
+            <td class="mono-val">{{ alert.id }}</td>
+
+            <td>
+              <span class="
+                {% if alert.severity == 'critical' %}sev-critical
+                {% elif alert.severity == 'high' %}sev-high
+                {% elif alert.severity == 'medium' %}sev-medium
+                {% else %}sev-low{% endif %}
+              " style="font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                {{ alert.severity }}
+              </span>
+            </td>
+
+            <td>{{ alert.prediction }}</td>
+
+            <td>
+              <span class="mono-val">{{ alert.confidence }}%</span>
+            </td>
+
+            <!-- ✅ Action Layer Added -->
+            <td>
+              <button class="btn-danger">Block</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No alerts captured</div>
+    {% endif %}
+  </div>
+</div>
 
       <!-- PREVENTION ACTIONS -->
-      <div class="panel">
+      <div class="panel panel-elevated">
         <div class="panel-header">
           <div class="panel-title">
             <span class="panel-title-accent accent-amber"></span>
@@ -832,7 +992,7 @@
     <div class="grid-2">
 
       <!-- ACTIVE BLOCKS -->
-      <div class="panel">
+      <div class="panel panel-elevated">
         <div class="panel-header">
           <div class="panel-title">
             <span class="panel-title-accent accent-red"></span>
@@ -867,7 +1027,7 @@
       </div>
 
       <!-- AUDIT LOG -->
-      <div class="panel">
+      <div class="panel panel-elevated">
         <div class="panel-header">
           <div class="panel-title">
             <span class="panel-title-accent accent-cyan"></span>
@@ -911,7 +1071,7 @@
           {% for item in action_timeline %}
           <div class="timeline-item">
             <div class="timeline-when">{{ item.when }}</div>
-            <div class="timeline-dot" style="background:{% if item.type == 'alert' %}var(--red){% elif item.type == 'block' %}var(--amber){% else %}var(--cyan){% endif %};"></div>
+            <div class="timeline-dot {% if item.type == 'alert' %}alert pulse-soft{% endif %}" style="background:{% if item.type == 'alert' %}var(--red){% elif item.type == 'block' %}var(--amber){% else %}var(--cyan){% endif %};"></div>
             <div class="timeline-content">
               <div class="timeline-type">{{ item.type | upper }}</div>
               <div class="timeline-msg">{{ item.message }}</div>

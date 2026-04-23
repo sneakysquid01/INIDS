@@ -707,9 +707,95 @@ def _emit_realtime(event_name: str, payload: dict) -> None:
         logger.exception("Failed to emit websocket event '%s'", event_name)
 
 
+def _build_dashboard_metrics_payload(
+    *,
+    alerts: list[dict] | None = None,
+    recent_actions: list[dict] | None = None,
+) -> dict[str, object]:
+    alerts = alerts if alerts is not None else ops_store.list_alerts(limit=100)
+    recent_actions = recent_actions if recent_actions is not None else ops_store.list_actions(limit=100)
+
+    active_attacks = sum(
+        1
+        for action in recent_actions
+        if str(action.get("action", "")).strip().lower() in {"block", "rate_limit"}
+    )
+    blocked = sum(
+        1
+        for action in recent_actions
+        if str(action.get("action", "")).strip().lower() == "block"
+    )
+    under_review = sum(
+        1
+        for alert in alerts
+        if str(alert.get("status", "")).strip().lower() in {"pending", "pending_approval", "reviewing", "escalated"}
+    )
+
+    one_hour_ago = time.time() - 3600
+    recent_last_hour = [
+        action for action in recent_actions if _to_epoch_seconds(action.get("created_at"), default=0.0) > one_hour_ago
+    ]
+    last_hour_attacks = len(recent_last_hour)
+    last_hour_blocks = sum(
+        1
+        for action in recent_last_hour
+        if str(action.get("action", "")).strip().lower() == "block"
+    )
+
+    feedback_stats = fp_manager.stats()
+    false_positives = sum(int(row.get("false_positives", 0)) for row in feedback_stats)
+    total_feedback = sum(int(row.get("total", 0)) for row in feedback_stats)
+    fp_rate = round((false_positives / total_feedback * 100) if total_feedback else 0, 1)
+
+    return {
+        "system_uptime": "4.2h",
+        "system_health": 98,
+        "system_capacity": 45,
+        "active_attacks": active_attacks,
+        "blocked": blocked,
+        "active_alerts": min(len(alerts), 99),
+        "under_review": under_review,
+        "last_hour_attacks": last_hour_attacks,
+        "last_hour_blocks": last_hour_blocks,
+        "fp_rate": fp_rate,
+    }
+
+
+def _build_realtime_state(*, alert_limit: int = 200, action_limit: int = 50) -> dict[str, object]:
+    alerts = ops_store.list_alerts(limit=max(1, min(alert_limit, 200)))
+    recent_actions = ops_store.list_actions(limit=max(1, min(action_limit, 200)))
+    dashboard_metrics = _build_dashboard_metrics_payload(alerts=alerts, recent_actions=recent_actions)
+
+    active_blocked_ips = len(ops_store.list_active_blocks(limit=5000))
+    live_system_pulse.update_blocked_ips(active_blocked_ips)
+    pulse = live_system_pulse.get_pulse_status()
+
+    pending_actions = [
+        action
+        for action in recent_actions
+        if str(action.get("status") or "").strip().lower() in {"pending", "pending_approval", "reviewing"}
+        or not bool(action.get("executed"))
+    ]
+
+    return {
+        **dashboard_metrics,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "alerts": alerts,
+        "alertsCount": len(alerts),
+        "actions": recent_actions,
+        "pendingActions": pending_actions,
+        "pulse": pulse,
+        "current": pulse.get("current", {}),
+        "rolling_averages": pulse.get("rolling_averages", {}),
+        "status": pulse.get("status"),
+        "pulse_strength": pulse.get("pulse_strength"),
+    }
+
+
 def _on_detection_realtime(event: DetectionEvent) -> None:
     metrics_service.inc("detection_events_total")
     _emit_realtime("DetectionEvent", event.to_dict())
+    _emit_realtime("metrics.update", _build_realtime_state())
 
 
 def _on_risk_realtime(event: RiskScoreEvent) -> None:
@@ -719,6 +805,7 @@ def _on_risk_realtime(event: RiskScoreEvent) -> None:
 def _on_action_realtime(event: ActionEvent) -> None:
     metrics_service.inc("action_events_total")
     _emit_realtime("ActionEvent", event.to_dict())
+    _emit_realtime("metrics.update", _build_realtime_state())
 
 
 def _on_detection_siem(event: DetectionEvent) -> None:
@@ -1521,55 +1608,9 @@ def dashboard_main():
 def api_dashboard_metrics():
     """Get current dashboard metrics."""
     try:
-        now = datetime.now(timezone.utc)
-        recent_actions = ops_store.list_actions(limit=100)
-        
-        # Count active attacks and blocks (case-insensitive across legacy/new rows).
-        active_attacks = sum(
-            1
-            for a in recent_actions
-            if str(a.get("action", "")).strip().lower() in {"block", "rate_limit"}
-        )
-        blocked = sum(1 for a in recent_actions if str(a.get("action", "")).strip().lower() == "block")
-        active_alerts = len(ops_store.list_alerts(limit=100))
-        under_review = sum(
-            1
-            for a in ops_store.list_alerts(limit=100)
-            if str(a.get("status", "")).strip().lower() in {"pending", "pending_approval", "reviewing", "escalated"}
-        )
-        
-        # Calculate last hour metrics
-        import time
-        one_hour_ago = time.time() - 3600
-        recent_last_hour = [
-            a for a in recent_actions if _to_epoch_seconds(a.get("created_at"), default=0.0) > one_hour_ago
-        ]
-        last_hour_attacks = len(recent_last_hour)
-        last_hour_blocks = sum(
-            1
-            for a in recent_last_hour
-            if str(a.get("action", "")).strip().lower() == "block"
-        )
-        
-        # Calculate false positive rate
-        feedback_stats = fp_manager.stats()
-        false_positives = sum(int(row.get("false_positives", 0)) for row in feedback_stats)
-        total_feedback = sum(int(row.get("total", 0)) for row in feedback_stats)
-        fp_rate = round((false_positives / total_feedback * 100) if total_feedback else 0, 1)
-        
-        return jsonify({
-            "system_uptime": "4.2h",
-            "system_health": 98,
-            "system_capacity": 45,
-            "active_attacks": active_attacks,
-            "blocked": blocked,
-            "active_alerts": min(active_alerts, 99),  # cap at 99 for display
-            "under_review": under_review,
-            "last_hour_attacks": last_hour_attacks,
-            "last_hour_blocks": last_hour_blocks,
-            "fp_rate": fp_rate,
-            "timestamp": now.isoformat()
-        })
+        payload = _build_dashboard_metrics_payload()
+        payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+        return jsonify(payload)
     except Exception as e:
         logger.exception("Error retrieving dashboard metrics")
         return jsonify({"error": str(e)}), 500
@@ -3581,21 +3622,25 @@ def _module_update_broadcaster():
     global _update_thread_stop
     while not _update_thread_stop:
         try:
-            alerts = ops_store.list_alerts(limit=50)
+            state = _build_realtime_state()
+            alerts = state.get("alerts", [])
+            timestamp = state.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+            socketio.emit("metrics.update", state, namespace="/events")
             
             # Broadcast to real-time-detection subscribers
             if alerts:
                 socketio.emit('module_update', {
                     'module_id': 'real-time-detection',
                     'data': {'recent_events': alerts, 'event_count': len(alerts)},
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+                    'timestamp': timestamp
                 }, to='module_real-time-detection')
             
             # Broadcast to multi-engine-voting subscribers
             socketio.emit('module_update', {
                 'module_id': 'multi-engine-voting',
                 'data': {'events_processed': len(alerts)},
-                'timestamp': datetime.now(timezone.utc).isoformat()
+                'timestamp': timestamp
             }, to='module_multi-engine-voting')
             
             time.sleep(2)
@@ -3920,11 +3965,16 @@ def broadcast_module_update(module_id, data):
 def handle_events_connect():
     """Client connected to /events namespace for real-time events."""
     logger.info(f"Real-time events client connected: {request.sid}")
+    _start_module_update_broadcaster()
     emit('connection_response', {
         'status': 'connected',
         'message': 'Connected to real-time event stream',
         'namespace': '/events'
     })
+    try:
+        emit("metrics.update", _build_realtime_state())
+    except Exception:
+        logger.exception("Failed to emit initial metrics.update snapshot")
 
 
 @socketio.on('disconnect', namespace='/events')

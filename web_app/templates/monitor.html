@@ -489,78 +489,116 @@
         </div>
     </div>
 
-    <!-- Socket.IO for real-time updates -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
     <script>
-        // Connect to WebSocket
-        const socket = io('/events');
+        function updateMetricsFromState(data) {
+            if (!data || typeof data !== 'object') {
+                return;
+            }
 
-        socket.on('connect', function() {
-            console.log('Connected to real-time events');
-        });
+            const pulse = data.pulse || {};
+            const current = pulse.current || data.current || {};
+            const totalAlerts = typeof data.alertsCount === 'number'
+                ? data.alertsCount
+                : (typeof data.active_alerts === 'number' ? data.active_alerts : 0);
+            const blockedCount = typeof data.blocked === 'number'
+                ? data.blocked
+                : (current.blocked_ips || 0);
 
-        socket.on('disconnect', function() {
-            console.log('Disconnected from real-time events');
-        });
+            document.getElementById('flows-value').textContent = Math.round(current.flows_per_second || 0).toLocaleString();
+            document.getElementById('flows-bar').style.width = Math.min(100, ((current.flows_per_second || 0) / 50000) * 100) + '%';
 
-        // Update metrics every second from real pulse data
-        setInterval(updateMetrics, 1000);
+            document.getElementById('alerts-minute-value').textContent = current.alerts_per_minute || 0;
+            document.getElementById('alerts-bar').style.width = Math.min(100, ((current.alerts_per_minute || 0) / 10) * 100) + '%';
 
-        function updateMetrics() {
-            // Fetch real pulse data from perception layer API
-            fetch('/api/perception/pulse')
-                .then(response => response.json())
-                .then(pulse => {
-                    const current = pulse.current || {};
-                    const avg = pulse.rolling_averages || {};
+            document.getElementById('blocked-ips-value').textContent = current.blocked_ips || 0;
+            document.getElementById('blocked-bar').style.width = Math.min(100, ((current.blocked_ips || 0) / 10) * 100) + '%';
 
-                    document.getElementById('flows-value').textContent = Math.round(current.flows_per_second || 0).toLocaleString();
-                    document.getElementById('flows-bar').style.width = Math.min(100, ((current.flows_per_second || 0) / 50000) * 100) + '%';
+            document.getElementById('accuracy-value').textContent = (current.model_accuracy_percent || 95).toFixed(1) + '%';
+            document.getElementById('accuracy-bar').style.width = (current.model_accuracy_percent || 95) + '%';
 
-                    document.getElementById('alerts-minute-value').textContent = current.alerts_per_minute || 0;
-                    document.getElementById('alerts-bar').style.width = Math.min(100, ((current.alerts_per_minute || 0) / 10) * 100) + '%';
+            document.getElementById('alert-count').textContent = totalAlerts;
+            document.getElementById('blocked-count').textContent = blockedCount;
 
-                    document.getElementById('blocked-ips-value').textContent = current.blocked_ips || 0;
-                    document.getElementById('blocked-bar').style.width = Math.min(100, ((current.blocked_ips || 0) / 10) * 100) + '%';
-
-                    document.getElementById('accuracy-value').textContent = (current.model_accuracy_percent || 95).toFixed(1) + '%';
-                    document.getElementById('accuracy-bar').style.width = (current.model_accuracy_percent || 95) + '%';
-
-                    // Update status based on threat level
-                    updateStatusFromPulse(pulse.status || 'SAFE');
-                })
-                .catch(error => {
-                    // Fallback to demo data if API unavailable
-                    console.error('Could not fetch pulse data:', error);
-                    updateMetricsDemo();
-                });
+            updateStatusFromPulse(data.status || pulse.status || deriveStatusFromAlertCount(totalAlerts));
+            renderApprovalsFromState(data.pendingActions || data.actions || []);
+            renderAlertsFromState(data.alerts || []);
         }
 
-        function updateMetricsDemo() {
-            // Demo data fallback
-            const flows = Math.floor(Math.random() * 50000);
-            const alerts = Math.floor(Math.random() * 10);
-            const blocked = Math.floor(Math.random() * 10);
-            const accuracy = 95 + Math.random() * 5;
+        function renderApprovalsFromState(actions) {
+            const container = document.getElementById('approvals-container');
+            const pendingActions = (actions || [])
+                .filter(action => {
+                    const status = String(action.status || '').toLowerCase();
+                    return ['pending', 'pending_approval', 'reviewing'].includes(status) || !action.executed;
+                })
+                .slice(0, 5);
 
-            document.getElementById('flows-value').textContent = flows.toLocaleString();
-            document.getElementById('flows-bar').style.width = Math.min(100, (flows / 50000) * 100) + '%';
+            if (!pendingActions.length) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✓</div>
+                        <div>All clear! No pending approvals</div>
+                    </div>
+                `;
+                return;
+            }
 
-            document.getElementById('alerts-minute-value').textContent = alerts;
-            document.getElementById('alerts-bar').style.width = Math.min(100, (alerts / 10) * 100) + '%';
+            container.innerHTML = pendingActions.map(action => {
+                const severity = getApprovalSeverity(action);
+                return `
+                    <div class="approval-item ${severity}">
+                        <div class="approval-info">
+                            <div class="approval-ip">${escapeHtml(action.target || action.ip || 'Unknown target')}</div>
+                            <div class="approval-reason">${escapeHtml(action.reason || 'Manual review required')}</div>
+                        </div>
+                        <div class="approval-confidence">${escapeHtml(String(action.action || action.action_type || 'review').toUpperCase())}</div>
+                        <div class="approval-actions">
+                            <button type="button" class="btn-approve">Approve</button>
+                            <button type="button" class="btn-reject">Reject</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
 
-            document.getElementById('blocked-ips-value').textContent = blocked;
-            document.getElementById('blocked-bar').style.width = Math.min(100, (blocked / 10) * 100) + '%';
+        function renderAlertsFromState(alerts) {
+            const container = document.getElementById('alerts-container');
+            const recentAlerts = (alerts || []).slice(0, 5);
 
-            document.getElementById('accuracy-value').textContent = accuracy.toFixed(1) + '%';
-            document.getElementById('accuracy-bar').style.width = accuracy + '%';
+            if (!recentAlerts.length) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <div>No alerts yet - system is monitoring</div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = recentAlerts.map(alert => {
+                const severity = String(alert.severity || 'low').toLowerCase();
+                return `
+                    <div class="alert-item ${severity}">
+                        <div class="alert-time">${formatTimestamp(alert.timestamp)}</div>
+                        <div class="alert-title">${escapeHtml(alert.prediction || 'Unknown alert')}</div>
+                        <div class="alert-details">
+                            <span>${escapeHtml(alert.source_ip || alert.profile || 'N/A')}</span>
+                            <span>${escapeHtml(severity.toUpperCase())}</span>
+                            <span class="alert-badge ${getAlertBadgeClass(alert)}">${escapeHtml(String(alert.status || 'open').toUpperCase())}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateStatusFromPulse(status) {
             const card = document.getElementById('status-card');
             const value = document.getElementById('status-value');
 
-            switch(status) {
+            switch (status) {
                 case 'SAFE':
                     card.className = 'status-card safe';
                     value.textContent = '🟢 SAFE';
@@ -581,103 +619,83 @@
                     value.textContent = '🔴 CRITICAL';
                     value.className = 'status-value attack';
                     break;
-            }ent.model_accuracy_percent || 95).toFixed(1) + '%';
-                    document.getElementById('accuracy-bar').style.width = (current.model_accuracy_percent || 95) + '%';
-
-                    // Update status based on threat level
-                    updateStatusFromPulse(pulse.status || 'SAFE');
-                })
-                .catch(error => {
-                    // Fallback to demo data if API unavailable
-                    console.error('Could not fetch pulse data:', error);
-                    updateMetricsDemo();
-                });
-        }
-
-        function updateMetricsDemo() {
-            // Demo data fallback
-            const flows = Math.floor(Math.random() * 50000);
-            const alerts = Math.floor(Math.random() * 10);
-            const blocked = Math.floor(Math.random() * 10);
-            const accuracy = 95 + Math.random() * 5;
-
-            document.getElementById('flows-value').textContent = flows.toLocaleString();
-            document.getElementById('flows-bar').style.width = Math.min(100, (flows / 50000) * 100) + '%';
-
-            document.getElementById('alerts-minute-value').textContent = alerts;
-            document.getElementById('alerts-bar').style.width = Math.min(100, (alerts / 10) * 100) + '%';
-
-            document.getElementById('blocked-ips-value').textContent = blocked;
-            document.getElementById('blocked-bar').style.width = Math.min(100, (blocked / 10) * 100) + '%';
-
-            document.getElementById('accuracy-value').textContent = accuracy.toFixed(1) + '%';
-            document.getElementById('accuracy-bar').style.width = accuracy + '%';
-        }
-
-        function updateStatusFromPulse(status) {
-            const card = document.getElementById('status-card');
-            const value = document.getElementById('status-value');
-
-            switch(status) {
-                case 'SAFE':
+                default:
                     card.className = 'status-card safe';
                     value.textContent = '🟢 SAFE';
                     value.className = 'status-value safe';
-                    break;
-                case 'SUSPICIOUS':
-                    card.className = 'status-card suspicious';
-                    value.textContent = '🟡 SUSPICIOUS';
-                    value.className = 'status-value suspicious';
-                    break;
-                case 'WARNING':
-                    card.className = 'status-card suspicious';
-                    value.textContent = '🟠 WARNING';
-                    value.className = 'status-value suspicious';
-                    break;
-                case 'CRITICAL':
-                    card.className = 'status-card attack';
-                    value.textContent = '🔴 CRITICAL';
-                    value.className = 'status-value attack';
                     break;
             }
         }
 
-        // Update status based on alert count
-        function updateStatus() {
-            const alerts = parseInt(document.getElementById('alert-count').textContent) || 0;
-            const card = document.getElementById('status-card');
-            const value = document.getElementById('status-value');
-
+        function deriveStatusFromAlertCount(alerts) {
             if (alerts === 0) {
-                card.className = 'status-card safe';
-                value.textContent = '🟢 SAFE';
-                value.className = 'status-value safe';
-            } else if (alerts < 5) {
-                card.className = 'status-card suspicious';
-                value.textContent = '🟡 SUSPICIOUS';
-                value.className = 'status-value suspicious';
-            } else {
-                card.className = 'status-card attack';
-                value.textContent = '🔴 ATTACK';
-                value.className = 'status-value attack';
+                return 'SAFE';
+            }
+
+            if (alerts < 5) {
+                return 'SUSPICIOUS';
+            }
+
+            return 'CRITICAL';
+        }
+
+        function getApprovalSeverity(action) {
+            const actionType = String(action.action || action.action_type || '').toLowerCase();
+            if (actionType.includes('block')) {
+                return 'high';
+            }
+            if (actionType.includes('limit')) {
+                return 'medium';
+            }
+            return 'low';
+        }
+
+        function getAlertBadgeClass(alert) {
+            const status = String(alert.status || '').toLowerCase();
+            if (status === 'closed' || status === 'blocked') {
+                return 'blocked';
+            }
+            if (status === 'reviewing' || status === 'pending' || status === 'pending_approval') {
+                return 'pending';
+            }
+            return 'flagged';
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts) {
+                return 'N/A';
+            }
+
+            try {
+                return new Date(ts).toLocaleTimeString();
+            } catch (error) {
+                return ts;
             }
         }
 
-        // Listen for real-time events
-        socket.on('alert.new', function(payload) {
-            console.log('New alert received:', payload);
-            // Update alerts count and refresh feed
-            updateStatus();
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"']/g, function (char) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[char];
+            });
+        }
+
+        GlobalState.subscribe(data => {
+            updateMetricsFromState(data);
         });
 
-        socket.on('action.pending', function(payload) {
-            console.log('Pending action:', payload);
-            // Update pending approvals
-        });
-
-        // Initialize
-        updateMetrics();
-        updateStatus();
+        if (Object.keys(GlobalState.data || {}).length > 0) {
+            updateMetricsFromState(GlobalState.data);
+        } else if (window.INIDSSocketManager && typeof window.INIDSSocketManager.hydrate === 'function') {
+            window.INIDSSocketManager.hydrate().catch(error => {
+                console.error('Failed to hydrate monitor state:', error);
+            });
+        }
     </script>
 
     <script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>

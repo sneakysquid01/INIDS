@@ -8,13 +8,6 @@ class DashboardController {
         this.moduleModal = null;
         this.currentModule = null;
         
-        // Caching and update intervals
-        this.metricsCache = null;
-        this.lastMetricsUpdate = 0;
-        this.cacheExpiry = 5000; // 5 seconds
-        this.autoRefreshInterval = null;
-        this.autoRefreshMs = 15000; // 15 seconds
-        
         this.moduleRegistry = {
             'real-time-detection': {
                 title: 'Real-Time Detection Panel',
@@ -92,26 +85,56 @@ class DashboardController {
                 description: 'Network graph attack pattern visualization'
             }
         };
+
         this.demoMode = false;
         this.init();
+    }
+
+    // ==============================
+    // 🔥 SOC THREAT STATE SYSTEM (FIXED POSITION)
+    // ==============================
+
+    syncThreatState(alertCount) {
+        const statusStrip = document.querySelector('.status-strip');
+
+        if (typeof window.updateThreatState === 'function') {
+            window.updateThreatState(alertCount);
+        }
+
+        if (!statusStrip) {
+            return;
+        }
+
+        statusStrip.classList.toggle('threat-active', alertCount > 0);
+    }
+
+    updateGlobalStatus(alertCount) {
+        const statusTag = document.querySelector('.panel-tag');
+
+        if (!statusTag) return;
+
+        if (alertCount > 0) {
+            statusTag.textContent = '🚨 UNDER ATTACK';
+            statusTag.classList.remove('tag-green');
+            statusTag.classList.add('tag-red', 'pulse-soft');
+        } else {
+            statusTag.textContent = '✅ NORMAL';
+            statusTag.classList.remove('tag-red', 'pulse-soft');
+            statusTag.classList.add('tag-green');
+        }
     }
 
     init() {
         this.setupModal();
         this.attachCardListeners();
         this.attachControlListeners();
+        this.subscribeToState();
         this.loadInitialMetrics();
-        
-        // Start auto-refresh interval for metrics
-        this.autoRefreshInterval = setInterval(() => {
-            this.loadMetricsIfNeeded();
-        }, this.autoRefreshMs);
-        
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            if (this.autoRefreshInterval) {
-                clearInterval(this.autoRefreshInterval);
-            }
+    }
+
+    subscribeToState() {
+        GlobalState.subscribe(data => {
+            this.updateDashboardMetrics(data);
         });
     }
 
@@ -335,13 +358,19 @@ class DashboardController {
         if (refreshBtn) {
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '⟳ Refreshing...';
+            refreshBtn.classList.add('pulse-soft');
         }
 
         // Call backend refresh endpoint
         fetch('/api/dashboard/refresh', { method: 'POST' })
             .then(response => response.json())
             .then(data => {
-                this.updateDashboardMetrics(data);
+                GlobalState.set({ lastRefresh: data.timestamp || new Date().toISOString() });
+                if (window.INIDSSocketManager && typeof window.INIDSSocketManager.hydrate === 'function') {
+                    window.INIDSSocketManager.hydrate().catch(error => {
+                        console.error('Error hydrating shared state:', error);
+                    });
+                }
                 this.showNotification('Refresh Complete', 'All data updated', 'success');
             })
             .catch(error => {
@@ -352,51 +381,33 @@ class DashboardController {
                 if (refreshBtn) {
                     refreshBtn.disabled = false;
                     refreshBtn.innerHTML = '⟳ Refresh';
+                    refreshBtn.classList.remove('pulse-soft');
                 }
             });
     }
 
     loadInitialMetrics() {
-        // Load initial dashboard metrics from backend
-        const now = Date.now();
-        
-        // If we have cached data that's recent, use it
-        if (this.metricsCache && (now - this.lastMetricsUpdate) < this.cacheExpiry) {
-            this.updateDashboardMetrics(this.metricsCache);
+        if (Object.keys(GlobalState.data || {}).length > 0) {
+            this.updateDashboardMetrics(GlobalState.data);
             return;
         }
-        
-        fetch('/api/dashboard/metrics', {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            }
-        })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.json();
-        })
-        .then(data => {
-            this.metricsCache = data;
-            this.lastMetricsUpdate = Date.now();
-            this.updateDashboardMetrics(data);
-        })
-        .catch(error => {
-            console.error('Error loading metrics:', error);
-            // Use mock data for development
-            this.useMockMetrics();
-        });
-    }
-    
-    loadMetricsIfNeeded() {
-        const now = Date.now();
-        if ((now - this.lastMetricsUpdate) > this.cacheExpiry) {
-            this.loadInitialMetrics();
+
+        if (window.INIDSSocketManager && typeof window.INIDSSocketManager.hydrate === 'function') {
+            window.INIDSSocketManager.hydrate().catch(error => {
+                console.error('Error loading shared dashboard state:', error);
+                this.useMockMetrics();
+            });
+            return;
         }
+
+        this.useMockMetrics();
     }
 
     updateDashboardMetrics(data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+
         // Update system uptime
         if (data.system_uptime !== undefined) {
             const uptimeEl = document.getElementById('systemUptime');
@@ -434,7 +445,20 @@ class DashboardController {
 
         if (data.active_alerts !== undefined) {
             const alertsEl = document.querySelector('.threat-counter:nth-child(3) .count-badge');
-            if (alertsEl) alertsEl.textContent = data.active_alerts;
+
+            if (alertsEl) {
+                alertsEl.textContent = data.active_alerts;
+                alertsEl.classList.toggle('pulse-soft', data.active_alerts > 0);
+            }
+
+            this.syncThreatState(data.active_alerts);
+            this.updateGlobalStatus(data.active_alerts);
+
+            const sidebarAlerts = document.querySelector('.sidebar-section .stat-mini:nth-child(2) .stat-mini-val');
+            if (sidebarAlerts) {
+                sidebarAlerts.textContent = data.active_alerts;
+                sidebarAlerts.classList.toggle('pulse-soft', data.active_alerts > 0);
+            }
         }
 
         if (data.under_review !== undefined) {
