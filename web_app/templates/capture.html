@@ -1,107 +1,159 @@
 {% extends "base.html" %}
 
-{% block title %}Live Capture{% endblock %}
+{% block title %}Live Capture — INIDS{% endblock %}
 {% block page_title %}Live Capture{% endblock %}
 
 {% block extra_css %}
+<style>
+/* ==========================================================
+   LIVE CAPTURE — SOC STANDARD STYLING
+========================================================== */
 
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.capture-wrapper {
+  max-width: 880px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.capture-section {
+  margin-bottom: 24px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.capture-section h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  color: rgba(255,255,255,0.85);
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.capture-section p,
+.capture-section li {
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.6;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.capture-section ul {
+  padding-left: 18px;
+  margin-top: 8px;
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.capture-command {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #93c5fd;
+  margin-top: 8px;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
+.capture-warning {
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
 }
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">Live Capture</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">Live Traffic Capture</h1>
+    <div class="page-subtitle">PACKET INGESTION — SENSOR INTERFACE</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">SENSOR MODE</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — LIVE CAPTURE RUNNING UNDER THREAT CONDITIONS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<!-- INFORMATION CARD -->
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">INIDS</a>
-            <a href="/" class="btn btn-outline-light btn-sm">Back to Home</a>
-        </div>
-    </nav>
 
-    <div class="container mt-4">
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title">Live Traffic Capture</h3>
-                <p class="card-text mb-2">
-                    Live packet capture is performed via the CLI tool:
-                    <code>python src/capture_live_traffic.py</code>
-                </p>
-                <p class="text-muted mb-0">
-                    Note: packet capture requires elevated OS privileges.
-                </p>
-            </div>
+    <div class="capture-wrapper">
+
+      <!-- OVERVIEW -->
+      <div class="capture-section">
+        <h3>Capture Overview</h3>
+        <p>
+          Live traffic capture is performed via a dedicated sensor process
+          to collect raw network packets and forward them into the INIDS
+          ingestion and analysis pipeline.
+        </p>
+        <p>
+          This interface provides operational context only. Packet capture
+          is intentionally executed outside the web UI to preserve system
+          integrity and security boundaries.
+        </p>
+      </div>
+
+      <!-- COMMAND -->
+      <div class="capture-section">
+        <h3>Capture Command</h3>
+        <p>
+          To initiate live traffic capture, execute the following command
+          on the sensor host:
+        </p>
+
+        <div class="capture-command">
+          python src/capture_live_traffic.py
         </div>
+
+        <div class="capture-warning">
+          Note: Live packet capture requires elevated operating system
+          privileges and direct access to network interfaces.
+        </div>
+      </div>
+
+      <!-- SECURITY NOTES -->
+      <div class="capture-section">
+        <h3>Operational Notes</h3>
+        <ul>
+          <li>Captured traffic is analyzed in near real‑time by the IDS engine</li>
+          <li>Allowlist and policy rules are applied during ingestion</li>
+          <li>Suspicious flows may generate alerts or prevention actions</li>
+          <li>Capture processes should run on dedicated sensor systems</li>
+        </ul>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="capture-section" style="margin-top:28px;">
+        <a href="/" class="btn-primary">
+          <i class="bi bi-grid-1x2"></i>
+          Return to Dashboard
+        </a>
+        <a href="/health" class="btn-secondary">
+          <i class="bi bi-activity"></i>
+          Sensor Health
+        </a>
+      </div>
+
     </div>
+
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
-

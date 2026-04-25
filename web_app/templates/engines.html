@@ -1,356 +1,211 @@
 {% extends "base.html" %}
 
-{% block title %}Engine Management{% endblock %}
-{% block page_title %}Engine Management{% endblock %}
+{% block title %}Engines — INIDS{% endblock %}
+{% block page_title %}Engines{% endblock %}
 
 {% block extra_css %}
-body {
-            background-color: #f8f9fa;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        
-        .nav-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            color: #fff !important;
-        }
-        
-        .page-header {
-            background: white;
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid #e0e0e0;
-            margin-bottom: 2rem;
-        }
-        
-        .page-title {
-            font-size: 2rem;
-            font-weight: 600;
-            color: #1a1a2e;
-            margin: 0;
-        }
-        
-        .container-main {
-            padding: 0 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .engine-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        
-        .engine-card {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 1.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            transition: all 0.2s;
-        }
-        
-        .engine-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        
-        .engine-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 1rem;
-        }
-        
-        .engine-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #1a1a2e;
-        }
-        
-        .engine-type-badge {
-            display: inline-block;
-            background: #e8eaf6;
-            color: #3f51b5;
-            padding: 0.3rem 0.7rem;
-            border-radius: 3px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-top: 0.5rem;
-        }
-        
-        .toggle-switch {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 26px;
-        }
-        
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 26px;
-        }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .slider {
-            background-color: #28a745;
-        }
-        
-        input:checked + .slider:before {
-            transform: translateX(24px);
-        }
-        
-        .engine-description {
-            color: #666;
-            font-size: 0.95rem;
-            margin: 0.75rem 0;
-            line-height: 1.4;
-        }
-        
-        .engine-status {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem;
-            background: #f8f9fa;
-            border-radius: 4px;
-            margin: 0.75rem 0;
-            font-size: 0.9rem;
-        }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-        
-        .status-enabled {
-            background: #28a745;
-        }
-        
-        .status-disabled {
-            background: #ccc;
-        }
-        
-        .engine-details {
-            background: #f5f5f5;
-            border-radius: 4px;
-            padding: 0.75rem;
-            margin: 0.75rem 0;
-            font-size: 0.85rem;
-            color: #666;
-        }
-        
-        .detail-line {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.3rem 0;
-        }
-        
-        .detail-label {
-            font-weight: 500;
-        }
-        
-        .detail-value {
-            color: #0066cc;
-            font-weight: 600;
-        }
-        
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 3rem 2rem;
-        }
-        
-        .loading-spinner.active {
-            display: block;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 3rem 2rem;
-            color: #999;
-            background: white;
-            border-radius: 8px;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-        
-        .info-banner {
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 1rem;
-            border-radius: 4px;
-            margin-bottom: 1.5rem;
-            color: #0d47a1;
-        }
-        
-        .info-banner strong {
-            display: block;
-            margin-bottom: 0.5rem;
-        }
+<style>
+/* ==========================================================
+   ENGINES — SOC STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.engines-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.engines-info {
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.engine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.engine-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.engine-card.enabled {
+  border-left-color: var(--green);
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.engine-card.disabled {
+  border-left-color: var(--border);
 }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
+.engine-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
+
+.engine-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.engine-type {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.engine-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.engine-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-top: 10px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.on { background: var(--green); }
+.status-dot.off { background: var(--text-muted); }
+
+.engine-details {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.engine-details div {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 22px;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.15);
+  border-radius: 22px;
+  cursor: pointer;
+}
+
+.slider:before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+
+.toggle input:checked + .slider {
+  background: rgba(39,201,122,0.6);
+}
+
+.toggle input:checked + .slider:before {
+  transform: translateX(22px);
+}
+
+.loading-state {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">Engine Management</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">Detection Engines</h1>
+    <div class="page-subtitle">ENGINE ORCHESTRATION & CONTROL</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">ENGINES</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — ENGINE CHANGES SHOULD BE APPLIED CAREFULLY
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-dark">
-        <div class="container-fluid">
-            <a class="nav-brand" href="/">🔍 INIDS</a>
-            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
-        </div>
-    </nav>
+    <div class="engines-wrapper">
 
-    <!-- Page Header -->
-    <div class="page-header">
-        <h1 class="page-title">Detection Engines</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Manage multi-engine detection configuration</p>
+      <div class="engines-info">
+        INIDS runs multiple independent detection engines in parallel.  
+        Engines can be enabled or disabled to adjust detection coverage and performance.
+      </div>
+
+      <!-- LOADING -->
+      <div id="loading-spinner" class="loading-state">
+        Loading detection engines…
+      </div>
+
+      <!-- ENGINE GRID -->
+      <div id="engines-grid" class="engine-grid" style="display:none;">
+        <!-- populated by engines.js -->
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="empty-state" class="loading-state" style="display:none;">
+        No detection engines available.
+      </div>
+
     </div>
-
-    <!-- Main Container -->
-    <div class="container-main">
-        <!-- Info Banner -->
-        <div class="info-banner">
-            <strong>ℹ️ About Detection Engines</strong>
-            INIDS uses multiple independent detection engines that analyze network traffic from different perspectives. 
-            You can enable/disable individual engines to customize detection behavior.
-        </div>
-
-        <!-- Loading Spinner -->
-        <div class="loading-spinner active" id="loading-spinner">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p style="margin-top: 1rem; color: #666;">Loading engines...</p>
-        </div>
-
-        <!-- Engines Grid -->
-        <div class="engine-grid" id="engines-grid">
-            <!-- Loaded dynamically -->
-        </div>
-
-        <!-- Empty State -->
-        <div class="empty-state" id="empty-state" style="display: none;">
-            <div class="empty-state-icon">🔧</div>
-            <h4>No Engines Available</h4>
-            <p>Check system configuration</p>
-        </div>
-    </div>
-
-    <!-- Scripts -->
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/engines.js') }}"></script>
 {% endblock %}
-
-

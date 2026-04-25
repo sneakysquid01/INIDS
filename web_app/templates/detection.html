@@ -1,567 +1,286 @@
 {% extends "base.html" %}
 
-{% block title %}Detection Console{% endblock %}
-{% block page_title %}Detection Console{% endblock %}
+{% block title %}Detection — INIDS{% endblock %}
+{% block page_title %}Detection{% endblock %}
 
 {% block extra_css %}
-body {
-            background-color: #f8f9fa;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        
-        .nav-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            color: #fff !important;
-        }
-        
-        .page-header {
-            background: white;
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid #e0e0e0;
-            margin-bottom: 2rem;
-        }
-        
-        .page-title {
-            font-size: 2rem;
-            font-weight: 600;
-            color: #1a1a2e;
-            margin: 0;
-        }
-        
-        .container-main {
-            padding: 0 2rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        .input-section {
-            background: white;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: #1a1a2e;
-        }
-        
-        .form-row-custom {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
-        
-        .form-group-custom {
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .form-group-custom label {
-            font-weight: 500;
-            margin-bottom: 0.5rem;
-            color: #333;
-        }
-        
-        .form-group-custom input,
-        .form-group-custom select {
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        
-        .form-group-custom input:focus,
-        .form-group-custom select:focus {
-            outline: none;
-            border-color: #0066cc;
-            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
-        }
-        
-        .helper-text {
-            font-size: 0.8rem;
-            color: #999;
-            margin-top: 0.3rem;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1.5rem;
-        }
-        
-        .btn-detect {
-            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
-            border: none;
-            color: white;
-            font-weight: 600;
-            padding: 0.75rem 1.5rem;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .btn-detect:hover {
-            background: linear-gradient(135deg, #0052a3 0%, #003f7a 100%);
-            color: white;
-        }
-        
-        .btn-detect:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .btn-reset {
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            color: #333;
-            font-weight: 500;
-            padding: 0.75rem 1.5rem;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        .btn-reset:hover {
-            background: #e8e8e8;
-        }
-        
-        .result-section {
-            background: white;
-            border-radius: 8px;
-            padding: 1.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            display: none;
-        }
-        
-        .result-section.active {
-            display: block;
-        }
-        
-        .verdict-badge {
-            display: inline-block;
-            font-weight: 700;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            font-size: 1.1rem;
-            margin-bottom: 1rem;
-        }
-        
-        .verdict-attack {
-            background-color: #dc3545;
-            color: white;
-        }
-        
-        .verdict-normal {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .verdict-suspicious {
-            background-color: #ffc107;
-            color: #333;
-        }
-        
-        .confidence-display {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin: 1.5rem 0;
-        }
-        
-        .confidence-bar-large {
-            flex: 1;
-            min-width: 200px;
-        }
-        
-        .progress {
-            height: 20px;
-            background: #f0f0f0;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        
-        .progress-bar {
-            background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-        
-        .confidence-text {
-            font-size: 1.5rem;
-            font-weight: 700;
-            min-width: 80px;
-            text-align: center;
-        }
-        
-        .result-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1rem;
-            margin: 1.5rem 0;
-        }
-        
-        .result-card {
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 1rem;
-        }
-        
-        .result-card-title {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 0.5rem;
-        }
-        
-        .result-card-value {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #0066cc;
-        }
-        
-        .engine-results {
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 2px solid #e0e0e0;
-        }
-        
-        .engine-result {
-            background: #f8f9fa;
-            border-left: 4px solid #0066cc;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border-radius: 4px;
-        }
-        
-        .engine-name {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 0.5rem;
-        }
-        
-        .engine-status {
-            display: inline-block;
-            padding: 0.3rem 0.7rem;
-            border-radius: 3px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            margin-right: 0.5rem;
-        }
-        
-        .engine-triggered {
-            background: #ffe0e0;
-            color: #c41c3b;
-        }
-        
-        .engine-clean {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-        
-        .engine-detail {
-            font-size: 0.9rem;
-            color: #666;
-            margin-top: 0.5rem;
-        }
-        
-        .code-block {
-            background: #f5f5f5;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 0.75rem;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.85rem;
-            overflow-x: auto;
-            margin: 0.5rem 0;
-        }
-        
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 3rem 2rem;
-        }
-        
-        .loading-spinner.active {
-            display: block;
-        }
-        
-        .spinner-border {
-            color: #0066cc;
-        }
-        
-        .error-message {
-            background: #ffe0e0;
-            border: 1px solid #ffb3b3;
-            border-radius: 4px;
-            padding: 1rem;
-            color: #c41c3b;
-            margin: 1rem 0;
-            display: none;
-        }
-        
-        .error-message.active {
-            display: block;
-        }
-        
-        .example-section {
-            background: #f0f7ff;
-            border: 1px solid #c9e1ff;
-            border-radius: 4px;
-            padding: 1rem;
-            margin-top: 1rem;
-            font-size: 0.9rem;
-        }
-        
-        .example-title {
-            font-weight: 600;
-            color: #0052a3;
-            margin-bottom: 0.5rem;
-        }
+<style>
+/* ==========================================================
+   DETECTION CONSOLE — SOC STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.detection-wrapper {
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+/* INPUT GRID */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.form-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  display: block;
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.form-field .helper {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 4px;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+/* BUTTONS */
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+/* RESULT */
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
 }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
+.result-tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
 }
+
+.result-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.result-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  margin-top: 6px;
+}
+
+/* CONFIDENCE */
+.confidence-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+}
+
+/* ENGINE RESULTS */
+.engine-result {
+  border-left: 3px solid var(--border);
+  padding: 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.engine-result.triggered {
+  border-left-color: var(--red);
+}
+
+.engine-result.clean {
+  border-left-color: var(--green);
+}
+
+.engine-name {
+  font-family: var(--mono);
+  color: var(--text-primary);
+}
+
+.code-block {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+/* STATES */
+.loading-state,
+.error-state {
+  display: none;
+  text-align: center;
+  padding: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Detection Console</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <div class="page-subtitle">MANUAL MULTI‑ENGINE ANALYSIS</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">DETECTION</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — MANUAL DETECTION RUNNING UNDER THREAT CONDITIONS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-dark">
-        <div class="container-fluid">
-            <a class="nav-brand" href="/">🔍 INIDS</a>
-            <span style="color: #aaa;">Intrusion Detection & Prevention</span>
-        </div>
-    </nav>
+    <div class="detection-wrapper">
 
-    <!-- Page Header -->
-    <div class="page-header">
-        <h1 class="page-title">Detection Console</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Run multi-engine threat detection on custom data</p>
+      <!-- INPUT -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">Input Features</div>
+        </div>
+        <div class="ds-card-body">
+
+          <form id="detection-form">
+
+            <div class="form-grid">
+
+              <div class="form-field">
+                <label for="duration">Duration</label>
+                <input type="number" id="duration" value="10" class="ds-input">
+                <div class="helper">Seconds</div>
+              </div>
+
+              <div class="form-field">
+                <label for="src_bytes">Source Bytes</label>
+                <input type="number" id="src_bytes" value="1000" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="dst_bytes">Destination Bytes</label>
+                <input type="number" id="dst_bytes" value="2000" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="count">Packet Count</label>
+                <input type="number" id="count" value="50" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="srv_count">Service Packet Count</label>
+                <input type="number" id="srv_count" value="40" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="serror_rate">SYN Error Rate</label>
+                <input type="number" id="serror_rate" value="0.05" step="0.01" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="same_srv_rate">Same Service Rate</label>
+                <input type="number" id="same_srv_rate" value="0.8" step="0.01" class="ds-input">
+              </div>
+
+              <div class="form-field">
+                <label for="source_ip">Source IP</label>
+                <input type="text" id="source_ip" placeholder="192.168.1.100" class="ds-input">
+                <div class="helper">Optional context</div>
+              </div>
+
+            </div>
+
+            <div class="button-group">
+              <button type="button" class="btn-primary" id="btn-detect" onclick="runDetection()">
+                Run Detection
+              </button>
+              <button type="button" class="btn-secondary" onclick="resetForm()">
+                Reset
+              </button>
+            </div>
+
+          </form>
+        </div>
+      </div>
+
+      <!-- ERROR -->
+      <div class="error-state" id="error-message"></div>
+
+      <!-- LOADING -->
+      <div class="loading-state" id="loading-spinner">
+        Running multi‑engine detection…
+      </div>
+
+      <!-- RESULTS -->
+      <div class="ds-card layer-panel" id="result-section" style="display:none; margin-top:16px;">
+        <div class="panel-header">
+          <div class="panel-title">Detection Results</div>
+        </div>
+        <div class="ds-card-body">
+
+          <div id="verdict-container"></div>
+
+          <div style="margin-top:12px;" id="confidence-container">
+            <div class="confidence-bar">
+              <div id="confidence-bar" class="confidence-fill" style="width:0%;"></div>
+            </div>
+            <div id="confidence-value" class="mono-val">0%</div>
+          </div>
+
+          <div class="result-grid">
+            <div class="result-tile">
+              <div class="result-label">Attack Type</div>
+              <div id="attack-type" class="result-value">—</div>
+            </div>
+            <div class="result-tile">
+              <div class="result-label">Severity</div>
+              <div id="severity-result" class="result-value">—</div>
+            </div>
+            <div class="result-tile">
+              <div class="result-label">Engines Triggered</div>
+              <div id="engines-count" class="result-value">0</div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="panel-title">Engine Details</div>
+            <div id="engines-list"></div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="panel-title">Input Features</div>
+            <div class="code-block" id="features-display"></div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
-
-    <!-- Main Container -->
-    <div class="container-main">
-        <!-- Input Section -->
-        <div class="input-section">
-            <div class="section-title">🔍 Input Features</div>
-            
-            <form id="detection-form">
-                <div class="form-row-custom">
-                    <div class="form-group-custom">
-                        <label for="duration">Duration (seconds)</label>
-                        <input type="number" id="duration" value="10" min="0" step="1">
-                        <div class="helper-text">Connection duration in seconds</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="src_bytes">Source Bytes</label>
-                        <input type="number" id="src_bytes" value="1000" min="0" step="100">
-                        <div class="helper-text">Bytes sent from source</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="dst_bytes">Destination Bytes</label>
-                        <input type="number" id="dst_bytes" value="2000" min="0" step="100">
-                        <div class="helper-text">Bytes sent to destination</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="count">Packet Count</label>
-                        <input type="number" id="count" value="50" min="0" step="1">
-                        <div class="helper-text">Number of packets</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="srv_count">Service Packet Count</label>
-                        <input type="number" id="srv_count" value="40" min="0" step="1">
-                        <div class="helper-text">Packets on same service port</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="serror_rate">SYN Error Rate</label>
-                        <input type="number" id="serror_rate" value="0.05" min="0" max="1" step="0.01">
-                        <div class="helper-text">Percentage (0-1)</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="same_srv_rate">Same Service Rate</label>
-                        <input type="number" id="same_srv_rate" value="0.8" min="0" max="1" step="0.01">
-                        <div class="helper-text">Percentage (0-1)</div>
-                    </div>
-                    
-                    <div class="form-group-custom">
-                        <label for="source_ip">Source IP (optional)</label>
-                        <input type="text" id="source_ip" placeholder="192.168.1.100">
-                        <div class="helper-text">For context and IP reputation lookup</div>
-                    </div>
-                </div>
-
-                <div class="button-group">
-                    <button type="button" class="btn-detect" id="btn-detect" onclick="runDetection()">
-                        ▶️ Run Detection
-                    </button>
-                    <button type="button" class="btn-reset" id="btn-reset" onclick="resetForm()">
-                        ↺ Reset
-                    </button>
-                </div>
-
-                <div class="example-section">
-                    <div class="example-title">💡 Example Scenarios</div>
-                    <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.85rem;">
-                        <li><strong>Normal Traffic:</strong> Duration=30, SrcBytes=5000, DstBytes=6000, Count=100, SrvCount=95</li>
-                        <li><strong>Port Scan:</strong> Duration=1, SrcBytes=100, DstBytes=50, Count=50, SrvCount=10, ErrorRate=0.5</li>
-                        <li><strong>DoS Attack:</strong> Duration=60, SrcBytes=100000, Count=10000, SrvCount=9000</li>
-                    </ul>
-                </div>
-            </form>
-        </div>
-
-        <!-- Error Message -->
-        <div class="error-message" id="error-message"></div>
-
-        <!-- Loading Spinner -->
-        <div class="loading-spinner" id="loading-spinner">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p style="margin-top: 1rem; color: #666;">Running multi-engine detection...</p>
-        </div>
-
-        <!-- Results Section -->
-        <div class="result-section" id="result-section">
-            <div class="section-title">📊 Detection Results</div>
-
-            <!-- Verdict -->
-            <div id="verdict-container"></div>
-
-            <!-- Confidence Score -->
-            <div class="confidence-display" id="confidence-container" style="display: none;">
-                <div>
-                    <strong style="font-size: 0.9rem; color: #666;">Confidence Score</strong>
-                </div>
-                <div class="confidence-bar-large">
-                    <div class="progress">
-                        <div class="progress-bar" id="confidence-bar" style="width: 0%;"></div>
-                    </div>
-                </div>
-                <div class="confidence-text" id="confidence-value">0%</div>
-            </div>
-
-            <!-- Result Cards -->
-            <div class="result-grid">
-                <div class="result-card">
-                    <div class="result-card-title">Attack Type</div>
-                    <div class="result-card-value" id="attack-type">—</div>
-                </div>
-                <div class="result-card">
-                    <div class="result-card-title">Severity</div>
-                    <div class="result-card-value" id="severity-result">—</div>
-                </div>
-                <div class="result-card">
-                    <div class="result-card-title">Engines Triggered</div>
-                    <div class="result-card-value" id="engines-count">0</div>
-                </div>
-            </div>
-
-            <!-- Engine Results -->
-            <div class="engine-results" id="engine-results">
-                <h5 style="margin-bottom: 1rem; color: #333;">🔧 Engine Details</h5>
-                <div id="engines-list"></div>
-            </div>
-
-            <!-- Features Used -->
-            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 2px solid #e0e0e0;">
-                <h5 style="color: #333; margin-bottom: 1rem;">📋 Input Features</h5>
-                <div class="code-block" id="features-display"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scripts -->
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/detection.js') }}"></script>
 {% endblock %}
-
-

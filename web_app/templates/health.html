@@ -1,336 +1,285 @@
 {% extends "base.html" %}
 
-{% block title %}System Health Dashboard{% endblock %}
+{% block title %}Health — INIDS{% endblock %}
 {% block page_title %}Health{% endblock %}
 
 {% block extra_css %}
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+<style>
+/* ==========================================================
+   HEALTH — SOC STANDARD
+========================================================== */
+
+.health-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+/* STATUS */
+.health-status {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+@media (max-width: 900px) {
+  .health-status {
+    grid-template-columns: 1fr;
+  }
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.health-indicator {
+  font-size: 32px;
+  line-height: 1;
 }
+
+.health-metric {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* BAR */
+.health-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.health-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+}
+
+/* GRIDS */
+.health-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.health-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .health-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kv {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kv strong {
+  display: block;
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-top: 4px;
+}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
-    <div>
-        <h1 class="page-title">System Health Dashboard</h1>
-        <div class="page-subtitle">REAL-TIME SYSTEM MONITORING</div>
+  <div>
+    <h1 class="page-title">System Health</h1>
+    <div class="page-subtitle">RUNTIME • RESOURCES • SERVICES</div>
+  </div>
+  <div class="page-meta">
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      RUNNING
     </div>
-    <div class="page-meta">
-        <span class="status-chip">LIVE</span>
-        <span class="badge-info">HEALTH</span>
-    </div>
+    <span class="badge-info">HEALTH</span>
+  </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
-    <div class="pulse-dot"></div>
-    <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div class="pulse-dot"></div>
+  <div>
+    ACTIVE INCIDENT — HEALTH METRICS MAY DEGRADE UNDER LOAD
+  </div>
 </div>
 {% endif %}
 
-<div class="container-fluid mt-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h1>📊 System Health Dashboard</h1>
-            <p class="text-muted">Real-time system monitoring and performance metrics</p>
+<div class="ds-card layer-elevated interactive">
+  <div class="ds-card-body">
+    <div class="health-wrapper">
+
+      <!-- STATUS -->
+      <div class="health-status">
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="health-indicator" id="healthStatus">🟡</div>
+            <div class="ds-card-title">System Status</div>
+            <div class="health-metric" id="statusText">Initializing…</div>
+          </div>
         </div>
-        <div class="col-md-4 text-end">
-            <button class="btn btn-secondary" onclick="loadHealthData()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
-            <span id="lastUpdate" class="ms-3 text-muted small">Last update: --</span>
+
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Uptime</div>
+            <div class="health-metric" id="uptimeText">--</div>
+            <div class="kv" id="startTimeText">--</div>
+          </div>
         </div>
+
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">CPU Usage</div>
+            <div class="health-metric" id="cpuPercent">0%</div>
+            <div class="health-bar">
+              <div id="cpuBar" class="health-bar-fill" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CORE METRICS -->
+      <div class="health-grid-4">
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Total Alerts</div>
+            <div id="totalAlerts" class="health-metric">--</div>
+          </div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Prevention Actions</div>
+            <div id="totalActions" class="health-metric">--</div>
+          </div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Avg Response</div>
+            <div id="avgResponseTime" class="health-metric">--</div>
+          </div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Error Rate</div>
+            <div id="errorRate" class="health-metric">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPONENT HEALTH -->
+      <div class="health-grid-2">
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Detection Engines</div>
+          </div>
+          <div class="ds-card-body" id="enginesList"></div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Core Services</div>
+          </div>
+          <div class="ds-card-body" id="servicesList"></div>
+        </div>
+      </div>
+
+      <!-- PERFORMANCE -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">Performance Trends</div>
+        </div>
+        <div class="ds-card-body">
+          <canvas id="performanceChart" style="max-height:260px;"></canvas>
+        </div>
+      </div>
+
+      <!-- MEMORY + NETWORK -->
+      <div class="health-grid-2">
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Memory Usage</div>
+          </div>
+          <div class="ds-card-body">
+            <div class="health-bar">
+              <div id="memoryBar" class="health-bar-fill" style="width:0%"></div>
+            </div>
+            <div class="kv">
+              <strong>Used:</strong> <span id="memoryUsed">--</span><br>
+              <strong>Total:</strong> <span id="memoryTotal">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Network Activity</div>
+          </div>
+          <div class="ds-card-body">
+            <div class="kv">
+              <strong>Packets/sec</strong>
+              <span id="packetsPerSec">--</span>
+            </div>
+            <div class="kv" style="margin-top:8px;">
+              <strong>Flows Analyzed</strong>
+              <span id="flowsAnalyzed">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DATABASE -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">Database & Storage</div>
+        </div>
+        <div class="ds-card-body health-grid-4">
+          <div><strong>Alerts</strong><div id="dbAlerts">--</div></div>
+          <div><strong>Audit Logs</strong><div id="dbAudits">--</div></div>
+          <div><strong>DB Size</strong><div id="dbSize">--</div></div>
+          <div><strong>Last Cleanup</strong><div id="lastCleanup">--</div></div>
+        </div>
+      </div>
+
+      <!-- SEVERITY SUMMARY -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">Alerts by Severity</div>
+        </div>
+        <div class="ds-card-body health-grid-4">
+          <div><strong>Critical</strong><div id="alertsCritical">--</div></div>
+          <div><strong>High</strong><div id="alertsHigh">--</div></div>
+          <div><strong>Medium</strong><div id="alertsMedium">--</div></div>
+          <div><strong>Low</strong><div id="alertsLow">--</div></div>
+        </div>
+      </div>
+
+      <!-- SYSTEM INFO -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">System Information</div>
+        </div>
+        <div class="ds-card-body health-grid-4">
+          <div><strong>Version</strong><div id="systemVersion">--</div></div>
+          <div><strong>Environment</strong><div id="systemEnv">Production</div></div>
+          <div><strong>Python</strong><div id="pythonVersion">--</div></div>
+          <div><strong>Timestamp</strong><div id="systemTime">--</div></div>
+        </div>
+      </div>
+
     </div>
-
-    <!-- Overall Status -->
-    <div class="row mb-4">
-        <div class="col-md-4 mb-3">
-            <div class="ds-card layer-elevated">
-                <div class="ds-card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="me-3">
-                            <div id="healthStatus" class="fs-1">🟡</div>
-                        </div>
-                        <div>
-                            <h6 class="text-muted mb-1">System Status</h6>
-                            <h4 id="statusText" class="mb-0">Initializing...</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-4 mb-3">
-            <div class="ds-card layer-elevated">
-                <div class="ds-card-body">
-                    <h6 class="text-muted mb-2">Uptime</h6>
-                    <h4 id="uptimeText" class="mb-1">--</h4>
-                    <small id="startTimeText" class="text-muted">-- ago</small>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-4 mb-3">
-            <div class="ds-card layer-elevated">
-                <div class="ds-card-body">
-                    <h6 class="text-muted mb-2">CPU Usage</h6>
-                    <div class="d-flex align-items-center">
-                        <div class="progress flex-grow-1" style="height: 25px;">
-                            <div id="cpuBar" class="progress-bar bg-success" style="width: 0%"></div>
-                        </div>
-                        <span id="cpuPercent" class="ms-2">0%</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Key Metrics -->
-    <div class="row mb-4">
-        <div class="col-md-3 mb-3">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-body">
-                    <h6 class="text-muted">Total Alerts</h6>
-                    <h3 id="totalAlerts" class="mb-0">--</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-body">
-                    <h6 class="text-muted">Prevention Actions</h6>
-                    <h3 id="totalActions" class="mb-0">--</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-body">
-                    <h6 class="text-muted">Avg Response Time</h6>
-                    <h3 id="avgResponseTime" class="mb-0">--</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-body">
-                    <h6 class="text-muted">Error Rate</h6>
-                    <h3 id="errorRate" class="mb-0">--</h3>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Component Health -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">🔧 Detection Engines</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div id="enginesList" class="space-y-2"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">🛠️ Core Services</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div id="servicesList" class="space-y-2"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Performance Metrics -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">📈 Performance Trends</h5>
-                </div>
-                <div class="ds-card-body">
-                    <canvas id="performanceChart" style="max-height: 300px;"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Resource Usage -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">💾 Memory Usage</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div class="progress" style="height: 30px; margin-bottom: 1rem;">
-                        <div id="memoryBar" class="progress-bar bg-info" style="width: 0%"></div>
-                    </div>
-                    <div class="row text-center">
-                        <div class="col-md-6">
-                            <small class="text-muted">Used</small>
-                            <p id="memoryUsed" class="mb-0">-- MB</p>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted">Total</small>
-                            <p id="memoryTotal" class="mb-0">-- MB</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">🌐 Network Activity</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label text-muted">Packets/sec</label>
-                            <h4 id="packetsPerSec" class="mb-0">--</h4>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label text-muted">Flows Analyzed</label>
-                            <h4 id="flowsAnalyzed" class="mb-0">--</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Database Stats -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">🗄️ Database & Storage</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div class="row">
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label text-muted">Alerts in DB</label>
-                            <h5 id="dbAlerts" class="mb-0">--</h5>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label text-muted">Audit Logs</label>
-                            <h5 id="dbAudits" class="mb-0">--</h5>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label text-muted">DB Size</label>
-                            <h5 id="dbSize" class="mb-0">--</h5>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label text-muted">Last Cleanup</label>
-                            <p id="lastCleanup" class="mb-0 small">--</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Alerts Summary -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">📊 Alerts by Severity</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div class="row text-center">
-                        <div class="col-md-3">
-                            <div class="alert alert-danger py-2 mb-0">
-                                <h6 class="mb-1">Critical</h6>
-                                <h4 id="alertsCritical" class="mb-0">--</h4>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="alert alert-warning py-2 mb-0">
-                                <h6 class="mb-1">High</h6>
-                                <h4 id="alertsHigh" class="mb-0">--</h4>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="alert alert-info py-2 mb-0">
-                                <h6 class="mb-1">Medium</h6>
-                                <h4 id="alertsMedium" class="mb-0">--</h4>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="alert alert-success py-2 mb-0">
-                                <h6 class="mb-1">Low</h6>
-                                <h4 id="alertsLow" class="mb-0">--</h4>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- System Info -->
-    <div class="row">
-        <div class="col-md-12">
-            <div class="ds-card layer-panel">
-                <div class="ds-card-header">
-                    <h5 class="ds-card-title mb-0">ℹ️ System Information</h5>
-                </div>
-                <div class="ds-card-body">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <label class="form-label text-muted">Version</label>
-                            <p id="systemVersion" class="mb-0">--</p>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted">Environment</label>
-                            <p id="systemEnv" class="mb-0">Production</p>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted">Python Version</label>
-                            <p id="pythonVersion" class="mb-0">--</p>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted">Timestamp</label>
-                            <p id="systemTime" class="mb-0 small">--</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  </div>
 </div>
 
 {% endblock %}
@@ -338,4 +287,3 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/health.js') }}"></script>
 {% endblock %}
-

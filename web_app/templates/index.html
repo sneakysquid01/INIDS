@@ -1,118 +1,116 @@
 {% extends "base.html" %}
 
-{% block title %}Simple Demo{% endblock %}
-{% block page_title %}Simple Demo{% endblock %}
+{% block title %}Demo — INIDS{% endblock %}
+{% block page_title %}Demo{% endblock %}
 
 {% block extra_css %}
-body { background-color: #f9f9f9; }
-      .main-box { background: #fff; border-radius: 10px; padding: 2rem; margin-top: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);}
+<style>
+/* ==========================================================
+   DEMO / INDEX — SOC STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.demo-wrapper {
+  max-width: 520px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.demo-section-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  text-align: center;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.demo-result {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 4px;
+  background: rgba(59,130,246,0.08);
+  border: 1px solid rgba(59,130,246,0.25);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: center;
 }
-
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">Simple Demo</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">Prediction Demo</h1>
+    <div class="page-subtitle">MANUAL FEATURE INPUT — MODEL TEST</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">DEMO</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — DEMO PREDICTIONS MAY REFLECT LIVE CONDITIONS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<div class="container">
-        <div class="main-box mx-auto" style="max-width:480px;">
-            <h2 class="mb-4 text-center">INIDS - Live Prediction</h2>
 
-            <!-- Show error if any -->
-            {% if error %}
-                <div class="alert alert-danger" role="alert">
-                  {{ error }}
-                </div>
-            {% endif %}
+    <div class="demo-wrapper">
 
-            <form method="post" autocomplete="off">
-                {% for feat in features %}
-                <div class="mb-3">
-                  <label class="form-label">{{ feat }}:</label>
-                  <input type="number" class="ds-input" step="any" name="{{ feat }}" required>
-                </div>
-                {% endfor %}
-                <button type="submit" class="btn btn-primary w-100">Predict</button>
-            </form>
+      <div class="demo-section-title">
+        Live Prediction Input
+      </div>
 
-            {% if prediction %}
-                <div class="alert alert-info mt-4">
-                  <h4 class="mb-0">Result: {{ prediction }}</h4>
-                </div>
-            {% endif %}
+      {% if error %}
+      <div class="ds-alert warn" style="margin-bottom:12px;">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="post" autocomplete="off">
+
+        {% for feat in features %}
+        <div style="margin-bottom:12px;">
+          <label class="policy-description">{{ feat }}</label>
+          <input
+            type="number"
+            step="any"
+            name="{{ feat }}"
+            class="ds-input"
+            required>
         </div>
-        <footer class="mt-5 text-center text-muted small">
-            &copy; 2025 Intelligent Network Intrusion Detection System
-        </footer>
+        {% endfor %}
+
+        <button type="submit" class="btn-primary" style="width:100%; margin-top:8px;">
+          Run Prediction
+        </button>
+
+      </form>
+
+      {% if prediction %}
+      <div class="demo-result">
+        RESULT → {{ prediction }}
+      </div>
+      {% endif %}
+
     </div>
+
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
-

@@ -1,91 +1,119 @@
 {% extends "base.html" %}
 
-{% block title %}404 - INIDS{% endblock %}
-{% block page_title %}404 - INIDS{% endblock %}
+{% block title %}404 — INIDS{% endblock %}
+{% block page_title %}404{% endblock %}
 
 {% block extra_css %}
+<style>
+/* ==========================================================
+   404 PAGE — SOC STANDARD STYLING
+========================================================== */
 
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.error-wrapper {
+  max-width: 720px;
+  margin: 60px auto 0;
+  text-align: center;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.error-code {
+  font-family: 'Syne', sans-serif;
+  font-size: 96px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 4px;
+  background: linear-gradient(180deg, #60a5fa, #34d399);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.error-title {
+  margin-top: 12px;
+  font-size: 18px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.85);
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.error-subtitle {
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,0.45);
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.error-actions {
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">404 - INIDS</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">Unknown Route</h1>
+    <div class="page-subtitle">REQUEST COULD NOT BE RESOLVED</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">SOC UI</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE THREATS DETECTED — NAVIGATION RESTRICTED DURING INCIDENT
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<!-- ERROR CARD -->
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<div class="container mt-5 text-center">
-        <h1 class="display-1">404</h1>
-        <p class="lead">Page not found</p>
-        <a href="/" class="btn btn-primary">Return Home</a>
+
+    <div class="error-wrapper">
+      <div class="error-code">404</div>
+
+      <div class="error-title">
+        Resource Not Found
+      </div>
+
+      <div class="error-subtitle">
+        The requested path does not exist or has been isolated by policy.
+      </div>
+
+      <div class="error-actions">
+        <a href="/" class="btn-primary">
+          <i class="bi bi-grid-1x2"></i>
+          Return to Dashboard
+        </a>
+
+        <a href="/health" class="btn-secondary">
+          <i class="bi bi-activity"></i>
+          System Health
+        </a>
+
+        <a href="/alerts" class="btn-secondary">
+          <i class="bi bi-bell"></i>
+          Active Alerts
+        </a>
+      </div>
     </div>
+
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
-

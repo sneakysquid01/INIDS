@@ -1,93 +1,119 @@
 {% extends "base.html" %}
 
-{% block title %}Error - INIDS{% endblock %}
-{% block page_title %}Error - INIDS{% endblock %}
+{% block title %}Error — INIDS{% endblock %}
+{% block page_title %}Error{% endblock %}
 
 {% block extra_css %}
+<style>
+/* ==========================================================
+   ERROR PAGE — SOC STANDARD
+========================================================== */
 
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.error-wrapper {
+  max-width: 720px;
+  margin: 60px auto 0;
+  text-align: center;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.error-code {
+  font-family: 'Syne', sans-serif;
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--red-lt);
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.error-title {
+  margin-top: 12px;
+  font-size: 16px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.85);
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.error-message {
+  margin-top: 10px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  line-height: 1.6;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.error-actions {
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">Error - INIDS</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">System Error</h1>
+    <div class="page-subtitle">EXCEPTION HANDLER</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip warn">
+      <div class="sys-status-dot"></div>
+      DEGRADED
+    </div>
+    <span class="badge-info">ERROR</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — ERROR OCCURRED DURING THREAT CONDITIONS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<!-- ERROR CARD -->
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<div class="container mt-5">
-        <div class="alert alert-danger">
-            <h4>An Error Occurred</h4>
-            <p>{{ error }}</p>
-            <a href="/" class="btn btn-primary">Return Home</a>
-        </div>
+
+    <div class="error-wrapper">
+
+      <div class="error-code">⚠ ERROR</div>
+
+      <div class="error-title">
+        An Unexpected Error Occurred
+      </div>
+
+      <div class="error-message">
+        {{ error }}
+      </div>
+
+      <div class="error-actions">
+        <a href="/" class="btn-primary">
+          <i class="bi bi-house"></i>
+          Return Home
+        </a>
+
+        <a href="/health" class="btn-secondary">
+          <i class="bi bi-activity"></i>
+          System Health
+        </a>
+
+        <a href="/dashboard" class="btn-secondary">
+          <i class="bi bi-grid-1x2"></i>
+          Dashboard
+        </a>
+      </div>
+
     </div>
+
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
 

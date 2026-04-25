@@ -1,130 +1,154 @@
 {% extends "base.html" %}
 
-{% block title %}Batch Processing{% endblock %}
+{% block title %}Batch — INIDS{% endblock %}
 {% block page_title %}Batch Processing{% endblock %}
 
 {% block extra_css %}
-body { background-color: #f8f9fa; }
-        .main-box { background: #fff; border-radius: 15px; padding: 2.5rem; 
-                   margin-top: 2rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05);}
+<style>
+/* ==========================================================
+   BATCH PROCESSING — SOC STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.batch-wrapper {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.batch-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.results-table {
+  margin-top: 16px;
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.results-table .badge-safe {
+  background: rgba(39,201,122,0.15);
+  color: var(--green-lt);
+  font-size: 11px;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.results-table .badge-threat {
+  background: rgba(232,65,58,0.15);
+  color: var(--red-lt);
+  font-size: 11px;
 }
-
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Batch Processing</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <div class="page-subtitle">BULK OFFLINE DETECTION</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">BATCH</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — BATCH RESULTS MAY REFLECT LIVE CONDITIONS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
+    <div class="batch-wrapper">
+
+      <!-- UPLOAD -->
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div class="panel-title">Upload Dataset</div>
         </div>
-    </nav>
-    
-    <div class="container">
-        <div class="main-box mx-auto" style="max-width:800px;">
-            <h2 class="text-center mb-4">📁 Batch Prediction</h2>
-            
-            {% if error %}
-            <div class="alert alert-danger">{{ error }}</div>
-            {% endif %}
-            
-            <form method="post" enctype="multipart/form-data" class="mb-4">
-                <div class="mb-3">
-                    <label class="form-label">Upload CSV File:</label>
-                    <input type="file" class="ds-input" name="file" accept=".csv" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Process File</button>
-            </form>
-            
-            {% if results %}
-            <div class="alert alert-success">
-                Processed {{ total }} records. Showing first {{ shown }}.
+        <div class="ds-card-body">
+
+          <div class="batch-note">
+            Upload a CSV file containing multiple records for offline intrusion detection.
+          </div>
+
+          {% if error %}
+          <div class="ds-alert warn" style="margin-bottom:12px;">
+            {{ error }}
+          </div>
+          {% endif %}
+
+          <form method="post" enctype="multipart/form-data">
+            <div style="margin-bottom:12px;">
+              <label class="result-label">CSV File</label>
+              <input type="file"
+                     name="file"
+                     accept=".csv"
+                     class="ds-input"
+                     required>
             </div>
-            <table class="table table-striped ds-table">
-                <thead><tr><th>Row</th><th>Prediction</th></tr></thead>
-                <tbody>
-                    {% for result in results %}
-                    <tr>
-                        <td>{{ result.row }}</td>
-                        <td><span class="badge {% if result.prediction == 'Normal' %}bg-success{% else %}bg-danger{% endif %}">
-                            {{ result.prediction }}
-                        </span></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endif %}
+
+            <button type="submit" class="btn-primary" style="width:100%;">
+              Process File
+            </button>
+          </form>
+
         </div>
+      </div>
+
+      <!-- RESULTS -->
+      {% if results %}
+      <div class="ds-card layer-panel" style="margin-top:16px;">
+        <div class="panel-header">
+          <div class="panel-title">Batch Results</div>
+        </div>
+        <div class="ds-card-body">
+
+          <div class="batch-note">
+            Processed {{ total }} records. Displaying first {{ shown }}.
+          </div>
+
+          <div class="results-table table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Row</th>
+                  <th>Prediction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for result in results %}
+                <tr>
+                  <td class="mono-val">{{ result.row }}</td>
+                  <td>
+                    {% if result.prediction == "Normal" %}
+                      <span class="badge-safe">Normal</span>
+                    {% else %}
+                      <span class="badge-threat">{{ result.prediction }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
-

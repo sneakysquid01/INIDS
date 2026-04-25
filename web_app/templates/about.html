@@ -1,131 +1,168 @@
 {% extends "base.html" %}
 
-{% block title %}About{% endblock %}
+{% block title %}About — INIDS{% endblock %}
 {% block page_title %}About{% endblock %}
 
 {% block extra_css %}
-body { background-color: #f8f9fa; }
-        .main-box { background: #fff; border-radius: 15px; padding: 3rem; 
-                   margin: 2rem auto; box-shadow: 0 5px 20px rgba(0,0,0,0.05); max-width: 900px;}
+<style>
+/* ==========================================================
+   ABOUT PAGE — SOC / DASHBOARD STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.about-wrapper {
+  max-width: 960px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.about-section {
+  margin-bottom: 28px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.about-section h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 15px;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  color: rgba(255,255,255,0.85);
+  text-transform: uppercase;
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.about-section p,
+.about-section li {
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.6;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.about-section ul {
+  padding-left: 18px;
+  margin-top: 8px;
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.about-section li {
+  margin-bottom: 6px;
 }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
+.about-footer-actions {
+  margin-top: 32px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">About</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">About INIDS</h1>
+    <div class="page-subtitle">SYSTEM OVERVIEW & ARCHITECTURE</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">SOC UI</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — SYSTEM OPERATING UNDER DETECTION MODE
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<!-- ABOUT CARD -->
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
-        </div>
-    </nav>
-    
-    <div class="container">
-        <div class="main-box">
-            <h2 class="text-center mb-4">About INIDS</h2>
-            
-            <h4>Project Overview</h4>
-            <p>The Intelligent Network Intrusion Detection System (INIDS) is an advanced machine learning-based solution for detecting cyber attacks in network traffic. This system demonstrates the practical application of multiple ML algorithms in cybersecurity.</p>
-            
-            <h4 class="mt-4">Key Features</h4>
-            <ul>
-                <li>5+ Machine Learning Models (Random Forest, Gradient Boosting, Decision Tree, AdaBoost, MLP)</li>
-                <li>Binary and Multiclass Classification</li>
-                <li>Real-time Prediction with Confidence Scores</li>
-                <li>Comprehensive Analytics Dashboard</li>
-                <li>Batch Processing Capabilities</li>
-                <li>ROC Curve Analysis</li>
-                <li>Feature Importance Visualization</li>
-            </ul>
-            
-            <h4 class="mt-4">Dataset</h4>
-            <p><strong>NSL-KDD Dataset:</strong> An improved version of the KDD'99 dataset, widely used for network intrusion detection research. Contains 125,973 training samples and 22,544 test samples with 41 features.</p>
-            
-            <h4 class="mt-4">Attack Categories</h4>
-            <ul>
-                <li><strong>DoS:</strong> Denial of Service attacks</li>
-                <li><strong>Probe:</strong> Surveillance and probing</li>
-                <li><strong>R2L:</strong> Remote to Local attacks</li>
-                <li><strong>U2R:</strong> User to Root attacks</li>
-            </ul>
-            
-            <h4 class="mt-4">Technologies Used</h4>
-            <p>Python, Scikit-learn, Flask, Pandas, Matplotlib, Bootstrap, NumPy</p>
-            
-            <div class="text-center mt-5">
-                <a href="/" class="btn btn-primary">Return Home</a>
-            </div>
-        </div>
+
+    <div class="about-wrapper">
+
+      <!-- OVERVIEW -->
+      <div class="about-section">
+        <h3>Project Overview</h3>
+        <p>
+          The <strong>Intelligent Network Intrusion Detection System (INIDS)</strong>
+          is an advanced machine‑learning‑driven security platform designed to
+          detect, classify, and respond to malicious activity in network traffic.
+        </p>
+        <p>
+          INIDS demonstrates the practical application of multiple supervised
+          learning models within a real‑time SOC‑oriented detection pipeline.
+        </p>
+      </div>
+
+      <!-- FEATURES -->
+      <div class="about-section">
+        <h3>Key Capabilities</h3>
+        <ul>
+          <li>Multiple machine learning models (Random Forest, Gradient Boosting, Decision Tree, AdaBoost, MLP)</li>
+          <li>Binary and multi‑class intrusion classification</li>
+          <li>Real‑time prediction with confidence scoring</li>
+          <li>Unified SOC analytics dashboard</li>
+          <li>Batch and streaming inference pipelines</li>
+          <li>ROC curve analysis and feature importance visualization</li>
+        </ul>
+      </div>
+
+      <!-- DATASET -->
+      <div class="about-section">
+        <h3>Dataset</h3>
+        <p>
+          <strong>NSL‑KDD Dataset</strong> — an improved and cleaned version of the
+          KDD’99 dataset commonly used in intrusion detection research.
+        </p>
+        <p>
+          It contains <strong>125,973 training samples</strong> and
+          <strong>22,544 test samples</strong> with <strong>41 extracted features</strong>,
+          providing a balanced and realistic benchmark for evaluation.
+        </p>
+      </div>
+
+      <!-- ATTACK TYPES -->
+      <div class="about-section">
+        <h3>Attack Categories</h3>
+        <ul>
+          <li><strong>DoS</strong> — Denial of Service attacks</li>
+          <li><strong>Probe</strong> — Surveillance and probing activity</li>
+          <li><strong>R2L</strong> — Remote‑to‑Local attacks</li>
+          <li><strong>U2R</strong> — User‑to‑Root privilege escalation</li>
+        </ul>
+      </div>
+
+      <!-- STACK -->
+      <div class="about-section">
+        <h3>Technology Stack</h3>
+        <p>
+          Python, Scikit‑learn, Flask, Pandas, NumPy, Matplotlib, and a custom
+          lightweight SOC‑style frontend architecture.
+        </p>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="about-footer-actions">
+        <a href="/" class="btn-primary">
+          <i class="bi bi-grid-1x2"></i>
+          Return to Dashboard
+        </a>
+        <a href="/health" class="btn-secondary">
+          <i class="bi bi-activity"></i>
+          System Health
+        </a>
+      </div>
+
     </div>
+
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
-
 {% endblock %}
-
-

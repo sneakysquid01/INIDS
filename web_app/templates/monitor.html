@@ -1,774 +1,251 @@
 {% extends "base.html" %}
 
-{% block title %}INIDS Monitor - Real-Time Threat Dashboard{% endblock %}
-{% block page_title %}INIDS Monitor - Real-Time Threat Dashboard{% endblock %}
+{% block title %}Monitor — INIDS{% endblock %}
+{% block page_title %}Monitor{% endblock %}
 
 {% block extra_css %}
-:root {
-            --color-safe: #4caf50;
-            --color-suspicious: #ff9800;
-            --color-attack: #f44336;
-            --color-bg: #f5f7fa;
-            --color-card: #ffffff;
-            --color-border: #e1e8ed;
-            --color-text: #2c3e50;
-        }
-        
-        body {
-            background-color: var(--color-bg);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            color: var(--color-text);
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 0.8rem 0;
-        }
-        
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            letter-spacing: 0.5px;
-        }
-        
-        .nav-item {
-            margin: 0 0.5rem;
-        }
-        
-        .nav-link {
-            font-weight: 500;
-            padding: 0.5rem 1rem !important;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-        
-        .nav-link:hover {
-            background: rgba(255,255,255,0.1);
-        }
-        
-        .nav-link.active {
-            background: rgba(255,255,255,0.2);
-            border-bottom: 2px solid #fff;
-        }
-        
-        .container-fluid {
-            padding: 2rem 1.5rem;
-        }
-        
-        .main-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            color: var(--color-text);
-        }
-        
-        .subtitle {
-            font-size: 0.95rem;
-            color: #7f8c8d;
-            margin-bottom: 2rem;
-        }
-        
-        /* Status Gauge Card */
-        .status-card {
-            background: var(--color-card);
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            border-left: 4px solid #ccc;
-            margin-bottom: 2rem;
-            transition: all 0.3s ease;
-        }
-        
-        .status-card.safe {
-            border-left-color: var(--color-safe);
-            background: linear-gradient(135deg, rgba(76,175,80,0.05) 0%, transparent 100%);
-        }
-        
-        .status-card.suspicious {
-            border-left-color: var(--color-suspicious);
-            background: linear-gradient(135deg, rgba(255,152,0,0.05) 0%, transparent 100%);
-        }
-        
-        .status-card.attack {
-            border-left-color: var(--color-attack);
-            background: linear-gradient(135deg, rgba(244,67,54,0.05) 0%, transparent 100%);
-        }
-        
-        .status-label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #7f8c8d;
-            margin-bottom: 0.5rem;
-        }
-        
-        .status-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        
-        .status-value.safe { color: var(--color-safe); }
-        .status-value.suspicious { color: var(--color-suspicious); }
-        .status-value.attack { color: var(--color-attack); }
-        
-        .status-time {
-            font-size: 0.85rem;
-            color: #95a5a6;
-        }
-        
-        /* Metrics Grid */
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        
-        .metric-box {
-            background: var(--color-card);
-            border-radius: 10px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            text-align: center;
-            border-top: 3px solid #667eea;
-        }
-        
-        .metric-label {
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            color: #95a5a6;
-            letter-spacing: 0.3px;
-            margin-bottom: 0.8rem;
-        }
-        
-        .metric-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #667eea;
-            margin-bottom: 0.5rem;
-        }
-        
-        .metric-unit {
-            font-size: 0.8rem;
-            color: #95a5a6;
-        }
-        
-        .metric-bar {
-            width: 100%;
-            height: 4px;
-            background: #ecf0f1;
-            border-radius: 2px;
-            margin-top: 1rem;
-            overflow: hidden;
-        }
-        
-        .metric-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            border-radius: 2px;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        /* Sections */
-        .section {
-            background: var(--color-card);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-            color: var(--color-text);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .section-title::before {
-            content: '';
-            width: 4px;
-            height: 1.2rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 2px;
-        }
-        
-        /* Approvals */
-        .approval-item {
-            background: #f8f9fa;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s ease;
-            border-left: 3px solid #ccc;
-        }
-        
-        .approval-item.high {
-            border-left-color: var(--color-attack);
-            background: linear-gradient(90deg, rgba(244,67,54,0.05) 0%, transparent 100%);
-        }
-        
-        .approval-item.medium {
-            border-left-color: var(--color-suspicious);
-            background: linear-gradient(90deg, rgba(255,152,0,0.05) 0%, transparent 100%);
-        }
-        
-        .approval-item.low {
-            border-left-color: #2196f3;
-            background: linear-gradient(90deg, rgba(33,150,243,0.05) 0%, transparent 100%);
-        }
-        
-        .approval-info {
-            flex: 1;
-        }
-        
-        .approval-ip {
-            font-weight: 600;
-            color: var(--color-text);
-            font-size: 0.95rem;
-        }
-        
-        .approval-reason {
-            font-size: 0.85rem;
-            color: #7f8c8d;
-            margin-top: 0.3rem;
-        }
-        
-        .approval-confidence {
-            font-size: 0.8rem;
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-            padding: 0.3rem 0.8rem;
-            border-radius: 4px;
-            margin: 0 0.5rem;
-        }
-        
-        .approval-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
-        
-        .btn-approve {
-            background: var(--color-safe);
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-approve:hover {
-            background: #45a049;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(76,175,80,0.3);
-        }
-        
-        .btn-reject {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-reject:hover {
-            background: #c0392b;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(231,76,60,0.3);
-        }
-        
-        /* Alerts Feed */
-        .alert-item {
-            background: #f8f9fa;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
-            border-left: 3px solid #ccc;
-            transition: all 0.3s ease;
-        }
-        
-        .alert-item.high { border-left-color: var(--color-attack); }
-        .alert-item.medium { border-left-color: var(--color-suspicious); }
-        .alert-item.low { border-left-color: #2196f3; }
-        
-        .alert-time {
-            font-size: 0.8rem;
-            color: #95a5a6;
-        }
-        
-        .alert-title {
-            font-weight: 600;
-            color: var(--color-text);
-            margin-top: 0.3rem;
-        }
-        
-        .alert-details {
-            font-size: 0.85rem;
-            color: #7f8c8d;
-            margin-top: 0.5rem;
-            display: flex;
-            gap: 1rem;
-        }
-        
-        .alert-badge {
-            display: inline-block;
-            padding: 0.3rem 0.8rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.2px;
-        }
-        
-        .alert-badge.blocked {
-            background: #c8e6c9;
-            color: #2e7d32;
-        }
-        
-        .alert-badge.flagged {
-            background: #ffe0b2;
-            color: #e65100;
-        }
-        
-        .alert-badge.pending {
-            background: #bbdefb;
-            color: #1565c0;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 2rem;
-            color: #95a5a6;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-            opacity: 0.5;
-        }
-        
-        @media (max-width: 768px) {
-            .metrics-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .approval-item, .alert-item {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .approval-actions {
-                width: 100%;
-                margin-top: 0.8rem;
-            }
-        }
+<style>
+/* ==========================================================
+   MONITOR — SOC STANDARD STYLING
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.monitor-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.monitor-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.status-card.safe {
+  border-left-color: var(--green);
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.status-card.suspicious {
+  border-left-color: var(--amber);
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.status-card.attack {
+  border-left-color: var(--red);
 }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
+.status-label {
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
 }
+
+.status-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.monitor-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.metric-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--blue));
+}
+
+.monitor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .monitor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.approval-item,
+.alert-item {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.approval-item.high,
+.alert-item.high { border-left-color: var(--red); }
+.approval-item.medium,
+.alert-item.medium { border-left-color: var(--amber); }
+.approval-item.low,
+.alert-item.low { border-left-color: var(--cyan); }
+
+.approval-ip,
+.alert-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.approval-reason,
+.alert-details {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.approval-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.approval-actions button {
+  font-size: 10px;
+  padding: 4px 8px;
+}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
-    <h1 class="page-title">INIDS Monitor - Real-Time Threat Dashboard</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <h1 class="page-title">Monitor</h1>
+    <div class="page-subtitle">REAL‑TIME THREAT OVERSIGHT</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
+    </div>
+    <span class="badge-info">SOC</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — MONITORING REAL‑TIME THREATS
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
+<div class="ds-card layer-elevated interactive">
   <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/monitor">Monitor</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/investigate">Investigate</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/respond">Respond</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/learn">Learn</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+    <div class="monitor-wrapper">
 
-    <!-- Main Content -->
-    <div class="container-fluid">
-        <div class="main-title">INIDS Monitor</div>
-        <div class="subtitle">Real-time threat detection dashboard</div>
-
-        <!-- Status Gauge -->
+      <!-- STATUS -->
+      <div class="monitor-status">
         <div id="status-card" class="status-card safe">
-            <div class="status-label">System Status</div>
-            <div class="status-value safe" id="status-value">🟢 SAFE</div>
-            <div class="status-time">Last 24h: <span id="alert-count">0</span> alerts | Blocked: <span id="blocked-count">0</span> IPs</div>
+          <div class="status-label">System Status</div>
+          <div id="status-value" class="status-value">🟢 SAFE</div>
+          <div class="policy-description">
+            Alerts (24h): <span id="alert-count">0</span> • 
+            Blocked: <span id="blocked-count">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- METRICS -->
+      <div class="monitor-metrics">
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Flows / sec</div>
+            <div class="metric-value" id="flows-value">0</div>
+            <div class="metric-bar">
+              <div class="metric-bar-fill" id="flows-bar"></div>
+            </div>
+          </div>
         </div>
 
-        <!-- Metrics Grid -->
-        <div class="metrics-grid">
-            <div class="metric-box">
-                <div class="metric-label">Flows/sec</div>
-                <div class="metric-value" id="flows-value">0</div>
-                <div class="metric-unit">flows/second</div>
-                <div class="metric-bar">
-                    <div class="metric-bar-fill" id="flows-bar" style="width: 0%"></div>
-                </div>
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Alerts / min</div>
+            <div class="metric-value" id="alerts-minute-value">0</div>
+            <div class="metric-bar">
+              <div class="metric-bar-fill" id="alerts-bar"></div>
             </div>
-
-            <div class="metric-box">
-                <div class="metric-label">Alerts/min</div>
-                <div class="metric-value" id="alerts-minute-value">0</div>
-                <div class="metric-unit">alerts/minute</div>
-                <div class="metric-bar">
-                    <div class="metric-bar-fill" id="alerts-bar" style="width: 0%"></div>
-                </div>
-            </div>
-
-            <div class="metric-box">
-                <div class="metric-label">Blocked IPs</div>
-                <div class="metric-value" id="blocked-ips-value">0</div>
-                <div class="metric-unit">active blocks</div>
-                <div class="metric-bar">
-                    <div class="metric-bar-fill" id="blocked-bar" style="width: 0%"></div>
-                </div>
-            </div>
-
-            <div class="metric-box">
-                <div class="metric-label">Model Accuracy</div>
-                <div class="metric-value" id="accuracy-value">0%</div>
-                <div class="metric-unit">detection accuracy</div>
-                <div class="metric-bar">
-                    <div class="metric-bar-fill" id="accuracy-bar" style="width: 0%"></div>
-                </div>
-            </div>
+          </div>
         </div>
 
-        <!-- Pending Approvals -->
-        <div class="section">
-            <div class="section-title">Pending Approvals</div>
-            <div id="approvals-container">
-                <div class="empty-state">
-                    <div class="empty-state-icon">✓</div>
-                    <div>All clear! No pending approvals</div>
-                </div>
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Blocked IPs</div>
+            <div class="metric-value" id="blocked-ips-value">0</div>
+            <div class="metric-bar">
+              <div class="metric-bar-fill" id="blocked-bar"></div>
             </div>
+          </div>
         </div>
 
-        <!-- Recent Alerts Feed -->
-        <div class="section">
-            <div class="section-title">Recent Alerts (Last 5)</div>
-            <div id="alerts-container">
-                <div class="empty-state">
-                    <div class="empty-state-icon">📊</div>
-                    <div>No alerts yet - system is monitoring</div>
-                </div>
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="ds-card-title">Model Accuracy</div>
+            <div class="metric-value" id="accuracy-value">0%</div>
+            <div class="metric-bar">
+              <div class="metric-bar-fill" id="accuracy-bar"></div>
             </div>
+          </div>
         </div>
+      </div>
+
+      <!-- APPROVALS + ALERTS -->
+      <div class="monitor-grid">
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Pending Approvals</div>
+          </div>
+          <div class="ds-card-body" id="approvals-container">
+            <div class="empty-state">No pending approvals</div>
+          </div>
+        </div>
+
+        <div class="ds-card layer-panel">
+          <div class="panel-header">
+            <div class="panel-title">Recent Alerts</div>
+          </div>
+          <div class="ds-card-body" id="alerts-container">
+            <div class="empty-state">No alerts received</div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/state.js') }}"></script>
 <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
-<script>
-        function updateMetricsFromState(data) {
-            if (!data || typeof data !== 'object') {
-                return;
-            }
-
-            const pulse = data.pulse || {};
-            const current = pulse.current || data.current || {};
-            const totalAlerts = typeof data.alertsCount === 'number'
-                ? data.alertsCount
-                : (typeof data.active_alerts === 'number' ? data.active_alerts : 0);
-            const blockedCount = typeof data.blocked === 'number'
-                ? data.blocked
-                : (current.blocked_ips || 0);
-
-            document.getElementById('flows-value').textContent = Math.round(current.flows_per_second || 0).toLocaleString();
-            document.getElementById('flows-bar').style.width = Math.min(100, ((current.flows_per_second || 0) / 50000) * 100) + '%';
-
-            document.getElementById('alerts-minute-value').textContent = current.alerts_per_minute || 0;
-            document.getElementById('alerts-bar').style.width = Math.min(100, ((current.alerts_per_minute || 0) / 10) * 100) + '%';
-
-            document.getElementById('blocked-ips-value').textContent = current.blocked_ips || 0;
-            document.getElementById('blocked-bar').style.width = Math.min(100, ((current.blocked_ips || 0) / 10) * 100) + '%';
-
-            document.getElementById('accuracy-value').textContent = (current.model_accuracy_percent || 95).toFixed(1) + '%';
-            document.getElementById('accuracy-bar').style.width = (current.model_accuracy_percent || 95) + '%';
-
-            document.getElementById('alert-count').textContent = totalAlerts;
-            document.getElementById('blocked-count').textContent = blockedCount;
-
-            updateStatusFromPulse(data.status || pulse.status || deriveStatusFromAlertCount(totalAlerts));
-            renderApprovalsFromState(data.pendingActions || data.actions || []);
-            renderAlertsFromState(data.alerts || []);
-        }
-
-        function renderApprovalsFromState(actions) {
-            const container = document.getElementById('approvals-container');
-            const pendingActions = (actions || [])
-                .filter(action => {
-                    const status = String(action.status || '').toLowerCase();
-                    return ['pending', 'pending_approval', 'reviewing'].includes(status) || !action.executed;
-                })
-                .slice(0, 5);
-
-            if (!pendingActions.length) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">✓</div>
-                        <div>All clear! No pending approvals</div>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = pendingActions.map(action => {
-                const severity = getApprovalSeverity(action);
-                return `
-                    <div class="approval-item ${severity}">
-                        <div class="approval-info">
-                            <div class="approval-ip">${escapeHtml(action.target || action.ip || 'Unknown target')}</div>
-                            <div class="approval-reason">${escapeHtml(action.reason || 'Manual review required')}</div>
-                        </div>
-                        <div class="approval-confidence">${escapeHtml(String(action.action || action.action_type || 'review').toUpperCase())}</div>
-                        <div class="approval-actions">
-                            <button type="button" class="btn-approve">Approve</button>
-                            <button type="button" class="btn-reject">Reject</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderAlertsFromState(alerts) {
-            const container = document.getElementById('alerts-container');
-            const recentAlerts = (alerts || []).slice(0, 5);
-
-            if (!recentAlerts.length) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📊</div>
-                        <div>No alerts yet - system is monitoring</div>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = recentAlerts.map(alert => {
-                const severity = String(alert.severity || 'low').toLowerCase();
-                return `
-                    <div class="alert-item ${severity}">
-                        <div class="alert-time">${formatTimestamp(alert.timestamp)}</div>
-                        <div class="alert-title">${escapeHtml(alert.prediction || 'Unknown alert')}</div>
-                        <div class="alert-details">
-                            <span>${escapeHtml(alert.source_ip || alert.profile || 'N/A')}</span>
-                            <span>${escapeHtml(severity.toUpperCase())}</span>
-                            <span class="alert-badge ${getAlertBadgeClass(alert)}">${escapeHtml(String(alert.status || 'open').toUpperCase())}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function updateStatusFromPulse(status) {
-            const card = document.getElementById('status-card');
-            const value = document.getElementById('status-value');
-
-            switch (status) {
-                case 'SAFE':
-                    card.className = 'status-card safe';
-                    value.textContent = '🟢 SAFE';
-                    value.className = 'status-value safe';
-                    break;
-                case 'SUSPICIOUS':
-                    card.className = 'status-card suspicious';
-                    value.textContent = '🟡 SUSPICIOUS';
-                    value.className = 'status-value suspicious';
-                    break;
-                case 'WARNING':
-                    card.className = 'status-card suspicious';
-                    value.textContent = '🟠 WARNING';
-                    value.className = 'status-value suspicious';
-                    break;
-                case 'CRITICAL':
-                    card.className = 'status-card attack';
-                    value.textContent = '🔴 CRITICAL';
-                    value.className = 'status-value attack';
-                    break;
-                default:
-                    card.className = 'status-card safe';
-                    value.textContent = '🟢 SAFE';
-                    value.className = 'status-value safe';
-                    break;
-            }
-        }
-
-        function deriveStatusFromAlertCount(alerts) {
-            if (alerts === 0) {
-                return 'SAFE';
-            }
-
-            if (alerts < 5) {
-                return 'SUSPICIOUS';
-            }
-
-            return 'CRITICAL';
-        }
-
-        function getApprovalSeverity(action) {
-            const actionType = String(action.action || action.action_type || '').toLowerCase();
-            if (actionType.includes('block')) {
-                return 'high';
-            }
-            if (actionType.includes('limit')) {
-                return 'medium';
-            }
-            return 'low';
-        }
-
-        function getAlertBadgeClass(alert) {
-            const status = String(alert.status || '').toLowerCase();
-            if (status === 'closed' || status === 'blocked') {
-                return 'blocked';
-            }
-            if (status === 'reviewing' || status === 'pending' || status === 'pending_approval') {
-                return 'pending';
-            }
-            return 'flagged';
-        }
-
-        function formatTimestamp(ts) {
-            if (!ts) {
-                return 'N/A';
-            }
-
-            try {
-                return new Date(ts).toLocaleTimeString();
-            } catch (error) {
-                return ts;
-            }
-        }
-
-        function escapeHtml(text) {
-            return String(text || '').replace(/[&<>"']/g, function (char) {
-                return {
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#039;'
-                }[char];
-            });
-        }
-
-        GlobalState.subscribe(data => {
-            updateMetricsFromState(data);
-        });
-
-        if (Object.keys(GlobalState.data || {}).length > 0) {
-            updateMetricsFromState(GlobalState.data);
-        } else if (window.INIDSSocketManager && typeof window.INIDSSocketManager.hydrate === 'function') {
-            window.INIDSSocketManager.hydrate().catch(error => {
-                console.error('Failed to hydrate monitor state:', error);
-            });
-        }
-    </script>
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/monitor.js') }}"></script>
 {% endblock %}
-
-

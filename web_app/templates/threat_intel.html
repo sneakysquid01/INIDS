@@ -1,226 +1,264 @@
 {% extends "base.html" %}
 
-{% block title %}Threat Intelligence Lookup{% endblock %}
+{% block title %}Threat Intelligence — INIDS{% endblock %}
+{% block page_title %}Threat Intelligence{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ==========================================================
+   THREAT INTEL — SOC STANDARD
+========================================================== */
+
+.threatintel-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.search-bar {
+  display: grid;
+  grid-template-columns: 2fr auto;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.search-helper {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.reputation-bar {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.reputation-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+}
+
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.tag-low    { color: var(--green-lt); border-color: rgba(39,201,122,0.3); }
+.tag-medium { color: var(--amber-lt); border-color: rgba(240,165,0,0.3); }
+.tag-high   { color: var(--red-lt); border-color: rgba(232,65,58,0.3); }
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .kv-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.tab-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn.active {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h1>🔎 Threat Intelligence Lookup</h1>
-            <p class="text-muted">Search for IP addresses and domains to check reputation and threat feeds</p>
-        </div>
-        <div class="col-md-4 text-end">
-            <button class="btn btn-secondary" onclick="clearResults()"><i class="bi bi-arrow-clockwise"></i> Clear</button>
-        </div>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Threat Intelligence</h1>
+    <div class="page-subtitle">REPUTATION • FEEDS • CONTEXT</div>
+  </div>
+  <div class="page-meta">
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      IDS ONLINE
     </div>
+    <span class="badge-info">INTEL</span>
+  </div>
+</div>
 
-    <!-- Search Section -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5 class="card-title">🔍 Search</h5>
-            <div class="row g-3">
-                <div class="col-md-8">
-                    <input type="text" id="queryInput" class="form-control form-control-lg" 
-                           placeholder="Enter IP address or domain (e.g., 192.168.1.1 or evil.com)" 
-                           onkeyup="handleQueryKeyup(event)">
-                    <small class="text-muted">Supports IPv4, IPv6, and domain names</small>
-                </div>
-                <div class="col-md-4">
-                    <button class="btn btn-primary btn-lg w-100" onclick="performLookup()">
-                        🔎 Lookup
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
+<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+  <div class="pulse-dot"></div>
+  <div>
+    ACTIVE INCIDENT — THREAT INTEL CORRELATED WITH LIVE ALERTS
+  </div>
+</div>
+{% endif %}
 
-    <!-- Recent Searches -->
-    <div id="recentSearchesSection" style="display: none;" class="mb-4">
-        <div class="card">
-            <div class="card-body">
-                <h6 class="card-title">Recent Searches</h6>
-                <div id="recentSearches" class="d-flex flex-wrap gap-2"></div>
-            </div>
-        </div>
-    </div>
+<div class="ds-card layer-elevated interactive">
+  <div class="ds-card-body">
+    <div class="threatintel-wrapper">
 
-    <!-- Results Section -->
-    <div id="resultsSection" style="display: none;">
-        <!-- Summary Card -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Query</h6>
-                        <p id="resultQuery" class="fs-5 fw-bold">--</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Type</h6>
-                        <p id="resultType" class="fs-5"><span class="badge bg-secondary">Unknown</span></p>
-                    </div>
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Reputation Score</h6>
-                        <div id="reputationBar" class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 25px; width: 100px;">
-                                <div id="reputationProgress" class="progress-bar bg-success" style="width: 0%"></div>
-                            </div>
-                            <span id="reputationScore">0%</span>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Threat Level</h6>
-                        <p id="threatLevel" class="fs-6 fw-bold">--</p>
-                    </div>
-                </div>
-            </div>
+      <!-- SEARCH -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-title-accent accent-cyan"></span>
+            Lookup
+          </div>
+          <button class="btn-secondary" onclick="clearResults()">Clear</button>
         </div>
 
-        <!-- Tabbed Results -->
-        <ul class="nav nav-tabs mb-3" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="tab-reputation" data-bs-toggle="tab" 
-                        data-bs-target="#content-reputation" type="button" role="tab">
-                    🏆 Reputation
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-threats" data-bs-toggle="tab" 
-                        data-bs-target="#content-threats" type="button" role="tab">
-                    ⚠️ Threats
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-feeds" data-bs-toggle="tab" 
-                        data-bs-target="#content-feeds" type="button" role="tab">
-                    📡 Threat Feeds
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-incidents" data-bs-toggle="tab" 
-                        data-bs-target="#content-incidents" type="button" role="tab">
-                    🚨 Related Incidents
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-geolocation" data-bs-toggle="tab" 
-                        data-bs-target="#content-geolocation" type="button" role="tab">
-                    🌍 Geolocation
-                </button>
-            </li>
-        </ul>
-
-        <!-- Tab Content -->
-        <div class="tab-content">
-            <!-- Reputation Tab -->
-            <div class="tab-pane fade show active" id="content-reputation" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-3">📊 Reputation Details</h6>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Last Observed</label>
-                                <p id="rep-lastSeen" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">First Observed</label>
-                                <p id="rep-firstSeen" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Confidence</label>
-                                <div class="progress" style="height: 20px;">
-                                    <div id="rep-confidence" class="progress-bar bg-info" style="width: 0%"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Risk Score</label>
-                                <h5 id="rep-riskScore" class="mb-0">--</h5>
-                            </div>
-                        </div>
-                        <hr>
-                        <h6 class="mb-2">Threat Categories</h6>
-                        <div id="threatCategories" class="d-flex flex-wrap gap-2"></div>
-                    </div>
-                </div>
+        <div class="panel-body">
+          <div class="search-bar">
+            <div>
+              <input type="text"
+                     id="queryInput"
+                     class="ds-input"
+                     placeholder="IP address or domain (e.g. 8.8.8.8, example.com)"
+                     onkeyup="handleQueryKeyup(event)">
+              <div class="search-helper">
+                Supports IPv4, IPv6, and domain names
+              </div>
             </div>
-
-            <!-- Threats Tab -->
-            <div class="tab-pane fade" id="content-threats" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-3">⚠️ Known Threats</h6>
-                        <div id="threatsList" class="space-y-3"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Threat Feeds Tab -->
-            <div class="tab-pane fade" id="content-feeds" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-3">📡 Threat Feeds</h6>
-                        <div id="feedsList" class="space-y-3"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Incidents Tab -->
-            <div class="tab-pane fade" id="content-incidents" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-3">🚨 Related Incidents</h6>
-                        <div id="incidentsList" class="space-y-3"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Geolocation Tab -->
-            <div class="tab-pane fade" id="content-geolocation" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-3">🌍 Geolocation & Network</h6>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Country</label>
-                                <p id="geo-country" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">City</label>
-                                <p id="geo-city" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Latitude, Longitude</label>
-                                <p id="geo-coords" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-muted">Timezone</label>
-                                <p id="geo-timezone" class="mb-0">--</p>
-                            </div>
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label text-muted">ASN / ISP</label>
-                                <p id="geo-asn" class="mb-0">--</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <button class="btn-primary" onclick="performLookup()">Lookup</button>
+          </div>
         </div>
-    </div>
+      </div>
 
-    <!-- No Results Message -->
-    <div id="noResultsSection" style="display: none;" class="alert alert-info">
-        <h5>🔍 No Results</h5>
-        <p>Enter an IP address or domain name to search the threat intelligence database.</p>
-        <small class="text-muted">Examples: 192.168.1.1, 2001:db8::1, example.com</small>
-    </div>
-
-    <!-- Loading Spinner -->
-    <div id="loadingSection" style="display: none;" class="text-center py-5">
-        <div class="spinner-border" role="status">
-            <span class="visually-hidden">Loading...</span>
+      <!-- RESULTS SUMMARY -->
+      <div id="resultsSection" style="display:none; margin-top:16px;">
+        <div class="ds-card layer-panel">
+          <div class="ds-card-body">
+            <div class="kv-grid">
+              <div>
+                <div class="panel-title">Query</div>
+                <div id="resultQuery" class="mono-val">—</div>
+              </div>
+              <div>
+                <div class="panel-title">Type</div>
+                <div id="resultType">—</div>
+              </div>
+              <div>
+                <div class="panel-title">Reputation</div>
+                <div class="reputation-bar">
+                  <div id="reputationProgress" class="reputation-bar-fill" style="width:0%;"></div>
+                </div>
+                <div id="reputationScore" class="mono-val">0%</div>
+              </div>
+              <div>
+                <div class="panel-title">Threat Level</div>
+                <div id="threatLevel">—</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <p class="mt-3 text-muted">Searching threat intelligence database...</p>
+
+        <!-- TABS -->
+        <div class="tab-buttons" style="margin-top:16px;">
+          <div class="tab-btn active" onclick="switchTab('reputation')">Reputation</div>
+          <div class="tab-btn" onclick="switchTab('threats')">Threats</div>
+          <div class="tab-btn" onclick="switchTab('feeds')">Feeds</div>
+          <div class="tab-btn" onclick="switchTab('incidents')">Incidents</div>
+          <div class="tab-btn" onclick="switchTab('geo')">Geolocation</div>
+        </div>
+
+        <!-- TAB CONTENT -->
+        <div id="tab-reputation">
+          <div class="ds-card layer-panel">
+            <div class="ds-card-body">
+              <div class="kv-grid">
+                <div>
+                  <div class="panel-title">First Seen</div>
+                  <div id="rep-firstSeen">—</div>
+                </div>
+                <div>
+                  <div class="panel-title">Last Seen</div>
+                  <div id="rep-lastSeen">—</div>
+                </div>
+                <div>
+                  <div class="panel-title">Confidence</div>
+                  <div class="reputation-bar">
+                    <div id="rep-confidence" class="reputation-bar-fill" style="width:0%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="panel-title">Risk Score</div>
+                  <div id="rep-riskScore" class="mono-val">—</div>
+                </div>
+              </div>
+
+              <div style="margin-top:12px;">
+                <div class="panel-title">Threat Categories</div>
+                <div id="threatCategories" style="margin-top:6px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-threats" style="display:none;">
+          <div class="ds-card layer-panel">
+            <div class="ds-card-body" id="threatsList"></div>
+          </div>
+        </div>
+
+        <div id="tab-feeds" style="display:none;">
+          <div class="ds-card layer-panel">
+            <div class="ds-card-body" id="feedsList"></div>
+          </div>
+        </div>
+
+        <div id="tab-incidents" style="display:none;">
+          <div class="ds-card layer-panel">
+            <div class="ds-card-body" id="incidentsList"></div>
+          </div>
+        </div>
+
+        <div id="tab-geo" style="display:none;">
+          <div class="ds-card layer-panel">
+            <div class="ds-card-body">
+              <div class="kv-grid">
+                <div><strong>Country</strong><div id="geo-country">—</div></div>
+                <div><strong>City</strong><div id="geo-city">—</div></div>
+                <div><strong>Coordinates</strong><div id="geo-coords">—</div></div>
+                <div><strong>ASN / ISP</strong><div id="geo-asn">—</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NO RESULTS -->
+      <div id="noResultsSection" class="empty-state" style="display:none;">
+        Enter an IP address or domain to query threat intelligence.
+      </div>
+
+      <!-- LOADING -->
+      <div id="loadingSection" class="empty-state" style="display:none;">
+        Querying threat intelligence sources…
+      </div>
+
     </div>
+  </div>
 </div>
 
 {% endblock %}

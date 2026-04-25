@@ -1,232 +1,240 @@
 {% extends "base.html" %}
 
-{% block title %}Realtime Events{% endblock %}
+{% block title %}Realtime Events — INIDS{% endblock %}
 {% block page_title %}Realtime Events{% endblock %}
 
 {% block extra_css %}
-body { background: #0f172a; color: #e2e8f0; }
-        .panel { background: #111c36; border: 1px solid #2b3b63; border-radius: 12px; padding: 16px; }
-        .metric { font-size: 1.8rem; font-weight: 700; }
-        .muted { color: #9fb0d3; }
-        .feed { max-height: 420px; overflow-y: auto; }
-        .feed-item { border-bottom: 1px solid #233155; padding: 8px 0; }
-        .badge-soft { background: #24355f; color: #d8e4ff; }
+<style>
+/* ==========================================================
+   REALTIME EVENTS — SOC STANDARD
+========================================================== */
 
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.realtime-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.realtime-feed {
+  max-height: 420px;
+  overflow-y: auto;
 }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.feed-item {
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 0;
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
 }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.feed-item:last-child {
+  border-bottom: none;
 }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+.badge-soft {
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  margin-right: 6px;
+  font-family: var(--mono);
 }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.metric-value {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
 }
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+</style>
 {% endblock %}
 
 {% block content %}
+
+<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Realtime Events</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
+    <div class="page-subtitle">LIVE DETECTION & RESPONSE STREAM</div>
   </div>
   <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
+    <div class="status-chip live">
+      <div class="sys-status-dot"></div>
+      STREAMING
+    </div>
+    <span class="badge-info">WEBSOCKET</span>
   </div>
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+  <div>
+    ACTIVE INCIDENT — REALTIME EVENTS MAY CONTAIN ATTACK TRAFFIC
+  </div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-panel interactive">
-  <div class="ds-card-body">
-<nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">INIDS</a>
-            <a href="/dashboard" class="btn btn-outline-light btn-sm">Ops Dashboard</a>
-        </div>
-    </nav>
-
-    <div class="container py-4">
-        <h2 class="mb-3">Realtime Detection and Response</h2>
-        <p class="muted">Live stream of DetectionEvent and ActionEvent over WebSockets.</p>
-
-        {% if not socketio_enabled %}
-        <div class="alert alert-warning">
-            Flask-SocketIO is not installed. Install <code>flask-socketio</code> to enable realtime streaming.
-        </div>
-        {% endif %}
-
-        <div class="row g-3 mb-3">
-            <div class="col-6 col-md-3">
-                <div class="panel panel-elevated">
-                    <div class="muted">Detections</div>
-                    <div id="mDetections" class="metric">0</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="panel panel-elevated">
-                    <div class="muted">Alerts</div>
-                    <div id="mAlerts" class="metric text-warning">0</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="panel panel-elevated">
-                    <div class="muted">Blocks</div>
-                    <div id="mBlocks" class="metric text-danger">0</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="panel panel-elevated">
-                    <div class="muted">Latest Risk</div>
-                    <div id="mRisk" class="metric text-info">0.000</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-3">
-            <div class="col-lg-5">
-                <div class="panel">
-                    <h5>Recent Risks</h5>
-                    <div id="riskFeed" class="feed"></div>
-                </div>
-            </div>
-            <div class="col-lg-7">
-                <div class="panel">
-                    <h5>Timeline</h5>
-                    <div id="timeline" class="feed"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
+{% if not socketio_enabled %}
+<div class="ds-alert warn" style="margin-bottom:16px;">
+  <div>
+    WebSocket streaming unavailable. Install
+    <code>flask-socketio</code> to enable realtime events.
   </div>
 </div>
+{% endif %}
+
+<!-- METRICS -->
+<div class="realtime-metrics">
+  <div class="ds-card layer-panel">
+    <div class="ds-card-body">
+      <div class="ds-card-title">Detections</div>
+      <div id="mDetections" class="metric-value">0</div>
+    </div>
+  </div>
+
+  <div class="ds-card layer-panel">
+    <div class="ds-card-body">
+      <div class="ds-card-title">Alerts</div>
+      <div id="mAlerts" class="metric-value val-amber">0</div>
+    </div>
+  </div>
+
+  <div class="ds-card layer-panel">
+    <div class="ds-card-body">
+      <div class="ds-card-title">Blocks</div>
+      <div id="mBlocks" class="metric-value val-red">0</div>
+    </div>
+  </div>
+
+  <div class="ds-card layer-panel">
+    <div class="ds-card-body">
+      <div class="ds-card-title">Latest Risk</div>
+      <div id="mRisk" class="metric-value val-cyan">0.000</div>
+    </div>
+  </div>
+</div>
+
+<!-- FEEDS -->
+<div class="grid-2">
+
+  <!-- RISK FEED -->
+  <div class="ds-card layer-panel interactive">
+    <div class="panel-header">
+      <div class="panel-title">
+        <span class="panel-title-accent accent-blue"></span>
+        Recent Risk Scores
+      </div>
+    </div>
+    <div class="ds-card-body realtime-feed" id="riskFeed">
+      <div class="empty-state">Waiting for risk events…</div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="ds-card layer-panel interactive">
+    <div class="panel-header">
+      <div class="panel-title">
+        <span class="panel-title-accent accent-red"></span>
+        Event Timeline
+      </div>
+    </div>
+    <div class="ds-card-body realtime-feed" id="timeline">
+      <div class="empty-state">Waiting for realtime events…</div>
+    </div>
+  </div>
+
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 {% if socketio_enabled %}
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-        let detections = 0;
-        let alerts = 0;
-        let blocks = 0;
+let detections = 0;
+let alerts = 0;
+let blocks = 0;
 
-        const timeline = document.getElementById("timeline");
-        const riskFeed = document.getElementById("riskFeed");
+const timeline = document.getElementById("timeline");
+const riskFeed = document.getElementById("riskFeed");
 
-        function prepend(container, line) {
-            const el = document.createElement("div");
-            el.className = "feed-item";
-            el.innerHTML = line;
-            container.prepend(el);
-            while (container.children.length > 100) {
-                container.removeChild(container.lastChild);
-            }
-        }
+function prepend(container, content) {
+  if (container.querySelector(".empty-state")) {
+    container.innerHTML = "";
+  }
+  const el = document.createElement("div");
+  el.className = "feed-item";
+  el.innerHTML = content;
+  container.prepend(el);
+  while (container.children.length > 100) {
+    container.removeChild(container.lastChild);
+  }
+}
 
-        function refreshMetrics(latestRisk) {
-            document.getElementById("mDetections").textContent = detections;
-            document.getElementById("mAlerts").textContent = alerts;
-            document.getElementById("mBlocks").textContent = blocks;
-            if (typeof latestRisk === "number") {
-                document.getElementById("mRisk").textContent = latestRisk.toFixed(3);
-            }
-        }
+function refreshMetrics(latestRisk) {
+  document.getElementById("mDetections").textContent = detections;
+  document.getElementById("mAlerts").textContent = alerts;
+  document.getElementById("mBlocks").textContent = blocks;
+  if (typeof latestRisk === "number") {
+    document.getElementById("mRisk").textContent = latestRisk.toFixed(3);
+  }
+}
 
-        const socket = io("/events", { transports: ["websocket", "polling"] });
+const socket = io("/events", { transports: ["websocket", "polling"] });
 
-        socket.on("connect", function () {
-            prepend(timeline, "<span class='badge badge-soft'>system</span> websocket connected");
-        });
+socket.on("connect", () => {
+  prepend(timeline, "<span class='badge-soft'>system</span> websocket connected");
+});
 
-        socket.on("disconnect", function () {
-            prepend(timeline, "<span class='badge badge-soft'>system</span> websocket disconnected");
-        });
+socket.on("disconnect", () => {
+  prepend(timeline, "<span class='badge-soft'>system</span> websocket disconnected");
+});
 
-        socket.on("DetectionEvent", function (evt) {
-            detections += 1;
-            if (String(evt.prediction).toLowerCase() === "attack" || evt.suspicious) {
-                alerts += 1;
-            }
-            prepend(
-                timeline,
-                "<span class='badge bg-primary'>Detection</span> " +
-                evt.timestamp + " src=" + (evt.source_ip || "unknown") +
-                " prediction=" + evt.prediction +
-                " confidence=" + evt.confidence
-            );
-            refreshMetrics();
-        });
+socket.on("DetectionEvent", evt => {
+  detections += 1;
+  if (String(evt.prediction).toLowerCase() === "attack" || evt.suspicious) {
+    alerts += 1;
+  }
+  prepend(
+    timeline,
+    "<span class='badge-soft'>detection</span> " +
+    evt.timestamp +
+    " src=" + (evt.source_ip || "unknown") +
+    " pred=" + evt.prediction +
+    " conf=" + evt.confidence
+  );
+  refreshMetrics();
+});
 
-        socket.on("RiskScoreEvent", function (evt) {
-            const risk = Number(evt.risk_score || 0);
-            prepend(
-                riskFeed,
-                "<span class='badge bg-info text-dark'>Risk</span> " +
-                evt.timestamp + " src=" + (evt.detection && evt.detection.source_ip ? evt.detection.source_ip : "unknown") +
-                " score=" + risk.toFixed(3)
-            );
-            refreshMetrics(risk);
-        });
+socket.on("RiskScoreEvent", evt => {
+  const risk = Number(evt.risk_score || 0);
+  prepend(
+    riskFeed,
+    "<span class='badge-soft'>risk</span> " +
+    evt.timestamp +
+    " src=" + (evt.detection && evt.detection.source_ip ? evt.detection.source_ip : "unknown") +
+    " score=" + risk.toFixed(3)
+  );
+  refreshMetrics(risk);
+});
 
-        socket.on("ActionEvent", function (evt) {
-            const action = String(evt.action || "").toLowerCase();
-            if (action.includes("block")) {
-                blocks += 1;
-            }
-            const risk = Number(evt.decision && evt.decision.risk ? evt.decision.risk.risk_score : 0);
-            prepend(
-                timeline,
-                "<span class='badge bg-danger'>Action</span> " +
-                evt.created_at + " action=" + evt.action +
-                " target=" + evt.target + " status=" + evt.status
-            );
-            refreshMetrics(risk);
-        });
-    </script>
+socket.on("ActionEvent", evt => {
+  if (String(evt.action || "").toLowerCase().includes("block")) {
+    blocks += 1;
+  }
+  prepend(
+    timeline,
+    "<span class='badge-soft'>action</span> " +
+    evt.created_at +
+    " action=" + evt.action +
+    " target=" + evt.target +
+    " status=" + evt.status
+  );
+  refreshMetrics();
+});
+</script>
 {% endif %}
 {% endblock %}
-
-
+``
