@@ -348,6 +348,16 @@ body {
 .sev-high-row {
     background: rgba(245,158,11,0.06);
 }
+
+.connection-banner{display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.5px;margin-bottom:16px;transition:background .4s,color .4s,border-color .4s;border:1px solid transparent}
+.connection-banner.connected{background:rgba(76,175,80,.08);border-color:rgba(76,175,80,.25);color:#4caf50}
+.connection-banner.disconnected{background:rgba(244,67,54,.08);border-color:rgba(244,67,54,.25);color:#f44336}
+.connection-banner.reconnecting{background:rgba(255,193,7,.08);border-color:rgba(255,193,7,.25);color:#ffc107;animation:pulse-banner 1.5s infinite}
+@keyframes pulse-banner{0%,100%{opacity:1}50%{opacity:.5}}
+.connection-banner .banner-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.connection-banner .reconnect-btn{margin-left:auto;background:none;border:1px solid currentColor;color:inherit;font-family:inherit;font-size:10px;padding:2px 10px;border-radius:4px;cursor:pointer;letter-spacing:.5px;transition:opacity .2s}
+.connection-banner .reconnect-btn:hover{opacity:.7}
+.last-updated{font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.5px}
 {% endblock %}
 
 {% block content %}
@@ -358,6 +368,7 @@ body {
   </div>
   <div class="page-meta">
     <span class="status-chip">LIVE</span>
+    <span class="last-updated" id="last-updated">&mdash;</span>
     <span class="badge-info">UNIFIED UI</span>
   </div>
 </div>
@@ -368,6 +379,13 @@ body {
   <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
 </div>
 {% endif %}
+
+<!-- CONNECTION STATUS BANNER -->
+<div id="connection-banner" class="connection-banner disconnected">
+    <span class="banner-dot"></span>
+    <span id="connection-text">CONNECTING&hellip;</span>
+    <button class="reconnect-btn" id="reconnect-btn" style="display:none;">RECONNECT</button>
+</div>
 
 <div class="ds-card layer-panel interactive">
   <div class="ds-card-body">
@@ -469,8 +487,21 @@ body {
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/actions.js') }}"></script>
+<script src="{{ url_for('static', filename='js/state.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/actions.js') }}"></script>
+
+<script type="module">
+    import SocketCore from "./core/socket_core.js";
+    const banner=document.getElementById("connection-banner"),txt=document.getElementById("connection-text"),btn=document.getElementById("reconnect-btn"),upd=document.getElementById("last-updated");
+    function setBanner(s,t){banner.classList.remove("connected","disconnected","reconnecting");banner.classList.add(s);txt.textContent=t;btn.style.display=s==="disconnected"?"inline-block":"none";}
+    SocketCore.on("connect",()=>setBanner("connected","SOCKET CONNECTED"));
+    SocketCore.on("disconnect",()=>setBanner("disconnected","SOCKET DISCONNECTED"));
+    SocketCore.on("reconnect_attempt",()=>setBanner("reconnecting","RECONNECTING\u2026"));
+    btn.addEventListener("click",()=>{setBanner("reconnecting","RECONNECTING\u2026");SocketCore.connect();});
+    if(window.GlobalState){window.GlobalState.subscribe(()=>{const n=new Date();if(upd)upd.textContent=`Last update ${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}:${String(n.getSeconds()).padStart(2,"0")}`;});}
+</script>
 {% endblock %}
 
 

@@ -1,340 +1,298 @@
-/**
- * Alerts Page - SOC Enhanced Version
- */
+// ======================================================================
+// ALERTS PAGE (ES MODULE VERSION)
+// Aligned with dashboard.js, monitor.js, actions.js
+// Uses: core/socket_core.js, core/utils.js, core/ui_core.js
+// ======================================================================
+
+import SocketCore from "./core/socket_core.js";
+import { playAlertTone } from "./core/utils.js";
+import {
+  showError as coreShowError,
+  showSuccess as coreShowSuccess,
+} from "./core/ui_core.js";
+
+console.log(
+  "%c[ALERTS] Loaded (ES Module)",
+  "color:#ef4444;font-weight:bold;"
+);
+
+// ======================================================================
+// STATE
+// ======================================================================
 
 let currentAlerts = [];
 let currentAlert = null;
-let alertsModal, statusModal;
-let lastRealtimeAlertKey = null;
 
-document.addEventListener('DOMContentLoaded', function () {
-    alertsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
-    statusModal = new bootstrap.Modal(document.getElementById('statusModal'));
+let detailsModal = null;
+let statusModal = null;
 
-    document.getElementById('btn-refresh').addEventListener('click', requestSharedState);
-    document.getElementById('severity-filter').addEventListener('change', loadAlerts);
-    document.getElementById('status-filter').addEventListener('change', loadAlerts);
+// ======================================================================
+// INIT
+// ======================================================================
 
-    document.getElementById('btn-update-status').addEventListener('click', () => {
-        alertsModal.hide();
-        statusModal.show();
+(function init() {
+  const detailsEl = document.getElementById("detailsModal");
+  const statusEl = document.getElementById("statusModal");
+
+  if (detailsEl && typeof bootstrap !== "undefined") {
+    detailsModal = new bootstrap.Modal(detailsEl);
+  }
+  if (statusEl && typeof bootstrap !== "undefined") {
+    statusModal = new bootstrap.Modal(statusEl);
+  }
+
+  // Initial render from GlobalState if available
+  hydrateFromState();
+
+  // Subscribe to GlobalState (same pattern as other pages)
+  if (window.GlobalState) {
+    window.GlobalState.subscribe((state) => {
+      if (!state || !state.alerts) return;
+      syncAlertsFromState(state.alerts);
     });
+  }
 
-    document.getElementById('btn-save-status').addEventListener('click', saveAlertStatus);
+  // Wire real-time socket events
+  attachSocketHandlers();
+})();
 
-    GlobalState.subscribe(data => {
-        syncAlertsFromState(data);
-    });
+// ======================================================================
+// SOCKET REAL-TIME HANDLERS
+// ======================================================================
 
-    loadAlerts();
-});
+function attachSocketHandlers() {
+  // New alert detected
+  SocketCore.on("new_alert", (alert) => {
+    console.log("%c[ALERTS] new_alert", "color:#ef4444;", alert);
+    if (!alert) return;
 
-/**
- * Load alerts
- */
-function loadAlerts() {
-    showLoading(true);
+    currentAlerts.unshift(alert);
+    updateAlertCount(currentAlerts.length);
+    renderAlerts(currentAlerts);
+    playAlertTone(alert.severity || "high");
+  });
 
-    if (Array.isArray(GlobalState.data.alerts)) {
-        currentAlerts = filterAlerts(GlobalState.data.alerts);
-        updateAlertCount(currentAlerts.length);
-        renderAlerts(currentAlerts);
-        showLoading(false);
-        return;
+  // Alert updated (status / assignee / close reason)
+  SocketCore.on("alert_update", (updated) => {
+    console.log("%c[ALERTS] alert_update", "color:#3b82f6;", updated);
+    if (!updated?.id) return;
+
+    const idx = currentAlerts.findIndex((a) => a.id === updated.id);
+    if (idx !== -1) {
+      currentAlerts[idx] = { ...currentAlerts[idx], ...updated };
+      renderAlerts(currentAlerts);
     }
+  });
 
-    requestSharedState();
+  // Block executed from any page
+  SocketCore.on("block_update", () => {
+    console.log("%c[ALERTS] block_update", "color:#f59e0b;");
+    // Refresh from backend/state
+    hydrateFromState(true);
+  });
+
+  // Connection lifecycle
+  SocketCore.on("connect", () => {
+    console.log("%c[ALERTS] Socket connected", "color:#10b981;");
+    coreShowSuccess("Alerts: real-time feed connected");
+    hydrateFromState(true);
+  });
+
+  SocketCore.on("disconnect", () => {
+    console.warn("[ALERTS] Socket disconnected");
+    coreShowError("Alerts: real-time feed lost — using cached data");
+  });
+
+  SocketCore.on("reconnect", () => {
+    console.log("%c[ALERTS] Socket reconnected", "color:#10b981;");
+    coreShowSuccess("Alerts: real-time feed restored");
+    hydrateFromState(true);
+  });
 }
 
-function requestSharedState() {
-    showLoading(true);
+// ======================================================================
+// STATE → UI SYNC
+// ======================================================================
 
-    if (window.INIDSSocketManager && typeof window.INIDSSocketManager.hydrate === 'function') {
-        window.INIDSSocketManager.hydrate().catch(error => {
-            console.error('Error hydrating shared alerts state:', error);
-            showError('Failed to load alerts.');
-            showLoading(false);
-        });
-        return;
-    }
+function hydrateFromState(force = false) {
+  if (!window.GlobalState || !window.GlobalState.data) return;
 
-    showError('Failed to load alerts.');
-    showLoading(false);
+  const alerts = window.GlobalState.data.alerts;
+  if (!Array.isArray(alerts)) return;
+
+  if (force || alerts !== currentAlerts) {
+    syncAlertsFromState(alerts);
+  }
 }
 
-function syncAlertsFromState(data) {
-    if (!data || typeof data !== 'object') {
-        return;
-    }
-
-    if (Array.isArray(data.alerts)) {
-        currentAlerts = filterAlerts(data.alerts);
-        updateAlertCount(currentAlerts.length);
-        renderAlerts(currentAlerts);
-        showLoading(false);
-    }
-
-    if (data.lastAlert) {
-        const key = `${data.lastAlert.id}:${data.lastAlert.timestamp}`;
-        if (key !== lastRealtimeAlertKey) {
-            lastRealtimeAlertKey = key;
-            appendAlertRow(data.lastAlert);
-        }
-    }
+function syncAlertsFromState(alerts) {
+  currentAlerts = filterAlerts(alerts);
+  updateAlertCount(currentAlerts.length);
+  renderAlerts(currentAlerts);
 }
+
+// ======================================================================
+// FILTERING
+// ======================================================================
 
 function filterAlerts(alerts) {
-    const severity = document.getElementById('severity-filter').value || '';
-    const status = document.getElementById('status-filter').value || '';
+  const sev = document.getElementById("severity-filter")?.value || "";
+  const status = document.getElementById("status-filter")?.value || "";
 
-    return (alerts || []).filter(alert => {
-        const severityMatch = !severity || String(alert.severity || '').toLowerCase() === severity.toLowerCase();
-        const statusMatch = !status || String(alert.status || '').toLowerCase() === status.toLowerCase();
-        return severityMatch && statusMatch;
-    });
+  return alerts.filter((a) => {
+    const s = (a.severity || "").toLowerCase();
+    const st = (a.status || "").toLowerCase();
+
+    if (sev && s !== sev.toLowerCase()) return false;
+    if (status && st !== status.toLowerCase()) return false;
+
+    return true;
+  });
 }
 
-/**
- * Render alerts (SOC upgraded)
- */
+// ======================================================================
+// RENDERING
+// ======================================================================
+
 function renderAlerts(alerts) {
-    const wrapper = document.getElementById('alerts-wrapper');
-    const tbody = document.getElementById('alerts-body');
-    const emptyState = document.getElementById('empty-state');
+  const wrapper = document.getElementById("alerts-wrapper");
+  const tbody = document.getElementById("alerts-body");
+  const empty = document.getElementById("empty-state");
 
-    tbody.innerHTML = '';
+  tbody.innerHTML = "";
 
-    if (!alerts || alerts.length === 0) {
-        wrapper.style.display = 'none';
-        emptyState.style.display = 'block';
-        return;
-    }
+  if (!alerts || alerts.length === 0) {
+    wrapper.style.display = "none";
+    empty.style.display = "block";
+    return;
+  }
 
-    wrapper.style.display = 'block';
-    emptyState.style.display = 'none';
+  wrapper.style.display = "block";
+  empty.style.display = "none";
 
-    alerts.forEach(alert => {
-        tbody.appendChild(createAlertRow(alert));
-    });
+  alerts.forEach((alert) => {
+    tbody.appendChild(createAlertRow(alert));
+  });
 }
 
 function createAlertRow(alert) {
-    const row = document.createElement('tr');
-    const severity = (alert.severity || 'low').toLowerCase();
-    const status = (alert.status || 'open').toLowerCase();
-    const confidence = parseFloat(alert.confidence || 0);
+  const row = document.createElement("tr");
 
-    if (severity === 'critical') {
-        row.classList.add('sev-critical-row', 'pulse-soft');
-    } else if (severity === 'high') {
-        row.classList.add('sev-high-row');
-    }
+  const sev = (alert.severity || "low").toLowerCase();
+  const status = (alert.status || "open").toLowerCase();
 
-    row.onclick = () => showAlertDetails(alert);
-    row.innerHTML = `
-        <td class="mono-val">${escapeHtml(alert.id?.substring(0, 12))}</td>
+  row.className =
+    sev === "critical"
+      ? "sev-critical-row"
+      : sev === "high"
+      ? "sev-high-row"
+      : "";
 
-        <td>${formatTimestamp(alert.timestamp)}</td>
+  row.innerHTML = `
+    <td class="mono">${escapeHtml(alert.id)}</td>
+    <td class="uppercase ${sev}">${sev}</td>
+    <td>${escapeHtml(alert.prediction || "unknown")}</td>
+    <td class="mono">${Math.round((alert.confidence || 0) * 100)}%</td>
+    <td class="mono">${status}</td>
+    <td class="text-right">
+      <button class="btn btn-sm btn-danger"
+        onclick="blockAlert('${escapeHtml(alert.id)}')">
+        Block
+      </button>
+    </td>
+  `;
 
-        <td>
-            <span class="sev-${severity}">
-                ${severity}
-            </span>
-        </td>
+  row.addEventListener("click", (e) => {
+    if (e.target.tagName === "BUTTON") return;
+    showAlertDetails(alert);
+  });
 
-        <td>${escapeHtml(alert.prediction || 'unknown')}</td>
-
-        <td>
-            <span class="mono-val">${(confidence * 100).toFixed(0)}%</span>
-        </td>
-
-        <td>
-            <span class="status-${status}">
-                ${status}
-            </span>
-        </td>
-
-        <td>${escapeHtml(alert.profile || 'N/A')}</td>
-
-        <td>
-            <button class="btn-danger" onclick="event.stopPropagation(); blockAlert('${alert.id}')">
-                Block
-            </button>
-        </td>
-    `;
-
-    return row;
+  return row;
 }
 
-function appendAlertRow(alert) {
-    if (!alert) {
-        return;
-    }
+// ======================================================================
+// ACTIONS
+// ======================================================================
 
-    const normalizedAlert = {
-        ...alert,
-        confidence: Number.isFinite(Number(alert.confidence)) ? Number(alert.confidence) : 0,
-        status: alert.status || 'open',
-        profile: alert.profile || 'N/A'
-    };
-
-    if (!filterAlerts([normalizedAlert]).length) {
-        return;
-    }
-
-    if (currentAlerts.some(item => item.id === normalizedAlert.id)) {
-        return;
-    }
-
-    currentAlerts = [normalizedAlert, ...currentAlerts].slice(0, 200);
-    updateAlertCount(currentAlerts.length);
-    renderAlerts(currentAlerts);
-}
-
-/**
- * 🔥 Block alert (NEW)
- */
 async function blockAlert(alertId) {
-    if (!confirm(`Block alert ${alertId}?`)) return;
+  if (!confirm(`Block alert ${alertId}?`)) return;
 
-    try {
-        const res = await fetch(`/api/block/${alertId}`, {
-            method: 'POST'
-        });
+  try {
+    const res = await fetch(`/api/block/${encodeURIComponent(alertId)}`, {
+      method: "POST",
+    });
 
-        if (!res.ok) throw new Error("Block failed");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        showSuccess("Alert blocked");
-        requestSharedState();
+    // Emit so monitor + dashboard + actions update instantly
+    SocketCore.emit("approval_response", {
+      alert_id: alertId,
+      action: "block",
+      source: "alerts_page",
+    });
 
-    } catch (err) {
-        console.error(err);
-        showError("Failed to block alert");
-    }
+    coreShowSuccess("Block action executed");
+  } catch (err) {
+    console.error(err);
+    coreShowError("Failed to block alert");
+  }
 }
 
-/**
- * Modal logic (unchanged)
- */
+// ======================================================================
+// MODALS
+// ======================================================================
+
 function showAlertDetails(alert) {
-    currentAlert = alert;
+  currentAlert = alert;
 
-    const modalBody = document.getElementById('modal-body');
-    const severity = (alert.severity || 'unknown').toLowerCase();
-    const prediction = (alert.prediction || 'unknown').toLowerCase();
+  const body = document.getElementById("modal-body");
+  body.innerHTML = `
+    <div><strong>Alert ID:</strong> ${escapeHtml(alert.id)}</div>
+    <div><strong>Severity:</strong> ${escapeHtml(alert.severity)}</div>
+    <div><strong>Prediction:</strong> ${escapeHtml(alert.prediction)}</div>
+    <div><strong>Confidence:</strong> ${Math.round(
+      (alert.confidence || 0) * 100
+    )}%</div>
+    <div><strong>Status:</strong> ${escapeHtml(alert.status || "open")}</div>
+    <div><strong>Time:</strong> ${formatTimestamp(alert.created_at)}</div>
+  `;
 
-    const confidence = parseFloat(alert.confidence || 0);
-    const confidencePercent = (confidence * 100).toFixed(1);
-
-    modalBody.innerHTML = `
-        <div class="detail-row">
-            <div class="detail-label">Alert ID</div>
-            <div class="detail-value code-block">${escapeHtml(alert.id)}</div>
-        </div>
-
-        <div class="detail-row">
-            <div class="detail-label">Severity</div>
-            <div class="detail-value">
-                <span class="sev-${severity}">${severity}</span>
-            </div>
-        </div>
-
-        <div class="detail-row">
-            <div class="detail-label">Prediction</div>
-            <div class="detail-value">${escapeHtml(alert.prediction)}</div>
-        </div>
-
-        <div class="detail-row">
-            <div class="detail-label">Confidence</div>
-            <div class="detail-value">${confidencePercent}%</div>
-        </div>
-    `;
-
-    alertsModal.show();
+  detailsModal.show();
 }
 
-/**
- * Save alert status (unchanged)
- */
-async function saveAlertStatus() {
-    if (!currentAlert) return;
+// ======================================================================
+// UI HELPERS
+// ======================================================================
 
-    const newStatus = document.getElementById('new-status').value;
-    const newAssignee = document.getElementById('new-assignee').value;
-    const closeReason = document.getElementById('close-reason').value;
-
-    if (!newStatus) {
-        alert('Please select a status');
-        return;
-    }
-
-    try {
-        const payload = { status: newStatus };
-        if (newAssignee) payload.assignee = newAssignee;
-        if (closeReason) payload.close_reason = closeReason;
-
-        const response = await fetch(`/api/alerts/${encodeURIComponent(currentAlert.id)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        statusModal.hide();
-        showSuccess('Alert updated');
-
-        requestSharedState();
-
-    } catch (error) {
-        console.error(error);
-        showError('Failed to update alert');
-    }
-}
-
-/**
- * UI helpers (unchanged)
- */
 function updateAlertCount(count) {
-    const elem = document.getElementById('alert-count');
-    elem.textContent = `${count} ACTIVE`;
-}
-
-function showLoading(show) {
-    document.getElementById('loading-spinner').classList.toggle('active', show);
-}
-
-function showError(message) {
-    const toast = document.createElement('div');
-    toast.className = 'alert alert-danger position-fixed bottom-0 end-0 m-3';
-    toast.style.zIndex = '9999';
-    toast.innerHTML = `${escapeHtml(message)}`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
-}
-
-function showSuccess(message) {
-    const toast = document.createElement('div');
-    toast.className = 'alert alert-success position-fixed bottom-0 end-0 m-3';
-    toast.style.zIndex = '9999';
-    toast.innerHTML = `${escapeHtml(message)}`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+  const el = document.getElementById("alert-count");
+  if (el) el.textContent = count;
 }
 
 function formatTimestamp(ts) {
-    if (!ts) return 'N/A';
-    try {
-        return new Date(ts).toLocaleString();
-    } catch {
-        return ts;
-    }
+  if (!ts) return "N/A";
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return ts;
+  }
 }
 
 function escapeHtml(text) {
-    if (text === null || text === undefined) return '';
-    return String(text).replace(/[&<>"']/g, m => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;',
-        '"': '&quot;', "'": '&#039;'
-    }[m]));
+  if (text === null || text === undefined) return "";
+  return String(text).replace(/[&<>\"']/g, (m) => ({
+    "&": "&",
+    "<": "<",
+    ">": ">",
+    '"': """,
+    "'": "'",
+  })[m]);
 }
+
+// ======================================================================
+// EXPOSE FUNCTIONS USED BY INLINE HTML
+// ======================================================================
+
+window.blockAlert = blockAlert;
+window.showAlertDetails = showAlertDetails;
+``

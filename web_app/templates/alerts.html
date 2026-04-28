@@ -180,14 +180,149 @@
             animation: pulse-green 2s infinite;
         }
 
+        /* ── CONNECTION BANNER ── */
+        .connection-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin: 12px 16px;
+            transition: background 0.4s, color 0.4s, border-color 0.4s;
+            border: 1px solid transparent;
+        }
+        .connection-banner.connected {
+            background: rgba(16,185,129,0.08);
+            border-color: rgba(16,185,129,0.25);
+            color: #10b981;
+        }
+        .connection-banner.disconnected {
+            background: rgba(239,68,68,0.08);
+            border-color: rgba(239,68,68,0.25);
+            color: #ef4444;
+        }
+        .connection-banner.reconnecting {
+            background: rgba(245,158,11,0.08);
+            border-color: rgba(245,158,11,0.25);
+            color: #f59e0b;
+            animation: pulse-banner 1.5s infinite;
+        }
+        @keyframes pulse-banner {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .connection-banner .banner-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            flex-shrink: 0;
+        }
+        .connection-banner .reconnect-btn {
+            margin-left: auto;
+            background: none;
+            border: 1px solid currentColor;
+            color: inherit;
+            font-family: inherit;
+            font-size: 10px;
+            padding: 2px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+            transition: opacity 0.2s;
+        }
+        .connection-banner .reconnect-btn:hover { opacity: 0.7; }
+        .last-updated {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: rgba(255,255,255,0.4);
+            letter-spacing: 0.5px;
+            margin-left: auto;
+        }
+
         {% block extra_css %}{% endblock %}
     </style>
 </head>
 
 <body>
 
+<!-- ═══════════════════════════════════════════════════════════════════
+     CONNECTION STATUS BANNER
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="connection-banner" class="connection-banner disconnected">
+    <span class="banner-dot"></span>
+    <span id="connection-text">CONNECTING&hellip;</span>
+    <span class="last-updated" id="last-updated">&mdash;</span>
+    <button class="reconnect-btn" id="reconnect-btn" style="display:none;">RECONNECT</button>
+</div>
+
+
 <!-- FULL BODY CONTENT UNCHANGED -->
 
-{% block scripts %}{% endblock %}
+{% block scripts %}
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPTS — aligned with dashboard.js / monitor.js / actions.js
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Socket.IO client (global: window.io) -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<!-- Bootstrap JS (global: bootstrap modals / toasts) -->
+<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+
+<!-- GlobalState (global: window.GlobalState) -->
+<script src="{{ url_for('static', filename='js/state.js') }}"></script>
+
+<!-- Alerts page logic (ES MODULE — imports SocketCore, utils, ui_core) -->
+<script type="module" src="{{ url_for('static', filename='js/alerts.js') }}"></script>
+
+<!-- Bridge: connection banner + last-updated timestamp -->
+<script type="module">
+    import SocketCore from "./core/socket_core.js";
+
+    const banner = document.getElementById("connection-banner");
+    const txt    = document.getElementById("connection-text");
+    const btn    = document.getElementById("reconnect-btn");
+    const upd    = document.getElementById("last-updated");
+
+    function setBanner(state, text) {
+        banner.classList.remove("connected", "disconnected", "reconnecting");
+        banner.classList.add(state);
+        txt.textContent = text;
+        btn.style.display = state === "disconnected" ? "inline-block" : "none";
+    }
+
+    SocketCore.on("connect", () => {
+        setBanner("connected", "SOCKET CONNECTED");
+    });
+
+    SocketCore.on("disconnect", () => {
+        setBanner("disconnected", "SOCKET DISCONNECTED");
+    });
+
+    SocketCore.on("reconnect_attempt", () => {
+        setBanner("reconnecting", "RECONNECTING\u2026");
+    });
+
+    btn.addEventListener("click", () => {
+        setBanner("reconnecting", "RECONNECTING\u2026");
+        SocketCore.connect();
+    });
+
+    // Update "last updated" timestamp on every GlobalState change
+    if (window.GlobalState) {
+        window.GlobalState.subscribe(() => {
+            const now = new Date();
+            if (upd) {
+                upd.textContent = `Last update ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+            }
+        });
+    }
+</script>
+{% endblock %}
 </body>
 </html>
