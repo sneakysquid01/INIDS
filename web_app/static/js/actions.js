@@ -459,6 +459,6 @@ function formatTimestamp(ts) {
 
 function escapeHtml(text) {
     if (!text) return "";
-    const map = { "&": "&", "<": "<", ">": ">", '"': """, "'": "'" };
+    const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
     return String(text).replace(/[&<>"']/g, (m) => map[m]);
 }

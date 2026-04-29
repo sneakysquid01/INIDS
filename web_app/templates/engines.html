@@ -1,36 +1,74 @@
 {% extends "base.html" %}
-
 {% block title %}Engines — INIDS{% endblock %}
 {% block page_title %}Engines{% endblock %}
 
 {% block extra_css %}
 <style>
 /* ==========================================================
-   ENGINES — SOC STANDARD
-========================================================== */
-
+   ENGINES — UPGRADED TO MATCH NEW engines.js
+   ========================================================== */
 .engines-wrapper {
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
 }
 
-.engines-info {
+.engines-topbar {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
   margin-bottom: 16px;
-  font-size: 12px;
+}
+
+.engines-pill,
+.engines-stat {
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.engines-pill-title,
+.engines-stat-label,
+.panel-kicker,
+.engine-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.engines-pill-value,
+.engines-stat-value {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.engines-grid-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(480px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.side-stack {
+  display: grid;
+  gap: 16px;
 }
 
 .engine-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 16px;
 }
 
 .engine-card {
   border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: 6px;
+  border-left: 4px solid var(--border);
+  border-radius: 12px;
   background: var(--bg-card);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
 .engine-card.enabled {
@@ -38,7 +76,8 @@
 }
 
 .engine-card.disabled {
-  border-left-color: var(--border);
+  border-left-color: var(--text-muted);
+  opacity: 0.92;
 }
 
 .engine-header {
@@ -50,16 +89,20 @@
 
 .engine-name {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .engine-type {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
   font-size: 10px;
-  letter-spacing: 1px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -67,16 +110,17 @@
 .engine-description {
   font-size: 12px;
   color: var(--text-secondary);
-  margin-top: 8px;
-  line-height: 1.5;
+  margin-top: 12px;
+  line-height: 1.55;
 }
 
 .engine-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 11px;
-  margin-top: 10px;
+  margin-top: 12px;
   color: var(--text-muted);
 }
 
@@ -84,13 +128,22 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  display: inline-block;
 }
 
-.status-dot.on { background: var(--green); }
-.status-dot.off { background: var(--text-muted); }
+.status-dot.on {
+  background: var(--green);
+  box-shadow: 0 0 12px rgba(39,201,122,0.7);
+}
+
+.status-dot.off {
+  background: var(--text-muted);
+}
 
 .engine-details {
-  margin-top: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -98,13 +151,21 @@
 .engine-details div {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.engine-details strong {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-weight: 600;
 }
 
 .toggle {
   position: relative;
-  width: 44px;
-  height: 22px;
+  width: 46px;
+  height: 24px;
+  flex: 0 0 auto;
 }
 
 .toggle input {
@@ -116,47 +177,97 @@
 .slider {
   position: absolute;
   inset: 0;
-  background: rgba(255,255,255,0.15);
-  border-radius: 22px;
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
   cursor: pointer;
+  transition: 0.2s ease;
 }
 
 .slider:before {
   content: "";
   position: absolute;
-  height: 18px;
+  left: 3px;
+  bottom: 3px;
   width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background: white;
+  height: 18px;
+  background: #ffffff;
   border-radius: 50%;
-  transition: 0.2s;
+  transition: 0.2s ease;
 }
 
 .toggle input:checked + .slider {
-  background: rgba(39,201,122,0.6);
+  background: rgba(39,201,122,0.7);
 }
 
 .toggle input:checked + .slider:before {
   transform: translateX(22px);
 }
 
-.loading-state {
+.toggle input:disabled + .slider {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.panel-copy,
+.engines-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.loading-state,
+.empty-state {
   text-align: center;
-  padding: 32px;
+  padding: 28px 20px;
   color: var(--text-muted);
   font-size: 12px;
+  border: 1px dashed rgba(255,255,255,0.14);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.info-value {
+  margin-top: 8px;
+  font-size: 16px;
+  font-family: var(--mono);
+  color: var(--text-primary);
+}
+
+.info-subtext {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+@media (max-width: 1160px) {
+  .engines-grid-layout,
+  .engines-topbar {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-
 <!-- PAGE HEADER -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Detection Engines</h1>
-    <div class="page-subtitle">ENGINE ORCHESTRATION & CONTROL</div>
+    <div class="page-subtitle">ENGINE ORCHESTRATION · REAL-TIME STATE · VOTING CONTROL</div>
   </div>
   <div class="page-meta">
     <div class="status-chip live">
@@ -170,42 +281,110 @@
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — ENGINE CHANGES SHOULD BE APPLIED CAREFULLY
-  </div>
+  <div>ACTIVE INCIDENT — ENGINE CHANGES SHOULD BE APPLIED CAREFULLY</div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-elevated interactive">
-  <div class="ds-card-body">
-    <div class="engines-wrapper">
+<div class="engines-wrapper">
+  <div class="engines-topbar">
+    <div class="engines-pill">
+      <div class="engines-pill-title">Control Plane</div>
+      <div class="engines-pill-value">
+        This page reflects engine state from backend APIs, syncs with GlobalState, and reacts to real-time events emitted across the platform.
+      </div>
+    </div>
+    <div class="engines-stat">
+      <div class="engines-stat-label">Connection Model</div>
+      <div class="engines-stat-value">SocketCore + GlobalState + Endpoint Fallbacks</div>
+    </div>
+    <div class="engines-stat">
+      <div class="engines-stat-label">Engine Role</div>
+      <div class="engines-stat-value">Coverage tuning, voting weight, readiness awareness</div>
+    </div>
+  </div>
 
-      <div class="engines-info">
-        INIDS runs multiple independent detection engines in parallel.  
-        Engines can be enabled or disabled to adjust detection coverage and performance.
+  <div class="engines-grid-layout">
+    <div class="side-stack">
+      <div class="ds-card layer-panel interactive">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Overview</div>
+            <div class="panel-title">Engine Management</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
+          <div class="engines-info">
+            INIDS runs multiple detection engines in parallel. This page is designed for engine visibility and control: load status, readiness, thresholds, accuracy, detections, vote weight, and live toggle actions.
+          </div>
+        </div>
       </div>
 
-      <!-- LOADING -->
-      <div id="loading-spinner" class="loading-state">
-        Loading detection engines…
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Notes</div>
+            <div class="panel-title">What This Page Syncs</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
+          <div class="info-grid">
+            <div class="info-card">
+              <div class="engine-label">GlobalState</div>
+              <div class="info-value">Reactive Cache</div>
+              <div class="info-subtext">
+                Engine data can be read from shared state and written back after refreshes or toggle actions.
+              </div>
+            </div>
+            <div class="info-card">
+              <div class="engine-label">Live Updates</div>
+              <div class="info-value">Socket Refresh</div>
+              <div class="info-subtext">
+                Reconnects, engine updates, detections, alerts, and block changes can trigger refresh cycles.
+              </div>
+            </div>
+            <div class="info-card">
+              <div class="engine-label">Backend Safety</div>
+              <div class="info-value">Fallback Paths</div>
+              <div class="info-subtext">
+                Engine loading and toggling can try multiple backend routes if the primary endpoint differs.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <!-- ENGINE GRID -->
-      <div id="engines-grid" class="engine-grid" style="display:none;">
-        <!-- populated by engines.js -->
+    <div class="side-stack">
+      <div class="ds-card layer-elevated interactive">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Runtime State</div>
+            <div class="panel-title">Engine Cards</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
+          <!-- LOADING -->
+          <div id="loading-spinner" class="loading-state">
+            Loading detection engines…
+          </div>
+
+          <!-- ENGINE GRID -->
+          <div id="engines-grid" class="engine-grid" style="display:none;">
+            <!-- populated by engines.js -->
+          </div>
+
+          <!-- EMPTY STATE -->
+          <div id="empty-state" class="empty-state" style="display:none;">
+            No detection engines available.
+          </div>
+        </div>
       </div>
-
-      <!-- EMPTY STATE -->
-      <div id="empty-state" class="loading-state" style="display:none;">
-        No detection engines available.
-      </div>
-
     </div>
   </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/engines.js') }}"></script>
 {% endblock %}
+``

@@ -1,23 +1,60 @@
 {% extends "base.html" %}
-
 {% block title %}Detection — INIDS{% endblock %}
 {% block page_title %}Detection{% endblock %}
 
 {% block extra_css %}
 <style>
 /* ==========================================================
-   DETECTION CONSOLE — SOC STANDARD
-========================================================== */
-
+   DETECTION CONSOLE — UPGRADED TO MATCH detection.js BRIDGE
+   ========================================================== */
 .detection-wrapper {
-  max-width: 1400px;
+  max-width: 1480px;
   margin: 0 auto;
 }
 
-/* INPUT GRID */
+.sync-banner {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sync-pill,
+.sync-stat {
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.sync-pill-title,
+.sync-stat-label,
+.panel-kicker,
+.result-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sync-pill-value,
+.sync-stat-value {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 560px) minmax(320px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -34,60 +71,80 @@
   margin-top: 4px;
 }
 
-/* BUTTONS */
 .button-group {
   display: flex;
   gap: 10px;
   margin-top: 16px;
+  flex-wrap: wrap;
 }
 
-/* RESULT */
+.button-group .btn-primary,
+.button-group .btn-secondary {
+  min-width: 150px;
+}
+
+.side-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.summary-grid,
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
 }
 
+.summary-tile,
 .result-tile {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 12px;
 }
 
-.result-label {
-  font-size: 10px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
+.summary-value,
 .result-value {
   font-family: var(--mono);
   font-size: 18px;
   margin-top: 6px;
 }
 
-/* CONFIDENCE */
+.summary-subtext {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.confidence-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+}
+
 .confidence-bar {
-  height: 6px;
+  height: 8px;
   background: rgba(255,255,255,0.08);
-  border-radius: 3px;
+  border-radius: 999px;
   overflow: hidden;
 }
 
 .confidence-fill {
   height: 100%;
+  width: 0%;
+  transition: width 220ms ease, background 220ms ease;
   background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
 }
 
-/* ENGINE RESULTS */
 .engine-result {
   border-left: 3px solid var(--border);
-  padding: 10px;
+  padding: 10px 12px;
   margin-bottom: 10px;
   font-size: 11px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 0 8px 8px 0;
 }
 
 .engine-result.triggered {
@@ -106,32 +163,63 @@
 .code-block {
   background: rgba(255,255,255,0.04);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 12px;
   font-family: var(--mono);
   font-size: 11px;
   overflow-x: auto;
+  white-space: pre-wrap;
 }
 
-/* STATES */
 .loading-state,
-.error-state {
+.error-state,
+.info-state {
   display: none;
   text-align: center;
-  padding: 24px;
+  padding: 16px;
   font-size: 12px;
-  color: var(--text-muted);
+  border-radius: 10px;
+  margin-top: 12px;
+}
+
+.loading-state {
+  color: var(--text-primary);
+  border: 1px dashed rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.03);
+}
+
+.error-state {
+  color: #fecaca;
+  background: rgba(239,68,68,0.10);
+  border: 1px solid rgba(239,68,68,0.35);
+}
+
+.info-state {
+  display: block;
+  color: var(--text-secondary);
+  background: rgba(59,130,246,0.08);
+  border: 1px solid rgba(59,130,246,0.22);
+}
+
+.mono-muted {
+  font-family: var(--mono);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1080px) {
+  .layout-grid,
+  .sync-banner {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-
-<!-- PAGE HEADER -->
 <div class="page-header">
   <div>
     <h1 class="page-title">Detection Console</h1>
-    <div class="page-subtitle">MANUAL MULTI‑ENGINE ANALYSIS</div>
+    <div class="page-subtitle">MANUAL MULTI-ENGINE ANALYSIS · GLOBAL STATE + REAL-TIME BRIDGE</div>
   </div>
   <div class="page-meta">
     <div class="status-chip live">
@@ -145,109 +233,134 @@
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
 <div class="ds-alert threat threat-active" style="margin-bottom:16px;">
   <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — MANUAL DETECTION RUNNING UNDER THREAT CONDITIONS
-  </div>
+  <div>ACTIVE INCIDENT — MANUAL DETECTION IS OPERATING WITH LIVE THREAT CONTEXT</div>
 </div>
 {% endif %}
 
-<div class="ds-card layer-elevated interactive">
-  <div class="ds-card-body">
-    <div class="detection-wrapper">
+<div class="detection-wrapper">
+  <div class="sync-banner">
+    <div class="sync-pill">
+      <div class="sync-pill-title">Connection Model</div>
+      <div class="sync-pill-value">Detection.js now syncs to GlobalState, emits real-time alert events, and can trigger approval workflow for critical IP detections.</div>
+    </div>
+    <div class="sync-stat">
+      <div class="sync-stat-label">Linked Modules</div>
+      <div class="sync-stat-value">Alerts · Actions · Dashboard · Monitor</div>
+    </div>
+    <div class="sync-stat">
+      <div class="sync-stat-label">Execution Path</div>
+      <div class="sync-stat-value">Backend endpoints + local heuristic fallback</div>
+    </div>
+  </div>
 
-      <!-- INPUT -->
-      <div class="ds-card layer-panel">
+  <div class="layout-grid">
+    <div class="side-stack">
+      <div class="ds-card layer-panel interactive">
         <div class="panel-header">
-          <div class="panel-title">Input Features</div>
+          <div>
+            <div class="panel-kicker">Input Surface</div>
+            <div class="panel-title">Detection Features</div>
+          </div>
         </div>
         <div class="ds-card-body">
-
-          <form id="detection-form">
-
+          <form id="detection-form" novalidate>
             <div class="form-grid">
-
               <div class="form-field">
                 <label for="duration">Duration</label>
-                <input type="number" id="duration" value="10" class="ds-input">
-                <div class="helper">Seconds</div>
+                <input type="number" id="duration" name="duration" value="10" class="ds-input" min="0" step="1">
+                <div class="helper">Seconds observed for this flow window</div>
               </div>
 
               <div class="form-field">
                 <label for="src_bytes">Source Bytes</label>
-                <input type="number" id="src_bytes" value="1000" class="ds-input">
+                <input type="number" id="src_bytes" name="src_bytes" value="1000" class="ds-input" min="0" step="1">
+                <div class="helper">Outbound payload volume</div>
               </div>
 
               <div class="form-field">
                 <label for="dst_bytes">Destination Bytes</label>
-                <input type="number" id="dst_bytes" value="2000" class="ds-input">
+                <input type="number" id="dst_bytes" name="dst_bytes" value="2000" class="ds-input" min="0" step="1">
+                <div class="helper">Inbound payload volume</div>
               </div>
 
               <div class="form-field">
                 <label for="count">Packet Count</label>
-                <input type="number" id="count" value="50" class="ds-input">
+                <input type="number" id="count" name="count" value="50" class="ds-input" min="0" step="1">
+                <div class="helper">Used by local and backend engines</div>
               </div>
 
               <div class="form-field">
                 <label for="srv_count">Service Packet Count</label>
-                <input type="number" id="srv_count" value="40" class="ds-input">
+                <input type="number" id="srv_count" name="srv_count" value="40" class="ds-input" min="0" step="1">
+                <div class="helper">Per-service activity concentration</div>
               </div>
 
               <div class="form-field">
                 <label for="serror_rate">SYN Error Rate</label>
-                <input type="number" id="serror_rate" value="0.05" step="0.01" class="ds-input">
+                <input type="number" id="serror_rate" name="serror_rate" value="0.05" step="0.01" min="0" max="1" class="ds-input">
+                <div class="helper">Range 0.00 – 1.00</div>
               </div>
 
               <div class="form-field">
                 <label for="same_srv_rate">Same Service Rate</label>
-                <input type="number" id="same_srv_rate" value="0.8" step="0.01" class="ds-input">
+                <input type="number" id="same_srv_rate" name="same_srv_rate" value="0.8" step="0.01" min="0" max="1" class="ds-input">
+                <div class="helper">Helps infer spreading / probing behaviour</div>
               </div>
 
               <div class="form-field">
                 <label for="source_ip">Source IP</label>
-                <input type="text" id="source_ip" placeholder="192.168.1.100" class="ds-input">
-                <div class="helper">Optional context</div>
+                <input type="text" id="source_ip" name="source_ip" placeholder="192.168.1.100 or 2001:db8::10" class="ds-input" autocomplete="off" spellcheck="false">
+                <div class="helper">Optional, but enables reputation and approval routing context</div>
               </div>
-
             </div>
 
             <div class="button-group">
-              <button type="button" class="btn-primary" id="btn-detect" onclick="runDetection()">
-                Run Detection
-              </button>
-              <button type="button" class="btn-secondary" onclick="resetForm()">
-                Reset
-              </button>
+              <button type="submit" class="btn-primary" id="btn-detect">Run Detection</button>
+              <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
             </div>
-
           </form>
+
+          <div class="info-state">
+            Press <span class="mono-muted">Enter</span> to execute quickly. Detection.js will validate values, try backend endpoints, fall back locally if needed, then push state updates to the rest of the app.
+          </div>
+
+          <div class="error-state" id="error-message" role="alert" aria-live="assertive"></div>
+          <div class="loading-state" id="loading-spinner" role="status" aria-live="polite">Running multi-engine detection and syncing the result…</div>
         </div>
       </div>
 
-      <!-- ERROR -->
-      <div class="error-state" id="error-message"></div>
-
-      <!-- LOADING -->
-      <div class="loading-state" id="loading-spinner">
-        Running multi‑engine detection…
-      </div>
-
-      <!-- RESULTS -->
-      <div class="ds-card layer-panel" id="result-section" style="display:none; margin-top:16px;">
+      <div class="ds-card layer-panel">
         <div class="panel-header">
-          <div class="panel-title">Detection Results</div>
+          <div>
+            <div class="panel-kicker">Feature Snapshot</div>
+            <div class="panel-title">Current Input Preview</div>
+          </div>
         </div>
         <div class="ds-card-body">
+          <div class="code-block" id="features-display">No features supplied</div>
+        </div>
+      </div>
+    </div>
 
+    <div class="side-stack">
+      <div class="ds-card layer-elevated interactive" id="result-section" style="display:none;">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Detection Output</div>
+            <div class="panel-title">Result Summary</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
           <div id="verdict-container"></div>
 
-          <div style="margin-top:12px;" id="confidence-container">
+          <div class="confidence-wrap" id="confidence-container">
             <div class="confidence-bar">
               <div id="confidence-bar" class="confidence-fill" style="width:0%;"></div>
             </div>
             <div id="confidence-value" class="mono-val">0%</div>
           </div>
 
-          <div class="result-grid">
+          <div class="result-grid" style="margin-top:16px;">
             <div class="result-tile">
               <div class="result-label">Attack Type</div>
               <div id="attack-type" class="result-value">—</div>
@@ -261,24 +374,53 @@
               <div id="engines-count" class="result-value">0</div>
             </div>
           </div>
-
-          <div style="margin-top:16px;">
-            <div class="panel-title">Engine Details</div>
-            <div id="engines-list"></div>
-          </div>
-
-          <div style="margin-top:16px;">
-            <div class="panel-title">Input Features</div>
-            <div class="code-block" id="features-display"></div>
-          </div>
-
         </div>
       </div>
 
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Engine Breakdown</div>
+            <div class="panel-title">Per-Engine Results</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
+          <div id="engines-list">
+            <div class="engine-result clean">No engine results available yet. Run a detection to populate this section.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds-card layer-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Runtime Notes</div>
+            <div class="panel-title">How This View Connects</div>
+          </div>
+        </div>
+        <div class="ds-card-body">
+          <div class="summary-grid">
+            <div class="summary-tile">
+              <div class="result-label">GlobalState</div>
+              <div class="summary-value">Reactive</div>
+              <div class="summary-subtext">Detection writes current status, alert counts, and lastDetection metadata.</div>
+            </div>
+            <div class="summary-tile">
+              <div class="result-label">Socket Events</div>
+              <div class="summary-value">Live Emit</div>
+              <div class="summary-subtext">Manual detection can publish new_alert, manual_detection_run, and approval_request.</div>
+            </div>
+            <div class="summary-tile">
+              <div class="result-label">Fallback Mode</div>
+              <div class="summary-value">Enabled</div>
+              <div class="summary-subtext">If backend routes fail, local heuristic engines still render a meaningful output.</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}

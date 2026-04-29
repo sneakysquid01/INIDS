@@ -218,23 +218,16 @@ async function blockAlert(alertId) {
   if (!confirm(`Block alert ${alertId}?`)) return;
 
   try {
-    const res = await fetch(`/api/block/${encodeURIComponent(alertId)}`, {
-      method: "POST",
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    // Emit so monitor + dashboard + actions update instantly
-    SocketCore.emit("approval_response", {
+    // Emit socket event to request block action (no direct /api/block endpoint exists)
+    SocketCore.emit("block_alert_request", {
       alert_id: alertId,
-      action: "block",
       source: "alerts_page",
     });
 
-    coreShowSuccess("Block action executed");
+    coreShowSuccess("Block request sent");
   } catch (err) {
     console.error(err);
-    coreShowError("Failed to block alert");
+    coreShowError("Failed to send block request");
   }
 }
 
@@ -281,11 +274,11 @@ function formatTimestamp(ts) {
 function escapeHtml(text) {
   if (text === null || text === undefined) return "";
   return String(text).replace(/[&<>\"']/g, (m) => ({
-    "&": "&",
-    "<": "<",
-    ">": ">",
-    '"': """,
-    "'": "'",
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
   })[m]);
 }
 

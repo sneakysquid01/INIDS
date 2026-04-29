@@ -26,11 +26,73 @@
   display: flex;
   gap: 6px;
 }
+
+/* ── CONNECTION BANNER ── */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  transition: background 0.4s, color 0.4s, border-color 0.4s;
+  border: 1px solid transparent;
+}
+.connection-banner.connected {
+  background: rgba(16,185,129,0.08);
+  border-color: rgba(16,185,129,0.25);
+  color: #10b981;
+}
+.connection-banner.disconnected {
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.25);
+  color: #ef4444;
+}
+.connection-banner.reconnecting {
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.25);
+  color: #f59e0b;
+  animation: pulse-banner 1.5s infinite;
+}
+@keyframes pulse-banner {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.connection-banner .banner-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.connection-banner .reconnect-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid currentColor;
+  color: inherit;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: opacity 0.2s;
+}
+.connection-banner .reconnect-btn:hover { opacity: 0.7; }
+.last-updated-banner {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.5px;
+  margin-left: auto;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-
 <!-- PAGE HEADER -->
 <div class="page-header">
   <div>
@@ -55,6 +117,14 @@
 </div>
 {% endif %}
 
+<!-- CONNECTION STATUS BANNER -->
+<div id="connection-banner" class="connection-banner disconnected">
+  <span class="banner-dot"></span>
+  <span id="connection-text">CONNECTING&hellip;</span>
+  <span class="last-updated-banner" id="last-updated-banner">&mdash;</span>
+  <button class="reconnect-btn" id="reconnect-btn" style="display:none;">RECONNECT</button>
+</div>
+
 <!-- ACTION BAR -->
 <div class="ds-card layer-panel interactive" style="margin-bottom:16px;">
   <div class="ds-card-body"
@@ -65,7 +135,6 @@
         Allowlisted entries bypass detection logic and suppression rules
       </div>
     </div>
-
     <div class="allowlist-actions">
       <button class="btn-primary" onclick="openAddModal()">
         <i class="bi bi-plus-lg"></i>
@@ -87,21 +156,18 @@
       <div class="stat-value" id="totalCount">0</div>
     </div>
   </div>
-
   <div class="ds-card layer-panel">
     <div class="ds-card-body">
       <div class="ds-card-title">IP Addresses</div>
       <div class="stat-value" id="ipCount">0</div>
     </div>
   </div>
-
   <div class="ds-card layer-panel">
     <div class="ds-card-body">
       <div class="ds-card-title">Domains</div>
       <div class="stat-value" id="domainCount">0</div>
     </div>
   </div>
-
   <div class="ds-card layer-panel">
     <div class="ds-card-body">
       <div class="ds-card-title">Last Updated</div>
@@ -120,13 +186,11 @@
       class="ds-input"
       placeholder="Search by IP address or domain…"
       onkeyup="filterAllowlist()">
-
     <select id="typeFilter" class="ds-select" onchange="filterAllowlist()">
       <option value="">All Types</option>
       <option value="ip">IP Address</option>
       <option value="domain">Domain</option>
     </select>
-
     <select id="reasonFilter" class="ds-select" onchange="filterAllowlist()">
       <option value="">All Reasons</option>
       <option value="internal">Internal Network</option>
@@ -174,5 +238,54 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/allowlist.js') }}"></script>
+<!-- ============================================================
+     SCRIPTS — Socket + State + Allowlist (ES Module)
+     Same architecture as monitor / dashboard / actions / alerts
+============================================================ -->
+
+<!-- 1. Socket.IO client (global: window.io) -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<!-- 2. Bootstrap JS (global: modals / toasts) -->
+<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
+
+<!-- 3. GlobalState (global: window.GlobalState) -->
+<script src="{{ url_for('static', filename='js/state.js') }}"></script>
+
+<!-- 4. Allowlist page logic (ES MODULE) -->
+<script type="module" src="{{ url_for('static', filename='js/allowlist.js') }}"></script>
+
+<!-- 5. Bridge: connection banner + last-updated -->
+<script type="module">
+    import SocketCore from "./core/socket_core.js";
+
+    const banner = document.getElementById("connection-banner");
+    const txt    = document.getElementById("connection-text");
+    const btn    = document.getElementById("reconnect-btn");
+    const upd    = document.getElementById("last-updated-banner");
+
+    function setBanner(state, text) {
+        banner.classList.remove("connected", "disconnected", "reconnecting");
+        banner.classList.add(state);
+        txt.textContent = text;
+        btn.style.display = state === "disconnected" ? "inline-block" : "none";
+    }
+
+    SocketCore.on("connect",           () => setBanner("connected",    "SOCKET CONNECTED"));
+    SocketCore.on("disconnect",        () => setBanner("disconnected", "SOCKET DISCONNECTED"));
+    SocketCore.on("reconnect_attempt", () => setBanner("reconnecting", "RECONNECTING\u2026"));
+
+    btn.addEventListener("click", () => {
+        setBanner("reconnecting", "RECONNECTING\u2026");
+        SocketCore.connect();
+    });
+
+    if (window.GlobalState) {
+        window.GlobalState.subscribe(() => {
+            const n = new Date();
+            if (upd) upd.textContent =
+                `Last update ${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}:${String(n.getSeconds()).padStart(2,"0")}`;
+        });
+    }
+</script>
 {% endblock %}

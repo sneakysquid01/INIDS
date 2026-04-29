@@ -49,11 +49,11 @@ export function playAlertTone(level) {
 export function escapeHTML(text) {
     if (!text) return "";
     return text.replace(/[&<>"']/g, m => ({
-        "&": "&",
-        "<": "<",
-        ">": ">",
-        "\"": """,
-        "'": "'"
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
     }[m]));
 }
 
