@@ -134,7 +134,7 @@ body { background-color: #f8f9fa; }
 
             {% if error %}
             <div class="alert alert-danger" role="alert">
-                <strong>Error:</strong> {{ error }}
+                <strong>Error:</strong> {{ error | default('Unknown error') }}
             </div>
             {% endif %}
 
@@ -188,21 +188,21 @@ body { background-color: #f8f9fa; }
                     <p><strong>Low Confidence Detection</strong></p>
                     <p>
                         The model is uncertain about this pattern (confidence:
-                        <strong>{{ confidence }}%</strong>). This may need analyst review.
+                        <strong>{{ confidence | default(0) }}%</strong>). This may need analyst review.
                     </p>
                     <div class="mt-3">
-                        <span class="badge bg-dark confidence-badge">Confidence: {{ confidence }}%</span>
+                        <span class="badge bg-dark confidence-badge">Confidence: {{ confidence | default(0) }}%</span>
                         <span class="badge bg-warning text-dark ms-2">Action: Flag for Review</span>
                     </div>
                 </div>
                 {% else %}
                 <div class="alert {% if prediction == 'Normal' %}alert-success{% else %}alert-danger{% endif %}">
                     <h4 class="mb-2">Detection Result</h4>
-                    <h3 class="mb-3">{{ prediction }}</h3>
+                    <h3 class="mb-3">{{ prediction | default('Unknown') }}</h3>
                     {% if confidence %}
                     <div class="mt-3">
                         <span class="badge {% if prediction == 'Normal' %}bg-success{% else %}bg-danger{% endif %} confidence-badge">
-                            Confidence: {{ confidence }}%
+                            Confidence: {{ confidence | default(0) }}%
                         </span>
                         {% if prediction == 'Attack' %}
                         <span class="badge bg-dark ms-2">Action: Block Traffic</span>

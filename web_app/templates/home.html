@@ -83,15 +83,15 @@
       <div class="reconcile-strip" style="margin-bottom:24px;">
         <div class="rec-cell">
           <div class="rec-label">Models Loaded</div>
-          <div class="rec-val">{{ loaded_models_count }}</div>
+          <div class="rec-val">{{ loaded_models_count | default(0) }}</div>
         </div>
         <div class="rec-cell">
           <div class="rec-label">Queue Depth</div>
-          <div class="rec-val">{{ queue_size }}</div>
+          <div class="rec-val">{{ queue_size | default(0) }}</div>
         </div>
         <div class="rec-cell">
           <div class="rec-label">Firewall</div>
-          <div class="rec-val">{{ firewall_adapter }}</div>
+          <div class="rec-val">{{ firewall_adapter | default('unknown') }}</div>
         </div>
         <div class="rec-cell">
           <div class="rec-label">Auth</div>

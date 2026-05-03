@@ -512,7 +512,7 @@
 
   <div class="topbar-meta">
     <span><span class="pulse-dot"></span>LIVE</span>
-    <span>{{ generated_at }}</span>
+    <span>{{ generated_at | default('--') }}</span>
     <span>|</span>
     <span>UTC+00:00</span>
     <span class="last-updated" id="last-updated">&mdash;</span>
@@ -590,7 +590,7 @@
 
     <div class="stat-mini">
       <span class="stat-mini-label">Mode</span>
-      <span class="stat-mini-val">{{ policy.mode }}</span>
+      <span class="stat-mini-val">{{ policy.mode | default('N/A') }}</span>
     </div>
 
     <div class="stat-mini">
@@ -602,18 +602,18 @@
 
     <div class="stat-mini">
       <span class="stat-mini-label">Firewall</span>
-      <span class="stat-mini-val">{{ firewall_adapter }}</span>
+      <span class="stat-mini-val">{{ firewall_adapter | default('unknown') }}</span>
     </div>
 
     <div class="stat-mini">
       <span class="stat-mini-label">Queue</span>
-      <span class="stat-mini-val">{{ queue_size }}</span>
+      <span class="stat-mini-val">{{ queue_size | default(0) }}</span>
     </div>
 
     <div class="stat-mini">
       <span class="stat-mini-label">Rate Limit</span>
       <span class="stat-mini-val">
-        {{ rate_limit_requests }}/{{ rate_limit_window_seconds }}s
+        {{ rate_limit_requests | default(0) }}/{{ rate_limit_window_seconds | default(60) }}s
       </span>
     </div>
   </div>
@@ -625,28 +625,28 @@
     <div class="stat-mini">
       <span class="stat-mini-label">Requests</span>
       <span class="stat-mini-val">
-        {{ metrics_snapshot.requests_total }}
+        {{ metrics_snapshot.requests_total | default(0) }}
       </span>
     </div>
 
     <div class="stat-mini">
       <span class="stat-mini-label">Alerts</span>
       <span class="stat-mini-val pulse-soft" style="color: var(--red-lt);">
-        {{ metrics_snapshot.alerts_total }}
+        {{ metrics_snapshot.alerts_total | default(0) }}
       </span>
     </div>
 
     <div class="stat-mini">
       <span class="stat-mini-label">Actions</span>
       <span class="stat-mini-val" style="color: var(--amber-lt);">
-        {{ metrics_snapshot.prevention_actions_total }}
+        {{ metrics_snapshot.prevention_actions_total | default(0) }}
       </span>
     </div>
 
     <div class="stat-mini">
       <span class="stat-mini-label">Rate Ltd</span>
       <span class="stat-mini-val">
-        {{ metrics_snapshot.rate_limited_total }}
+        {{ metrics_snapshot.rate_limited_total | default(0) }}
       </span>
     </div>
 

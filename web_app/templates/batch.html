@@ -112,7 +112,7 @@
         <div class="ds-card-body">
 
           <div class="batch-note">
-            Processed {{ total }} records. Displaying first {{ shown }}.
+            Processed {{ total | default(0) }} records. Displaying first {{ shown | default(0) }}.
           </div>
 
           <div class="results-table table-wrap">

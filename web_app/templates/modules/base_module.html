@@ -3,17 +3,17 @@
      Each module inherits this structure for consistent UX.
 -->
 
-<div class="module-panel" data-module-id="{{ module_id }}">
+<div class="module-panel" data-module-id="{{ module_id | default('unknown') }}">
     <!-- Module Header -->
     <div class="module-header">
         <div class="header-left">
-            <h4 class="module-name">{{ module_name }}</h4>
+            <h4 class="module-name">{{ module_name | default('Unnamed Module') }}</h4>
             <div class="module-breadcrumb">
                 <span class="breadcrumb-item">Dashboard</span>
                 <span class="breadcrumb-sep">/</span>
-                <span class="breadcrumb-item">{{ module_category }}</span>
+                <span class="breadcrumb-item">{{ module_category | default('General') }}</span>
                 <span class="breadcrumb-sep">/</span>
-                <span class="breadcrumb-item active">{{ module_name }}</span>
+                <span class="breadcrumb-item active">{{ module_name | default('Unnamed Module') }}</span>
             </div>
         </div>
         <div class="header-right">
