@@ -56,13 +56,34 @@ class InMemoryAlertStore:
         self.max_items = max(1, int(max_items))
         self._alerts: deque[Alert] = deque(maxlen=self.max_items)
         self._lock = Lock()
+        self._dropped_count = 0  # Track silently dropped alerts
+        self._logger = None
+
+    def _get_logger(self):
+        """Lazy import to avoid circular dependencies."""
+        if self._logger is None:
+            import logging
+            self._logger = logging.getLogger(__name__)
+        return self._logger
 
     def add(self, alert: Alert | None) -> None:
         if alert is None:
             return
         with self._lock:
+            # Check if buffer is at capacity before append
+            at_capacity = len(self._alerts) >= self.max_items
+            
             # deque with maxlen automatically handles truncation
             self._alerts.appendleft(alert)
+            
+            # Log if an alert was dropped
+            if at_capacity:
+                self._dropped_count += 1
+                logger = self._get_logger()
+                logger.warning(
+                    f"Alert buffer full: dropped alert (id={alert.id}, severity={alert.severity}). "
+                    f"Total dropped: {self._dropped_count}. Consider increasing max_items ({self.max_items})"
+                )
 
     def list_alerts(self, limit: int = 50, severity: str | None = None) -> list[Alert]:
         limit = max(1, min(limit, 1000))

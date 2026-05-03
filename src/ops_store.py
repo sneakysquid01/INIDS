@@ -16,6 +16,9 @@ except Exception:
 
 class OpsStore:
     """Operational persistence supporting SQLite (dev) and PostgreSQL (prod)."""
+    
+    # Current schema version - increment when making breaking schema changes
+    SCHEMA_VERSION = 2
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -219,6 +222,7 @@ class OpsStore:
 
         self._migrate_actions_table()
         self._migrate_alerts_table()
+        self._verify_schema_version()
 
     @staticmethod
     def _utc_now_iso() -> str:
@@ -295,6 +299,71 @@ class OpsStore:
             conn.execute("UPDATE alerts SET source_ip = COALESCE(source_ip, '')")
             conn.execute("UPDATE alerts SET attack_type = COALESCE(attack_type, '')")
             conn.execute("UPDATE alerts SET risk_score = COALESCE(risk_score, 0.0)")
+
+    def _verify_schema_version(self) -> None:
+        """ISSUE-013 FIX: Verify database schema version matches application expectations.
+        
+        Ensures that the database schema is compatible with the current application code.
+        Raises RuntimeError if schema version mismatch is detected.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Get current schema version from database
+            db_version = None
+            try:
+                result = self._fetchone(
+                    "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+                )
+                db_version = result.get("version") if result else None
+            except Exception:
+                # schema_version table doesn't exist yet - initialize it
+                logger.info("Initializing schema version table")
+                if self._is_postgres:
+                    self._execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS schema_version (
+                            version INTEGER PRIMARY KEY,
+                            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                else:
+                    self._execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS schema_version (
+                            version INTEGER PRIMARY KEY,
+                            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'utc'))
+                        )
+                        """
+                    )
+                self._execute(
+                    "INSERT INTO schema_version (version) VALUES (:version)",
+                    {"version": self.SCHEMA_VERSION},
+                )
+                db_version = self.SCHEMA_VERSION
+            
+            # Check version compatibility
+            if db_version is None:
+                db_version = self.SCHEMA_VERSION
+                self._execute(
+                    "INSERT INTO schema_version (version) VALUES (:version)",
+                    {"version": db_version},
+                )
+            
+            if db_version != self.SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Database schema version mismatch: "
+                    f"expected {self.SCHEMA_VERSION}, found {db_version}. "
+                    f"Please run database migrations or reset the database."
+                )
+            
+            logger.info(f"Schema version verified: {db_version}")
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.warning(f"Schema version verification warning: {exc}")
 
     def save_alert(self, payload: dict[str, Any]) -> None:
         insert_payload = {

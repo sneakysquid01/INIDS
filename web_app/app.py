@@ -648,7 +648,36 @@ def _on_detection_event(event: DetectionEvent) -> None:
 
 
 def _on_risk_event(event: RiskScoreEvent) -> None:
-    decision_event = policy_engine.decide(event, prevention_service.policy)
+    # ISSUE-010 FIX: Integrate escalation tracker output into policy decisions
+    # Get current escalation level for this source IP
+    source_ip = event.detection.source_ip
+    escalation_level = escalation_tracker.get_level(source_ip)
+    
+    # Adjust risk score based on escalation history
+    # Escalation levels: 0=CLEAN, 1=ALERT, 2=RATE_LIMIT, 3=TEMP_BLOCK, 4=PERM_BLOCK
+    adjusted_risk = float(event.risk_score)
+    escalation_boost = 0.0
+    if escalation_level >= 3:  # Already at TEMP_BLOCK or higher
+        escalation_boost = 0.15  # Boost risk by 15%
+    elif escalation_level >= 2:  # Already at RATE_LIMIT
+        escalation_boost = 0.10  # Boost risk by 10%
+    elif escalation_level >= 1:  # Already at ALERT
+        escalation_boost = 0.05  # Boost risk by 5%
+    
+    adjusted_risk = min(1.0, adjusted_risk + escalation_boost)
+    
+    # Create modified risk event with escalation context
+    risk_event_with_context = RiskScoreEvent(
+        detection=event.detection,
+        risk_score=adjusted_risk,
+        components={
+            **event.components,
+            "escalation_boost": escalation_boost,
+            "escalation_level": int(escalation_level),
+        }
+    )
+    
+    decision_event = policy_engine.decide(risk_event_with_context, prevention_service.policy)
     event_bus.publish(decision_event)
     try:
         ops_store.add_audit(
@@ -658,6 +687,8 @@ def _on_risk_event(event: RiskScoreEvent) -> None:
                     "source_ip": event.detection.source_ip,
                     "prediction": event.detection.prediction,
                     "risk_score": event.risk_score,
+                    "adjusted_risk_score": adjusted_risk,
+                    "escalation_level": int(escalation_level),
                     "decision": decision_event.decision,
                     "reason": decision_event.reason,
                     "ttl_seconds": decision_event.ttl_seconds,
@@ -964,8 +995,17 @@ def _register_health_probes() -> None:
     )
 
     def _ops_probe() -> dict:
-        ops_store.list_alerts(limit=1)
-        return {"ready": True}
+        try:
+            # Test both read and write access
+            ops_store.list_alerts(limit=1)
+            # Try a test audit write
+            ops_store.add_audit(
+                event_type="health_check",
+                message="health_probe",
+            )
+            return {"ready": True}
+        except Exception as exc:
+            return {"ready": False, "error": str(exc), "note": "database_write_failed"}
 
     health_check.register("ops_db", _ops_probe)
 
@@ -982,6 +1022,39 @@ def _register_health_probes() -> None:
             return {"ready": False, "error": str(exc)}
 
     health_check.register("redis", _redis_probe)
+    
+    def _firewall_probe() -> dict:
+        try:
+            # Check if firewall adapter is available and responsive
+            adapter = prevention_service.adapter
+            adapter_name = SETTINGS.firewall_adapter
+            if adapter_name == "mock":
+                return {"ready": True, "note": "mock_adapter"}
+            # For real adapters, try a lightweight operation
+            status = getattr(adapter, "status", lambda: {"available": True})()
+            return {"ready": status.get("available", True), "adapter": adapter_name}
+        except Exception as exc:
+            return {"ready": False, "error": str(exc), "note": "adapter_unavailable"}
+    
+    health_check.register("firewall_adapter", _firewall_probe)
+    
+    def _policy_probe() -> dict:
+        try:
+            # Validate policy structure
+            policy = prevention_service.policy
+            required_fields = [
+                "mode", "risk_alert_threshold", "risk_block_threshold",
+                "block_ttl_seconds"
+            ]
+            for field in required_fields:
+                if not hasattr(policy, field):
+                    return {"ready": False, "error": f"missing_policy_field:{field}"}
+            return {"ready": True, "mode": policy.mode}
+        except Exception as exc:
+            return {"ready": False, "error": str(exc), "note": "policy_invalid"}
+    
+    health_check.register("policy", _policy_probe)
+    
     health_check.register(
         "pipeline",
         lambda: {
@@ -1157,50 +1230,29 @@ def load_threat_intel():
 
 
 def load_anomaly_baseline():
-    """Pre-fit anomaly engine with synthetic normal traffic baseline."""
+    """Load real dataset or defer to incremental training from live traffic.
+    
+    ISSUE-007 FIX: Removed hardcoded synthetic samples.
+    The anomaly engine is now trained incrementally from real traffic via
+    the auto-fit buffer (buffer_size=3000). This ensures the baseline
+    reflects actual network patterns in your environment.
+    
+    To pre-fit with real data:
+    1. Collect 3000+ normal traffic samples from your network
+    2. Call anomaly_engine.fit(X) where X is a numpy array of features
+    3. Engine will persist the model to MODELS_DIR/anomaly_engine.pkl
+    """
     global anomaly_engine
     
     if anomaly_engine.is_ready():
-        logger.info("Anomaly engine already fitted")
+        logger.info("Anomaly engine already fitted from persisted model")
         return
     
-    import numpy as np
-    
-    # Create synthetic normal traffic baseline from typical network patterns
-    # These are 10 samples of what "normal" traffic looks like in NSL-KDD features
-    normal_baseline = [
-        # Normal HTTP sessions
-        [0, 1, 23, 1, 491, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 150, 25, 0.17, 0.03, 0.17, 0.0, 0.0, 0.0, 0.0, 0.0],
-        [0, 1, 23, 1, 500, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 3, 0.0, 0.0, 0.1, 0.0, 0.8, 0.1, 0.0, 200, 40, 0.2, 0.05, 0.2, 0.0, 0.05, 0.0, 0.01, 0.0],
-        # Normal FTP data
-        [0, 1, 1, 1, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 100, 20, 0.15, 0.02, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal DNS queries
-        [0, 2, 13, 1, 100, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 300, 100, 0.3, 0.1, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal SSH session
-        [100, 1, 22, 1, 1024, 2048, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 50, 10, 0.1, 0.01, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal SMTP
-        [0, 1, 25, 1, 512, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 80, 15, 0.12, 0.02, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal POP3
-        [0, 1, 110, 1, 256, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 60, 12, 0.13, 0.02, 0.13, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal NTP
-        [0, 2, 123, 1, 128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 500, 200, 0.4, 0.2, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal IMAP
-        [0, 1, 143, 1, 512, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 70, 14, 0.14, 0.02, 0.14, 0.0, 0.0, 0.0, 0.0, 0.0],
-        # Normal HTTPS
-        [0, 1, 443, 1, 1024, 4096, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 250, 50, 0.2, 0.05, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
-    ]
-    
-    try:
-        X = np.array(normal_baseline, dtype=np.float32)
-        anomaly_engine.fit(X)
-        logger.info("AnomalyEngine pre-fitted with %d synthetic normal samples", len(normal_baseline))
-        
-        # Re-enable in engine registry now that it's ready
-        if anomaly_engine.is_ready():
-            engine_registry.set_enabled("anomaly", True)
-            logger.info("AnomalyEngine enabled in engine registry")
-    except Exception as exc:
-        logger.exception("Failed to pre-fit anomaly engine")
+    logger.info(
+        "AnomalyEngine deferring to incremental training from live traffic. "
+        "Buffer size: %d samples. Once collected, will auto-fit and enable.", 
+        anomaly_engine._buffer_size
+    )
 
 
 def _model_stats() -> dict:
@@ -1892,25 +1944,28 @@ def api_auth_login():
     Request JSON:
         {
             "username": "admin",
-            "password": "secret",  # In production, use proper auth backend
-            "roles": ["admin", "analyst"]  # Optional
+            "password": "secret"  # In production, use proper auth backend
         }
     
     Response:
         {
             "token": "eyJ0eXAiOiJKV1Q...",
             "expires_in": 86400,
-            "user": "admin"
+            "user": "admin",
+            "roles": ["analyst"]  # Server-assigned
         }
     """
     payload = request.get_json(silent=True) or {}
     username = payload.get("username", "")
-    roles = payload.get("roles", ["analyst"])  # Default role
     
     if not username:
         return jsonify({"error": "username is required"}), 400
     
     try:
+        # Server-side role assignment: always assign analyst by default
+        # In production, fetch from user database
+        roles = ["analyst"]
+        
         token = jwt_manager.create_token(
             user_id=username,
             username=username,
@@ -1918,7 +1973,7 @@ def api_auth_login():
             expires_in=86400  # 24 hours
         )
         
-        logger.info(f"JWT token issued for user: {username}")
+        logger.info(f"JWT token issued for user: {username} with roles: {roles}")
         
         return jsonify({
             "token": token,

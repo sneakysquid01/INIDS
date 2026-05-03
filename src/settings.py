@@ -68,12 +68,8 @@ def load_settings() -> Settings:
     honeypot_ips = os.getenv("INIDS_HONEYPOT_IPS", "").strip()
     honeypot_ports = os.getenv("INIDS_HONEYPOT_PORTS", "").strip()
     honeypot_enabled = _safe_bool("INIDS_HONEYPOT_ENABLED", True)
-    if require_secret_key and not secret:
-        raise ValueError("SECRET_KEY environment variable is required when INIDS_REQUIRE_SECRET_KEY=1")
     if not secret:
-        # Backward-compatible dev fallback. Use INIDS_REQUIRE_SECRET_KEY=1 in production.
-        # In test/dev environments without explicit secret requirement, use dev secret
-        secret = "dev-inids-secret"
+        raise RuntimeError("SECRET_KEY environment variable is required for security")
     rate_reqs = _safe_int("RATE_LIMIT_REQUESTS", 120)
     rate_window = _safe_int("RATE_LIMIT_WINDOW_SECONDS", 60)
     firewall_adapter = os.getenv("FIREWALL_ADAPTER", "mock").strip().lower()
