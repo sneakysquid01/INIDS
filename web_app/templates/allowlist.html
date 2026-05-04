@@ -1,291 +1,100 @@
 {% extends "base.html" %}
 
-{% block title %}Allowlist — INIDS{% endblock %}
+{% block title %}Allowlist — INIDS 3.0{% endblock %}
 {% block page_title %}Allowlist{% endblock %}
 
-{% block extra_css %}
-<style>
-/* ==========================================================
-   ALLOWLIST — SOC STANDARD STYLING
-========================================================== */
-
-.allowlist-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.allowlist-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ds-table-actions {
-  display: flex;
-  gap: 6px;
-}
-
-/* ── CONNECTION BANNER ── */
-.connection-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  margin-bottom: 16px;
-  transition: background 0.4s, color 0.4s, border-color 0.4s;
-  border: 1px solid transparent;
-}
-.connection-banner.connected {
-  background: rgba(16,185,129,0.08);
-  border-color: rgba(16,185,129,0.25);
-  color: #10b981;
-}
-.connection-banner.disconnected {
-  background: rgba(239,68,68,0.08);
-  border-color: rgba(239,68,68,0.25);
-  color: #ef4444;
-}
-.connection-banner.reconnecting {
-  background: rgba(245,158,11,0.08);
-  border-color: rgba(245,158,11,0.25);
-  color: #f59e0b;
-  animation: pulse-banner 1.5s infinite;
-}
-@keyframes pulse-banner {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.connection-banner .banner-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-.connection-banner .reconnect-btn {
-  margin-left: auto;
-  background: none;
-  border: 1px solid currentColor;
-  color: inherit;
-  font-family: inherit;
-  font-size: 10px;
-  padding: 2px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  letter-spacing: 0.5px;
-  transition: opacity 0.2s;
-}
-.connection-banner .reconnect-btn:hover { opacity: 0.7; }
-.last-updated-banner {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  color: rgba(255,255,255,0.4);
-  letter-spacing: 0.5px;
-  margin-left: auto;
-}
-</style>
-{% endblock %}
-
 {% block content %}
-<!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Allowlist Manager</h1>
-    <div class="page-subtitle">TRUSTED ASSET MANAGEMENT</div>
-  </div>
-  <div class="page-meta">
-    <div class="status-chip live">
-      <div class="sys-status-dot"></div>
-      IDS ONLINE
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Allowlist</h1>
+                <p class="text-[#8f9099] text-sm mt-1">Trusted IPs and domains excluded from security scanning</p>
+            </div>
+            <button id="add-allowlist-btn" class="px-4 py-2 bg-[#10b981] hover:bg-[#059669] text-white rounded font-medium text-sm transition-colors">
+                + Add Entry
+            </button>
+        </div>
     </div>
-    <span class="badge-safe">ALLOWLIST</span>
-  </div>
-</div>
 
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
-  <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — ALLOWLIST MODIFICATIONS SHOULD BE REVIEWED
-  </div>
-</div>
-{% endif %}
-
-<!-- CONNECTION STATUS BANNER -->
-<div id="connection-banner" class="connection-banner disconnected">
-  <span class="banner-dot"></span>
-  <span id="connection-text">CONNECTING&hellip;</span>
-  <span class="last-updated-banner" id="last-updated-banner">&mdash;</span>
-  <button class="reconnect-btn" id="reconnect-btn" style="display:none;">RECONNECT</button>
-</div>
-
-<!-- ACTION BAR -->
-<div class="ds-card layer-panel interactive" style="margin-bottom:16px;">
-  <div class="ds-card-body"
-       style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-    <div>
-      <strong>Maintain trusted IP addresses and domains</strong>
-      <div style="font-size:11px; color:rgba(255,255,255,0.45);">
-        Allowlisted entries bypass detection logic and suppression rules
-      </div>
+    <!-- STATS -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Entries</div>
+            <div id="stat-entries" class="text-2xl font-bold text-white mt-1">0</div>
+        </div>
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">IPs</div>
+            <div id="stat-ips" class="text-2xl font-bold text-[#3b82f6] mt-1">0</div>
+        </div>
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Domains</div>
+            <div id="stat-domains" class="text-2xl font-bold text-[#f59e0b] mt-1">0</div>
+        </div>
     </div>
-    <div class="allowlist-actions">
-      <button class="btn-primary" onclick="openAddModal()">
-        <i class="bi bi-plus-lg"></i>
-        Add Entry
-      </button>
-      <button class="btn-secondary" onclick="loadAllowlist()">
-        <i class="bi bi-arrow-clockwise"></i>
-        Refresh
-      </button>
+
+    <!-- FILTER BAR -->
+    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <!-- TYPE FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Type</div>
+                <div class="flex flex-wrap gap-2">
+                    <button class="type-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-type="all">All</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="ip">IP Address</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="domain">Domain</button>
+                </div>
+            </div>
+
+            <!-- STATUS FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
+                <div class="flex flex-wrap gap-2">
+                    <button class="status-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-status="all">All</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="active">Active</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="inactive">Inactive</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH INPUT -->
+        <div class="mt-4">
+            <input 
+                id="search-allowlist" 
+                type="text" 
+                placeholder="Search by IP, domain, or reason..."
+                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+            />
+        </div>
     </div>
-  </div>
+
+    <!-- ALLOWLIST TABLE -->
+    <div class="flex-1 overflow-y-auto">
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="border-b border-[#1a1f2e] bg-[#0a0c10]">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-[#8f9099] font-semibold uppercase tracking-wider">Entry</th>
+                        <th class="px-4 py-3 text-left text-[#8f9099] font-semibold uppercase tracking-wider">Type</th>
+                        <th class="px-4 py-3 text-left text-[#8f9099] font-semibold uppercase tracking-wider">Reason</th>
+                        <th class="px-4 py-3 text-left text-[#8f9099] font-semibold uppercase tracking-wider">Added By</th>
+                        <th class="px-4 py-3 text-left text-[#8f9099] font-semibold uppercase tracking-wider">Status</th>
+                        <th class="px-4 py-3 text-right text-[#8f9099] font-semibold uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="allowlist-table" class="divide-y divide-[#1a1f2e]">
+                    <!-- Allowlist entries mount here -->
+                </tbody>
+            </table>
+            
+            <!-- EMPTY STATE -->
+            <div id="allowlist-empty" class="hidden px-4 py-12 text-center">
+                <div class="text-[#8f9099] text-sm uppercase tracking-wider">No allowlist entries</div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<!-- STATS -->
-<div class="allowlist-stats">
-  <div class="ds-card layer-panel">
-    <div class="ds-card-body">
-      <div class="ds-card-title">Total Entries</div>
-      <div class="stat-value" id="totalCount">0</div>
-    </div>
-  </div>
-  <div class="ds-card layer-panel">
-    <div class="ds-card-body">
-      <div class="ds-card-title">IP Addresses</div>
-      <div class="stat-value" id="ipCount">0</div>
-    </div>
-  </div>
-  <div class="ds-card layer-panel">
-    <div class="ds-card-body">
-      <div class="ds-card-title">Domains</div>
-      <div class="stat-value" id="domainCount">0</div>
-    </div>
-  </div>
-  <div class="ds-card layer-panel">
-    <div class="ds-card-body">
-      <div class="ds-card-title">Last Updated</div>
-      <div style="font-size:12px;" id="lastUpdated">—</div>
-    </div>
-  </div>
-</div>
-
-<!-- FILTERS -->
-<div class="ds-card layer-panel interactive" style="margin-bottom:16px;">
-  <div class="ds-card-body"
-       style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px;">
-    <input
-      type="text"
-      id="searchBox"
-      class="ds-input"
-      placeholder="Search by IP address or domain…"
-      onkeyup="filterAllowlist()">
-    <select id="typeFilter" class="ds-select" onchange="filterAllowlist()">
-      <option value="">All Types</option>
-      <option value="ip">IP Address</option>
-      <option value="domain">Domain</option>
-    </select>
-    <select id="reasonFilter" class="ds-select" onchange="filterAllowlist()">
-      <option value="">All Reasons</option>
-      <option value="internal">Internal Network</option>
-      <option value="trusted_partner">Trusted Partner</option>
-      <option value="monitoring">Monitoring Tool</option>
-      <option value="false_positive">False Positive</option>
-      <option value="other">Other</option>
-    </select>
-  </div>
-</div>
-
-<!-- TABLE -->
-<div class="ds-card layer-panel">
-  <div class="ds-card-body" style="padding:0;">
-    <table class="ds-table">
-      <thead>
-        <tr>
-          <th>Entry</th>
-          <th>Type</th>
-          <th>Reason</th>
-          <th>Added By</th>
-          <th>Added Date</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="allowlistTable">
-        <tr>
-          <td colspan="6"
-              style="text-align:center; padding:24px; color:rgba(255,255,255,0.4);">
-            Loading allowlist…
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- PAGINATION -->
-<div id="pagination" style="margin-top:16px; text-align:center; display:none;">
-  <button class="btn-secondary" id="prevBtn" onclick="previousPage()">Previous</button>
-  <span style="margin:0 8px;" id="pageInfo">Page 1</span>
-  <button class="btn-secondary" id="nextBtn" onclick="nextPage()">Next</button>
-</div>
-
-{% endblock %}
-
-{% block scripts %}
-<!-- ============================================================
-     SCRIPTS — Socket + State + Allowlist (ES Module)
-     Same architecture as monitor / dashboard / actions / alerts
-============================================================ -->
-
-<!-- 1. Socket.IO client (global: window.io) -->
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-
-<!-- 2. Bootstrap JS (global: modals / toasts) -->
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
-
-<!-- 3. GlobalState (global: window.GlobalState) -->
-<script src="{{ url_for('static', filename='js/state.js') }}"></script>
-
-<!-- 4. Allowlist page logic (ES MODULE) -->
-<script type="module" src="{{ url_for('static', filename='js/allowlist.js') }}"></script>
-
-<!-- 5. Bridge: connection banner + last-updated -->
-<script type="module">
-    import SocketCore from "./core/socket_core.js";
-
-    const banner = document.getElementById("connection-banner");
-    const txt    = document.getElementById("connection-text");
-    const btn    = document.getElementById("reconnect-btn");
-    const upd    = document.getElementById("last-updated-banner");
-
-    function setBanner(state, text) {
-        banner.classList.remove("connected", "disconnected", "reconnecting");
-        banner.classList.add(state);
-        txt.textContent = text;
-        btn.style.display = state === "disconnected" ? "inline-block" : "none";
-    }
-
-    SocketCore.on("connect",           () => setBanner("connected",    "SOCKET CONNECTED"));
-    SocketCore.on("disconnect",        () => setBanner("disconnected", "SOCKET DISCONNECTED"));
-    SocketCore.on("reconnect_attempt", () => setBanner("reconnecting", "RECONNECTING\u2026"));
-
-    btn.addEventListener("click", () => {
-        setBanner("reconnecting", "RECONNECTING\u2026");
-        SocketCore.connect();
-    });
-
-    if (window.GlobalState) {
-        window.GlobalState.subscribe(() => {
-            const n = new Date();
-            if (upd) upd.textContent =
-                `Last update ${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}:${String(n.getSeconds()).padStart(2,"0")}`;
-        });
-    }
-</script>
+<script type="module" src="{{ url_for('static', filename='js/pages/allowlist.page.js') }}"></script>
 {% endblock %}

@@ -1,507 +1,77 @@
 {% extends "base.html" %}
 
-{% block title %}Actions{% endblock %}
+{% block title %}Actions — INIDS 3.0{% endblock %}
 {% block page_title %}Actions{% endblock %}
 
-{% block extra_css %}
-body {
-            background-color: #f8f9fa;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        
-        .nav-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            color: #fff !important;
-        }
-        
-        .page-header {
-            background: white;
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid #e0e0e0;
-            margin-bottom: 2rem;
-        }
-        
-        .page-title {
-            font-size: 2rem;
-            font-weight: 600;
-            color: #1a1a2e;
-            margin: 0;
-        }
-        
-        .container-main {
-            padding: 0 2rem;
-        }
-        
-        .tabs-container {
-            background: white;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .table-wrapper {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .table {
-            margin: 0;
-            font-size: 0.95rem;
-        }
-        
-        .table thead {
-            background: #f8f9fa;
-            border-bottom: 2px solid #e0e0e0;
-        }
-        
-        .table th {
-            font-weight: 600;
-            color: #333;
-            padding: 1rem;
-            vertical-align: middle;
-        }
-        
-        .table td {
-            padding: 0.75rem 1rem;
-            vertical-align: middle;
-        }
-        
-        .table tbody tr {
-            border-bottom: 1px solid #f0f0f0;
-            transition: background-color 0.2s;
-        }
-        
-        .table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
-        
-        .status-badge {
-            font-weight: 500;
-            padding: 0.4rem 0.8rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-        
-        .status-pending {
-            background-color: #fff3e0;
-            color: #cc6600;
-        }
-        
-        .status-approved {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-        }
-        
-        .status-executed {
-            background-color: #e3f2fd;
-            color: #0d47a1;
-        }
-        
-        .status-failed {
-            background-color: #ffe0e0;
-            color: #c41c3b;
-        }
-        
-        .action-type-badge {
-            font-weight: 500;
-            padding: 0.4rem 0.8rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            background: #e8eaf6;
-            color: #3f51b5;
-        }
-        
-        .alert-count {
-            display: inline-block;
-            background: #fff3e0;
-            color: #cc6600;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            font-weight: 500;
-            margin-bottom: 1rem;
-        }
-        
-        .action-card {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            transition: all 0.2s;
-        }
-        
-        .action-card:hover {
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        
-        .action-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 0.75rem;
-        }
-        
-        .action-type {
-            font-weight: 600;
-            color: #1a1a2e;
-        }
-        
-        .action-target {
-            display: inline-block;
-            background: #f0f0f0;
-            padding: 0.4rem 0.8rem;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            margin: 0.5rem 0;
-        }
-        
-        .action-details {
-            font-size: 0.9rem;
-            color: #666;
-            margin: 0.75rem 0;
-        }
-        
-        .action-timestamp {
-            font-size: 0.85rem;
-            color: #999;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 3rem 2rem;
-            color: #999;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-        
-        .detail-label {
-            font-weight: 600;
-            color: #666;
-            font-size: 0.9rem;
-        }
-        
-        .detail-value {
-            color: #333;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.9rem;
-        }
-        
-        .detail-row {
-            padding: 0.75rem 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        
-        .code-block {
-            background: #f5f5f5;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 0.75rem;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.85rem;
-            overflow-x: auto;
-            color: #333;
-        }
-        
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 2rem;
-        }
-        
-        .loading-spinner.active {
-            display: block;
-        }
-        
-        .btn-approve {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-            border: none;
-            color: white;
-            font-weight: 600;
-        }
-        
-        .btn-approve:hover {
-            background: linear-gradient(135deg, #218838 0%, #1aa179 100%);
-            color: white;
-        }
-        
-        .approval-notes {
-            background: #f0f9ff;
-            border-left: 4px solid #0066cc;
-            padding: 0.75rem;
-            margin: 0.75rem 0;
-            border-radius: 4px;
-        }
-        
-        .tabs-nav {
-            display: flex;
-            gap: 1rem;
-            padding: 1rem;
-            border-bottom: 2px solid #e0e0e0;
-        }
-        
-        .tab-btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-weight: 500;
-            color: #666;
-            transition: all 0.2s;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -1rem;
-        }
-        
-        .tab-btn.active {
-            color: #0066cc;
-            border-bottom-color: #0066cc;
-        }
-        
-        .tab-content {
-            display: none;
-            padding: 1.5rem;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
-        
-        .modal-header {
-            background: #f8f9fa;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .modal-title {
-            font-weight: 600;
-            color: #1a1a2e;
-        }
-        
-        .navbar-subtitle {
-            color: #aaa;
-        }
-
-        .page-subtitle {
-            color: #666;
-            margin-top: 0.5rem;
-        }
-
-        .loading-text {
-            margin-top: 1rem;
-            color: #666;
-        }
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
-}
-
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
-}
-
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
-
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
-
-.connection-banner{display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.5px;margin-bottom:16px;transition:background .4s,color .4s,border-color .4s;border:1px solid transparent}
-.connection-banner.connected{background:rgba(76,175,80,.08);border-color:rgba(76,175,80,.25);color:#4caf50}
-.connection-banner.disconnected{background:rgba(244,67,54,.08);border-color:rgba(244,67,54,.25);color:#f44336}
-.connection-banner.reconnecting{background:rgba(255,193,7,.08);border-color:rgba(255,193,7,.25);color:#ffc107;animation:pulse-banner 1.5s infinite}
-@keyframes pulse-banner{0%,100%{opacity:1}50%{opacity:.5}}
-.connection-banner .banner-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
-.connection-banner .reconnect-btn{margin-left:auto;background:none;border:1px solid currentColor;color:inherit;font-family:inherit;font-size:10px;padding:2px 10px;border-radius:4px;cursor:pointer;letter-spacing:.5px;transition:opacity .2s}
-.connection-banner .reconnect-btn:hover{opacity:.7}
-.last-updated{font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.5px}
-{% endblock %}
-
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Actions</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
-  </div>
-  <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="last-updated" id="last-updated">&mdash;</span>
-    <span class="badge-info">UNIFIED UI</span>
-  </div>
-</div>
-
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
-  <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
-</div>
-{% endif %}
-
-<!-- CONNECTION STATUS BANNER -->
-<div id="connection-banner" class="connection-banner disconnected">
-    <span class="banner-dot"></span>
-    <span id="connection-text">CONNECTING&hellip;</span>
-    <button class="reconnect-btn" id="reconnect-btn" style="display:none;">RECONNECT</button>
-</div>
-
-<div class="ds-card layer-panel interactive">
-  <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-dark">
-        <div class="container-fluid">
-            <a class="nav-brand" href="/">🔍 INIDS</a>
-            <span class="navbar-subtitle">Intrusion Detection & Prevention</span>
-        </div>
-    </nav>
-
-    <!-- Page Header -->
-    <div class="page-header">
-        <h1 class="page-title">Prevention Actions</h1>
-        <p class="page-subtitle">Manage IPS actions, approvals, and incident response</p>
-    </div>
-
-    <!-- Main Container -->
-    <div class="container-main">
-        <!-- Tabs -->
-        <div class="tabs-container">
-            <div class="tabs-nav">
-                <button class="tab-btn active" onclick="switchTab('all', event)">
-                    📋 All Actions
-                </button>
-                <button class="tab-btn" onclick="switchTab('pending', event)">
-                    ⏳ Pending Approval <span id="pending-badge"></span>
-                </button>
-                <button class="tab-btn" onclick="switchTab('executed', event)">
-                    ✔️ Executed
-                </button>
-                <button class="tab-btn" onclick="switchTab('failed', event)">
-                    ❌ Failed
-                </button>
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Actions</h1>
+                <p class="text-[#8f9099] text-sm mt-1">System prevention actions and enforcement history</p>
             </div>
-            
-            <!-- All Actions Tab -->
-            <div id="tab-all" class="tab-content active">
-                <div class="loading-spinner active" id="loading-all">
-                    <div class="spinner-border" role="status"></div>
-                    <p class="loading-text">Loading actions...</p>
+            <div id="action-stats" class="flex gap-4">
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Actions</div>
+                    <div id="stat-total" class="text-2xl font-bold text-white mt-1">0</div>
                 </div>
-                <div id="all-actions-list"></div>
-            </div>
-            
-            <!-- Pending Approval Tab -->
-            <div id="tab-pending" class="tab-content">
-                <div class="loading-spinner active" id="loading-pending">
-                    <div class="spinner-border" role="status"></div>
-                    <p class="loading-text">Loading pending actions...</p>
-                </div>
-                <div id="pending-actions-list"></div>
-            </div>
-            
-            <!-- Executed Tab -->
-            <div id="tab-executed" class="tab-content">
-                <div class="loading-spinner active" id="loading-executed">
-                    <div class="spinner-border" role="status"></div>
-                    <p class="loading-text">Loading executed actions...</p>
-                </div>
-                <div id="executed-actions-list"></div>
-            </div>
-            
-            <!-- Failed Tab -->
-            <div id="tab-failed" class="tab-content">
-                <div class="loading-spinner active" id="loading-failed">
-                    <div class="spinner-border" role="status"></div>
-                    <p class="loading-text">Loading failed actions...</p>
-                </div>
-                <div id="failed-actions-list"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Approval Modal -->
-    <div class="modal fade" id="approvalModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Approve Action</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" title="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="approval-details">
-                        <!-- Action details loaded here -->
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-approve" id="btn-confirm-approve">Approve & Execute</button>
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Successful</div>
+                    <div id="stat-success" class="text-2xl font-bold text-[#10b981] mt-1">0</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
-  </div>
+    <!-- FILTER BAR -->
+    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <!-- TYPE FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Action Type</div>
+                <div id="type-filters" class="flex flex-wrap gap-2">
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#3b82f6] active:bg-[#3b82f6]" data-type="all">All Types</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#ef4444]" data-type="block">Block</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#10b981]" data-type="unblock">Unblock</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#f59e0b]" data-type="alert">Alert</button>
+                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#8b5cf6]" data-type="respond">Respond</button>
+                </div>
+            </div>
+
+            <!-- STATUS FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
+                <div id="status-filters" class="flex flex-wrap gap-2">
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#3b82f6] active:bg-[#3b82f6]" data-status="all">All Status</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#10b981]" data-status="success">Success</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#ef4444]" data-status="failed">Failed</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#f59e0b]" data-status="pending">Pending</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH INPUT -->
+        <div class="mt-4">
+            <input 
+                id="search-actions" 
+                type="text" 
+                placeholder="Search by target IP, domain, or reason..."
+                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+            />
+        </div>
+    </div>
+
+    <!-- ACTIONS CONTAINER -->
+    <div class="flex-1 overflow-y-auto">
+        <div id="actions-list" class="space-y-4 pb-6">
+            <!-- ActionCard components mount here -->
+        </div>
+    </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/state.js') }}"></script>
-<script type="module" src="{{ url_for('static', filename='js/actions.js') }}"></script>
-
-<script type="module">
-    import SocketCore from "./core/socket_core.js";
-    const banner=document.getElementById("connection-banner"),txt=document.getElementById("connection-text"),btn=document.getElementById("reconnect-btn"),upd=document.getElementById("last-updated");
-    function setBanner(s,t){banner.classList.remove("connected","disconnected","reconnecting");banner.classList.add(s);txt.textContent=t;btn.style.display=s==="disconnected"?"inline-block":"none";}
-    SocketCore.on("connect",()=>setBanner("connected","SOCKET CONNECTED"));
-    SocketCore.on("disconnect",()=>setBanner("disconnected","SOCKET DISCONNECTED"));
-    SocketCore.on("reconnect_attempt",()=>setBanner("reconnecting","RECONNECTING\u2026"));
-    btn.addEventListener("click",()=>{setBanner("reconnecting","RECONNECTING\u2026");SocketCore.connect();});
-    if(window.GlobalState){window.GlobalState.subscribe(()=>{const n=new Date();if(upd)upd.textContent=`Last update ${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}:${String(n.getSeconds()).padStart(2,"0")}`;});}
-</script>
+<script type="module" src="{{ url_for('static', filename='js/pages/actions.page.js') }}"></script>
 {% endblock %}
 
 

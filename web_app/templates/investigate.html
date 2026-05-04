@@ -1,9 +1,84 @@
 {% extends "base.html" %}
 
-{% block title %}INIDS Investigate - Alert Analysis{% endblock %}
-{% block page_title %}INIDS Investigate - Alert Analysis{% endblock %}
+{% block title %}Investigate — INIDS 3.0{% endblock %}
+{% block page_title %}Investigate{% endblock %}
 
-{% block extra_css %}
+{% block content %}
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Investigate</h1>
+                <p class="text-[#8f9099] text-sm mt-1">Threat investigation and analysis workflow</p>
+            </div>
+            <button id="new-investigation-btn" class="px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded font-medium text-sm transition-colors">
+                + New Investigation
+            </button>
+        </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Active</div>
+            <div id="stat-active" class="text-2xl font-bold text-[#3b82f6] mt-1">0</div>
+        </div>
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Completed</div>
+            <div id="stat-completed" class="text-2xl font-bold text-[#10b981] mt-1">0</div>
+        </div>
+        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
+            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total</div>
+            <div id="stat-total" class="text-2xl font-bold text-white mt-1">0</div>
+        </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <!-- STATUS FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
+                <div class="flex flex-wrap gap-2">
+                    <button class="status-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-status="all">All</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="open">Open</button>
+                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="closed">Closed</button>
+                </div>
+            </div>
+
+            <!-- SEVERITY FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Severity</div>
+                <div class="flex flex-wrap gap-2">
+                    <button class="severity-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-severity="all">All</button>
+                    <button class="severity-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-severity="critical">Critical</button>
+                    <button class="severity-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-severity="high">High</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH INPUT -->
+        <div class="mt-4">
+            <input 
+                id="search-investigations" 
+                type="text" 
+                placeholder="Search by title or description..."
+                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+            />
+        </div>
+    </div>
+
+    <!-- INVESTIGATIONS GRID -->
+    <div class="flex-1 overflow-y-auto">
+        <div id="investigations-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-6">
+            <!-- Investigation cards mount here -->
+        </div>
+    </div>
+</div>
+
+<script type="module" src="{{ url_for('static', filename='js/pages/investigate.page.js') }}"></script>
+{% endblock %}
 :root {
             --color-safe: #4caf50;
             --color-suspicious: #ff9800;

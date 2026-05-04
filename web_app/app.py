@@ -3214,12 +3214,17 @@ def api_fp_stats():
 
 @app.route("/realtime")
 def realtime():
-    return render_template("realtime.html", socketio_enabled=True)
+    return render_template("realtime.html")
 
 
 @app.route("/capture")
 def capture():
     return render_template("capture.html")
+
+
+@app.route("/honeypot")
+def honeypot():
+    return render_template("honeypot.html")
 
 
 # ============================================================================

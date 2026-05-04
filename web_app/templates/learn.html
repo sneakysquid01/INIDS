@@ -1,9 +1,62 @@
 {% extends "base.html" %}
 
-{% block title %}INIDS Learn - ML Model Management{% endblock %}
-{% block page_title %}INIDS Learn - ML Model Management{% endblock %}
+{% block title %}Learn — INIDS 3.0{% endblock %}
+{% block page_title %}Learn{% endblock %}
 
-{% block extra_css %}
+{% block content %}
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Learn</h1>
+                <p class="text-[#8f9099] text-sm mt-1">Documentation, guides, and best practices</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEARCH BAR -->
+    <div class="mb-6">
+        <input 
+            id="search-docs" 
+            type="text" 
+            placeholder="Search documentation..."
+            class="w-full px-4 py-3 bg-[#151922] border border-[#1a1f2e] rounded-lg text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+        />
+    </div>
+
+    <!-- CATEGORY TABS -->
+    <div class="flex gap-2 mb-6 border-b border-[#1a1f2e] pb-4 overflow-x-auto">
+        <button class="category-tab px-4 py-2 text-sm font-medium text-white bg-[#3b82f6] rounded" data-category="all">
+            All Docs
+        </button>
+        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="getting-started">
+            Getting Started
+        </button>
+        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="configuration">
+            Configuration
+        </button>
+        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="detection">
+            Detection
+        </button>
+        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="troubleshooting">
+            Troubleshooting
+        </button>
+        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="api">
+            API Docs
+        </button>
+    </div>
+
+    <!-- DOCS CONTAINER -->
+    <div class="flex-1 overflow-y-auto">
+        <div id="docs-container" class="space-y-4 pb-6">
+            <!-- Documentation cards mount here -->
+        </div>
+    </div>
+</div>
+
+<script type="module" src="{{ url_for('static', filename='js/pages/learn.page.js') }}"></script>
+{% endblock %}
 :root {
             --color-safe: #4caf50;
             --color-suspicious: #ff9800;

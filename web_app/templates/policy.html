@@ -1,283 +1,74 @@
 {% extends "base.html" %}
 
-{% block title %}Policy — INIDS{% endblock %}
-{% block page_title %}Policy{% endblock %}
-
-{% block extra_css %}
-<style>
-/* ==========================================================
-   POLICY — SOC STANDARD STYLING
-========================================================== */
-
-.policy-wrapper {
-  max-width: 980px;
-  margin: 0 auto;
-}
-
-.policy-section {
-  margin-bottom: 20px;
-}
-
-.policy-section-title {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
-}
-
-.policy-description {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-}
-
-.policy-grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-@media (max-width: 900px) {
-  .policy-grid-2 {
-    grid-template-columns: 1fr;
-  }
-}
-
-.policy-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 14px;
-}
-
-.policy-input {
-  width: 100%;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--text-primary);
-}
-
-.policy-input:focus {
-  outline: none;
-  border-color: var(--cyan);
-}
-
-.policy-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.policy-toggle label {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.policy-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.policy-history {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  margin-top: 12px;
-}
-
-.policy-history-item {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-
-.policy-history-item:last-child {
-  border-bottom: 0;
-}
-</style>
-{% endblock %}
+{% block title %}Policies — INIDS 3.0{% endblock %}
+{% block page_title %}Policies{% endblock %}
 
 {% block content %}
-
-<!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Policy Editor</h1>
-    <div class="page-subtitle">DETECTION & PREVENTION CONTROL PLANE</div>
-  </div>
-  <div class="page-meta">
-    <div class="status-chip live">
-      <div class="sys-status-dot"></div>
-      IDS ONLINE
-    </div>
-    <span class="badge-info">POLICY</span>
-  </div>
-</div>
-
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
-  <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — POLICY CHANGES SHOULD BE REVIEWED CAREFULLY
-  </div>
-</div>
-{% endif %}
-
-<div class="ds-card layer-elevated interactive">
-  <div class="ds-card-body">
-
-    <div class="policy-wrapper">
-
-      <!-- MODE -->
-      <div class="policy-section">
-        <div class="policy-section-title">Operation Mode</div>
-        <div class="policy-description">
-          Control how the system reacts to detected threats.
-        </div>
-
-        <div class="policy-grid-2">
-          <div class="policy-card" onclick="selectMode('detect')">
-            <strong>Detection Only</strong>
-            <div class="policy-description">
-              Generate alerts without prevention actions.
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Policies</h1>
+                <p class="text-[#8f9099] text-sm mt-1">Security policy configuration and audit history</p>
             </div>
-          </div>
-
-          <div class="policy-card" onclick="selectMode('prevent')">
-            <strong>Prevention Mode</strong>
-            <div class="policy-description">
-              Automatically block malicious activity.
+            <div id="policy-stats" class="flex gap-4">
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Changes</div>
+                    <div id="stat-changes" class="text-2xl font-bold text-white mt-1">0</div>
+                </div>
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Last Modified</div>
+                    <div id="stat-last" class="text-sm font-semibold text-white mt-1">—</div>
+                </div>
             </div>
-          </div>
         </div>
-
-        <input type="hidden" id="mode" value="detect">
-      </div>
-
-      <!-- THRESHOLDS -->
-      <div class="policy-section">
-        <div class="policy-section-title">Detection Thresholds</div>
-
-        <div class="policy-card">
-          <label class="policy-description">
-            Confidence threshold (%)
-          </label>
-          <input type="range"
-                 id="detection-threshold"
-                 min="0" max="100"
-                 value="70"
-                 oninput="updateThresholdLabel(this.value)">
-          <div class="policy-description">
-            Current: <span id="threshold-display">70%</span>
-          </div>
-        </div>
-
-        <div class="policy-grid-2" style="margin-top:12px;">
-          <div class="policy-card">
-            <label class="policy-description">Minimum Severity</label>
-            <select id="alert-severity" class="policy-input">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high" selected>High</option>
-              <option value="critical">Critical</option>
-            </select>
-          </div>
-
-          <div class="policy-card">
-            <label class="policy-description">Escalation Risk Score</label>
-            <input type="number" id="escalation-threshold"
-                   value="80" min="0" max="100"
-                   class="policy-input">
-          </div>
-        </div>
-      </div>
-
-      <!-- WORKFLOWS -->
-      <div class="policy-section">
-        <div class="policy-section-title">Approval Workflow</div>
-
-        <div class="policy-card">
-          <div class="policy-toggle">
-            <label>Require Approval Before Actions</label>
-            <input type="checkbox" id="approval-required" checked>
-          </div>
-
-          <label class="policy-description">
-            Approval timeout (minutes)
-          </label>
-          <input type="number"
-                 id="approval-timeout"
-                 value="30"
-                 min="1" max="1440"
-                 class="policy-input">
-        </div>
-      </div>
-
-      <!-- ADVANCED -->
-      <div class="policy-section">
-        <div class="policy-section-title">Advanced Controls</div>
-
-        <div class="policy-card">
-          <div class="policy-toggle">
-            <label>Auto‑escalate high‑risk alerts</label>
-            <input type="checkbox" id="auto-escalate" checked>
-          </div>
-
-          <div class="policy-toggle">
-            <label>Enable anomaly detection</label>
-            <input type="checkbox" id="anomaly-detection" checked>
-          </div>
-
-          <label class="policy-description">Log Level</label>
-          <select id="log-level" class="policy-input">
-            <option value="debug">Debug</option>
-            <option value="info" selected>Info</option>
-            <option value="warning">Warning</option>
-            <option value="error">Error</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- ENGINES -->
-      <div class="policy-section">
-        <div class="policy-section-title">Detection Engines</div>
-        <div class="policy-card" id="engine-toggles">
-          <!-- dynamically loaded -->
-          <div class="empty-state">Loading engines…</div>
-        </div>
-      </div>
-
-      <!-- HISTORY -->
-      <div class="policy-section">
-        <div class="policy-section-title">Policy History</div>
-        <div class="policy-card policy-history" id="policy-history">
-          <div class="empty-state">No history available</div>
-        </div>
-      </div>
-
-      <!-- ACTIONS -->
-      <div class="policy-actions">
-        <button class="btn-primary" onclick="savePolicy()">Save Policy</button>
-        <button class="btn-secondary" onclick="resetPolicy()">Reset</button>
-      </div>
-
     </div>
 
-  </div>
+    <!-- FILTER BAR -->
+    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <!-- POLICY TYPE FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Policy Type</div>
+                <div id="policy-filters" class="flex flex-wrap gap-2">
+                    <button class="policy-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#3b82f6] active:bg-[#3b82f6]" data-policy="all">All Policies</button>
+                    <button class="policy-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#ef4444]" data-policy="block">Block Rules</button>
+                    <button class="policy-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#10b981]" data-policy="alert">Alert Rules</button>
+                    <button class="policy-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#f59e0b]" data-policy="quarantine">Quarantine</button>
+                </div>
+            </div>
+
+            <!-- CHANGE TYPE FILTERS -->
+            <div>
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Change Type</div>
+                <div id="change-filters" class="flex flex-wrap gap-2">
+                    <button class="change-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#3b82f6] active:bg-[#3b82f6]" data-change="all">All Changes</button>
+                    <button class="change-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#10b981]" data-change="create">Create</button>
+                    <button class="change-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#3b82f6]" data-change="update">Update</button>
+                    <button class="change-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] rounded text-sm text-white hover:border-[#ef4444]" data-change="delete">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH INPUT -->
+        <div class="mt-4">
+            <input 
+                id="search-policies" 
+                type="text" 
+                placeholder="Search by policy name, user, or description..."
+                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+            />
+        </div>
+    </div>
+
+    <!-- POLICY HISTORY CONTAINER -->
+    <div class="flex-1 overflow-y-auto">
+        <div id="policies-list" class="space-y-4 pb-6">
+            <!-- PolicyHistoryItem components mount here -->
+        </div>
+    </div>
 </div>
 
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/policy.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/pages/policy.page.js') }}"></script>
 {% endblock %}

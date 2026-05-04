@@ -100,7 +100,7 @@ export const GlobalState = {
         }
 
         // Log state changes (dev mode)
-        if (process.env.NODE_ENV === "development") {
+        if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === "development") {
             console.log(`[GlobalState] SET '${key}':`, value);
         }
     },
@@ -135,7 +135,7 @@ export const GlobalState = {
         }
 
         // Log state changes (dev mode)
-        if (process.env.NODE_ENV === "development") {
+        if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === "development") {
             console.log(`[GlobalState] UPDATE '${key}':`, partialValue);
         }
     },
@@ -175,7 +175,7 @@ export const GlobalState = {
         }
 
         // Log state changes (dev mode)
-        if (process.env.NODE_ENV === "development") {
+        if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === "development") {
             console.log(`[GlobalState] PUSH to '${key}':`, entry);
         }
     },

@@ -1,9 +1,121 @@
 {% extends "base.html" %}
-{% block title %}Detection — INIDS{% endblock %}
+
+{% block title %}Detection — INIDS 3.0{% endblock %}
 {% block page_title %}Detection{% endblock %}
 
-{% block extra_css %}
-<style>
+{% block content %}
+<div class="flex flex-col h-screen bg-[#0a0c10]">
+    <!-- PAGE HEADER -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-white font-syne">Detection</h1>
+                <p class="text-[#8f9099] text-sm mt-1">Run threat detection and analysis</p>
+            </div>
+            <div id="detection-stats" class="flex gap-4">
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Scans</div>
+                    <div id="stat-scans" class="text-2xl font-bold text-white mt-1">0</div>
+                </div>
+                <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                    <div class="text-[#8f9099] text-xs uppercase tracking-wider">Threats Found</div>
+                    <div id="stat-threats" class="text-2xl font-bold text-[#ef4444] mt-1">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TWO COLUMN LAYOUT: Form + Results -->
+    <div class="flex gap-6 flex-1 overflow-hidden">
+        <!-- LEFT: DETECTION FORM -->
+        <div class="w-96 bg-[#151922] border border-[#1a1f2e] rounded-lg p-6 overflow-y-auto">
+            <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-4">Analysis Target</div>
+            
+            <!-- INPUT TYPE TABS -->
+            <div class="flex gap-2 mb-4">
+                <button id="tab-ip" class="input-type-tab flex-1 px-3 py-2 bg-[#3b82f6] text-white rounded text-sm font-medium" data-type="ip">IP Address</button>
+                <button id="tab-domain" class="input-type-tab flex-1 px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="domain">Domain</button>
+                <button id="tab-hash" class="input-type-tab flex-1 px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="hash">File Hash</button>
+            </div>
+
+            <!-- INPUT FIELD -->
+            <div class="mb-4">
+                <input 
+                    id="detection-input" 
+                    type="text" 
+                    placeholder="Enter IP address, domain, or file hash..."
+                    class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
+                />
+            </div>
+
+            <!-- ENGINE SELECTION -->
+            <div class="mb-4">
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-2">Detection Engines</div>
+                <div id="engine-checkboxes" class="space-y-2">
+                    <!-- Engine checkboxes mount here -->
+                    <label class="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="checkbox" class="engine-select" value="yara" checked>
+                        <span>YARA Rules</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="checkbox" class="engine-select" value="ml" checked>
+                        <span>ML Engine</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="checkbox" class="engine-select" value="signature" checked>
+                        <span>Signature Based</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="checkbox" class="engine-select" value="behavior" checked>
+                        <span>Behavior Analysis</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- SCAN BUTTON -->
+            <button 
+                id="scan-btn" 
+                class="w-full px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                Start Scan
+            </button>
+
+            <!-- LOADING SPINNER -->
+            <div id="loading-spinner" style="display: none;" class="mt-4 text-center">
+                <div class="inline-block animate-spin h-6 w-6 border-2 border-[#3b82f6] border-t-transparent rounded-full"></div>
+                <div class="text-[#8f9099] text-xs mt-2">Analyzing...</div>
+            </div>
+
+            <!-- RECENT SCANS -->
+            <div class="mt-6 pt-6 border-t border-[#1a1f2e]">
+                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Recent Scans</div>
+                <div id="recent-scans" class="space-y-2 text-xs">
+                    <!-- Recent scan items mount here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: DETECTION RESULTS -->
+        <div class="flex-1 bg-[#151922] border border-[#1a1f2e] rounded-lg p-6 overflow-y-auto">
+            <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-4">Analysis Results</div>
+            
+            <!-- EMPTY STATE -->
+            <div id="results-empty" class="text-center py-12">
+                <div class="text-[#8f9099] text-sm uppercase tracking-wider">
+                    Run a scan to see results
+                </div>
+            </div>
+
+            <!-- RESULTS CONTAINER -->
+            <div id="results-container" style="display: none;" class="space-y-4">
+                <!-- Detection result cards mount here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="{{ url_for('static', filename='js/pages/detection.page.js') }}"></script>
+{% endblock %}
 /* ==========================================================
    DETECTION CONSOLE — UPGRADED TO MATCH detection.js BRIDGE
    ========================================================== */
