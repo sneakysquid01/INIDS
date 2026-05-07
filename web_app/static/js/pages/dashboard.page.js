@@ -51,7 +51,8 @@ function renderModules() {
     GlobalState.subscribe('modules', (modules) => {
         modulesGrid.innerHTML = '';
         
-        if (!modules || modules.length === 0) {
+        // Ensure modules is an array
+        if (!Array.isArray(modules) || modules.length === 0) {
             modulesGrid.innerHTML = '<div class="text-gray-500 col-span-full text-center py-8">No modules configured</div>';
             return;
         }

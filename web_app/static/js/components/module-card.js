@@ -7,12 +7,12 @@
  *   ModuleCard(moduleId, moduleConfig)
  */
 
-import { UICard } from "./ui_card.js";
-import { UIBadge } from "./ui_badge.js";
-import { AppToast } from "./app_toast.js";
-import { HttpClient } from "../core/http_client.js";
-import { GlobalState } from "../core/global_state.js";
-import { LoadingSpinner } from "./loading_spinner.js";
+import { UICard } from "./ui-card.js";
+import { UIBadge } from "./ui-badge.js";
+import { AppToast } from "./app-toast.js";
+import { HttpClient_Instance as HttpClient } from "../core/http-client.js";
+import { GlobalState } from "../core/global-state.js";
+import { LoadingSpinner } from "./loading-spinner.js";
 
 export function ModuleCard(moduleId, config = {}) {
     const {
@@ -213,3 +213,4 @@ export function createModuleGrid(modules = {}, columns = 3) {
 
     return grid;
 }
+

@@ -2,7 +2,7 @@ import { PolicyHistoryItem } from '../components/policy-history-item.js';
 import { AppToast } from '../components/app-toast.js';
 import { GlobalState } from '../core/global-state.js';
 import { Socket } from '../core/socket-manager.js';
-import { HttpClient } from '../core/http-client.js';
+import { HttpClient_Instance as HttpClient } from "../core/http-client.js";
 import { formatTimestamp } from '../core/utils.js';
 
 // DOM references
@@ -175,3 +175,4 @@ if (document.readyState === 'loading') {
 }
 
 export { initPage, filterPolicies, renderPolicies };
+

@@ -6,7 +6,7 @@
  *   PolicyHistoryItem(policyChangeData)
  */
 
-import { UIBadge } from "./ui_badge.js";
+import { UIBadge } from "./ui-badge.js";
 
 export function PolicyHistoryItem(item) {
     if (!item) return document.createElement("div");
@@ -227,3 +227,4 @@ export function createPolicyComparison(oldPolicy, newPolicy) {
 
     return container;
 }
+

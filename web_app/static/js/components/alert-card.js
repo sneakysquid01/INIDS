@@ -9,12 +9,12 @@
  *   container.appendChild(AlertCard(alert))
  */
 
-import { UICard } from "./ui_card.js";
-import { UIBadge } from "./ui_badge.js";
-import { UIButton } from "./ui_button.js";
-import { AppToast } from "./app_toast.js";
-import { HttpClient } from "../core/http_client.js";
-import { GlobalState } from "../core/global_state.js";
+import { UICard } from "./ui-card.js";
+import { UIBadge } from "./ui-badge.js";
+import { UIButton } from "./ui-button.js";
+import { AppToast } from "./app-toast.js";
+import { HttpClient_Instance as HttpClient } from "../core/http-client.js";
+import { GlobalState } from "../core/global-state.js";
 
 export function AlertCard(alert) {
     if (!alert) return document.createElement("div");
@@ -174,3 +174,4 @@ export function AlertCard(alert) {
 
     return card;
 }
+

@@ -6,8 +6,8 @@
  *   ActionCard(actionData)
  */
 
-import { UICard } from "./ui_card.js";
-import { UIBadge } from "./ui_badge.js";
+import { UICard } from "./ui-card.js";
+import { UIBadge } from "./ui-badge.js";
 
 export function ActionCard(action) {
     if (!action) return document.createElement("div");
@@ -181,3 +181,4 @@ export function createActionTimeline(actions = []) {
 
     return timeline;
 }
+

@@ -10,7 +10,7 @@
  * Used by: Page controllers, Components
  */
 
-import { GlobalState } from "./global_state.js";
+import { GlobalState } from "./global-state.js";
 
 class HttpClient {
     constructor() {

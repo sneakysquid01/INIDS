@@ -6,7 +6,7 @@
  *   MetricCard({ label: "Alerts/min", value: 42, max: 100, trend: 5 })
  */
 
-import { UICard } from "./ui_card.js";
+import { UICard } from "./ui-card.js";
 
 export function MetricCard(metric) {
     if (!metric) return document.createElement("div");

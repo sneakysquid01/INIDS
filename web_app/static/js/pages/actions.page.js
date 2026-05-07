@@ -2,7 +2,7 @@ import { ActionCard } from '../components/action-card.js';
 import { AppToast } from '../components/app-toast.js';
 import { GlobalState } from '../core/global-state.js';
 import { Socket } from '../core/socket-manager.js';
-import { HttpClient } from '../core/http-client.js';
+import { HttpClient_Instance as HttpClient } from "../core/http-client.js";
 
 // DOM references
 const actionsList = document.getElementById('actions-list');
@@ -174,3 +174,4 @@ if (document.readyState === 'loading') {
 }
 
 export { initPage, filterActions, renderActions };
+

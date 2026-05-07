@@ -10,7 +10,7 @@
  * Used by: All pages via GlobalState subscriptions
  */
 
-import { GlobalState } from "./global_state.js";
+import { GlobalState } from "./global-state.js";
 
 class SocketManager {
     constructor() {

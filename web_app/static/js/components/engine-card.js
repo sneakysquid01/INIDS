@@ -6,8 +6,8 @@
  *   EngineCard({ name: "DL-Engine", status: "active", load: 45 })
  */
 
-import { UICard } from "./ui_card.js";
-import { UIBadge } from "./ui_badge.js";
+import { UICard } from "./ui-card.js";
+import { UIBadge } from "./ui-badge.js";
 
 export function EngineCard(engine) {
     if (!engine) return document.createElement("div");
@@ -180,3 +180,4 @@ export function createEngineGrid(engines = [], columns = 3) {
 
     return grid;
 }
+
