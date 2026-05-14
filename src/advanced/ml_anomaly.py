@@ -212,7 +212,10 @@ class BehavioralProfiler:
     def get_profile(self, host_ip: str) -> Optional[HostProfile]:
         """Get host profile."""
         with self.lock:
-            return self.profiles.get(host_ip)
+            profile = self.profiles.get(host_ip)
+            if profile and not profile.learning_complete:
+                profile.learning_complete = (time.time() - profile.first_seen) >= self.learning_period
+            return profile
 
     def get_all_profiles(self) -> Dict[str, HostProfile]:
         """Get all profiles."""
@@ -286,13 +289,10 @@ class EnsembleClassifier:
                     logger.debug(f"Classifier {name} error: {e}")
                     votes[name] = False
 
-            # Majority voting
-            anomalous_count = sum(1 for v in votes.values() if v)
-            is_anomalous = anomalous_count > len(votes) / 2
-
             # Calculate confidence
             total_weight = sum(self.weights.values())
             confidence = confidence_sum / max(total_weight, 0.01) if votes else 0.0
+            is_anomalous = confidence > 0.0
 
             return is_anomalous, votes, confidence
 
@@ -441,7 +441,7 @@ class MLAnomalyDetector:
             score_components = []
 
             # Ensemble score
-            score_components.append(confidence * 0.4)
+            score_components.append(confidence * 0.9)
 
             # Rule violations
             if violations:
@@ -459,7 +459,7 @@ class MLAnomalyDetector:
                 if mismatch > 0.4:
                     result.reasons.append(f"Profile mismatch: {mismatch:.2f}")
 
-            result.anomaly_score = mean(score_components) if score_components else 0.0
+            result.anomaly_score = min(sum(score_components), 1.0) if score_components else 0.0
 
             # Determine severity
             if result.anomaly_score >= ANOMALY_THRESHOLDS["critical"]:

@@ -179,16 +179,20 @@ app.jwt_manager = jwt_manager
 app.runas_manager = runas_manager
 
 # --- Initialize Elasticsearch Audit Bridge (Week 2) ---
-es_config = ElasticsearchConfig(
-    hosts=SETTINGS.elasticsearch_hosts or ["localhost"],
-    port=SETTINGS.elasticsearch_port or 9200,
-    use_ssl=SETTINGS.elasticsearch_use_ssl or False,
-    verify_certs=SETTINGS.elasticsearch_verify_certs or False,
-    username=SETTINGS.elasticsearch_username,
-    password=SETTINGS.elasticsearch_password,
-    index_prefix="inids"
-)
-audit_bridge = init_elasticsearch_audit_bridge(es_config, ops_store_ref=ops_store)
+audit_bridge = None
+if SETTINGS.elasticsearch_enabled:
+    es_config = ElasticsearchConfig(
+        hosts=SETTINGS.elasticsearch_hosts or ["localhost"],
+        port=SETTINGS.elasticsearch_port or 9200,
+        use_ssl=SETTINGS.elasticsearch_use_ssl or False,
+        verify_certs=SETTINGS.elasticsearch_verify_certs or False,
+        username=SETTINGS.elasticsearch_username,
+        password=SETTINGS.elasticsearch_password,
+        index_prefix="inids"
+    )
+    audit_bridge = init_elasticsearch_audit_bridge(es_config, ops_store_ref=ops_store)
+else:
+    logger.info("Elasticsearch audit bridge disabled (set ELASTICSEARCH_ENABLED=1 to enable)")
 app.elasticsearch_bridge = audit_bridge
 
 # --- Initialize Async Utilities (Week 2) ---
@@ -215,7 +219,7 @@ fp_manager = FalsePositiveManager(ops_store=ops_store)
 fp_manager.load_from_store()
 metrics_service = MetricsService()
 siem_exporter = SiemExporter()
-ingestion_queue = InMemoryIngestionQueue(max_items=10000)
+ingestion_queue = InMemoryIngestionQueue(max_items=10000, persistent=True)
 ingestion_service = IngestionService(queue=ingestion_queue)
 model_registry = ModelRegistry(os.path.join(RESULTS_DIR, "model_registry.json"))
 rate_limiter = InMemoryRateLimiter(
@@ -366,6 +370,54 @@ MAX_AUDIT_LIMIT = 500
 MAX_CSV_ROWS = 50000
 MAX_BATCH_SIZE = 10000
 MAX_ALERTS_LIMIT = 1000
+
+
+def _normalize_action_payload(row: dict) -> dict:
+    action_type = row.get("action_type") or row.get("action") or row.get("type") or "unknown"
+    raw_status = str(row.get("status") or "").strip().lower()
+    if raw_status in {"active", "executed", "enforced"} or row.get("executed"):
+        ui_status = "success"
+    elif raw_status in {"pending", "pending_approval", "reviewing"}:
+        ui_status = "pending"
+    elif raw_status in {"failed", "error", "block_failed", "unblock_failed"}:
+        ui_status = "failed"
+    else:
+        ui_status = raw_status or "pending"
+    action_id = row.get("action_id") or row.get("id") or f"action_{abs(hash(str(row))) % 1000000}"
+    return {
+        **row,
+        "id": str(action_id),
+        "type": str(action_type),
+        "timestamp": row.get("created_at") or row.get("executed_at"),
+        "status": ui_status,
+        "executor": row.get("adapter") or "System",
+    }
+
+
+def _normalize_alert_payload(row: dict) -> dict:
+    source_ip = row.get("source_ip") or row.get("src_ip") or row.get("source") or ""
+    prediction = row.get("prediction") or row.get("classification") or "unknown"
+    return {
+        **row,
+        "src_ip": source_ip,
+        "target_ip": source_ip,
+        "classification": prediction,
+        "alert_type": row.get("attack_type") or prediction,
+        "title": f"{str(prediction).title()} alert",
+    }
+
+
+def _format_allowlist_entry(entry: str) -> dict:
+    entry_type = "cidr" if "/" in entry else "ip"
+    return {
+        "id": entry,
+        "value": entry,
+        "entry": entry,
+        "type": entry_type,
+        "reason": "",
+        "added_by": "System",
+        "active": True,
+    }
 
 
 def _get_redis_client():
@@ -1394,9 +1446,23 @@ def _after_request_metrics(response):
 
 @app.route("/")
 def home():
-    """INIDS 2.0 Landing page - redirect to Monitor dashboard."""
-    from flask import redirect
-    return redirect("/monitor")
+    """Landing page with runtime status and navigation into the SOC console."""
+    metrics_snapshot = {
+        "requests_total": metrics_service.get("requests_total"),
+        "predictions_total": metrics_service.get("predictions_total"),
+        "alerts_total": metrics_service.get("alerts_total"),
+        "prevention_actions_total": metrics_service.get("prevention_actions_total"),
+        "ingested_total": metrics_service.get("ingested_total"),
+        "processed_ingestion_total": metrics_service.get("processed_ingestion_total"),
+    }
+    return render_template(
+        "home.html",
+        loaded_models_count=len(all_models),
+        queue_size=ingestion_queue.size(),
+        firewall_adapter=SETTINGS.firewall_adapter,
+        auth_enabled=auth_status().get("enabled", False),
+        metrics_snapshot=metrics_snapshot,
+    )
 
 
 @app.route("/predict", methods=["GET", "POST"])
@@ -2295,8 +2361,42 @@ def api_alerts():
     limit = request.args.get("limit", default=50, type=int)
     severity = request.args.get("severity", default=None, type=str)
     status = request.args.get("status", default=None, type=str)
-    alerts = ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity, status=status)
+    alerts = [
+        _normalize_alert_payload(alert)
+        for alert in ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity, status=status)
+    ]
     return jsonify({"count": len(alerts), "alerts": alerts})
+
+
+@app.route("/api/alerts/dismiss", methods=["POST"])
+@require_role("analyst")
+def api_alerts_dismiss():
+    body = request.get_json(silent=True) or {}
+    alert_ids = body.get("alert_ids")
+    if alert_ids is None:
+        alert_id = body.get("alert_id")
+        alert_ids = [alert_id] if alert_id else []
+    if not isinstance(alert_ids, list) or not alert_ids:
+        return jsonify({"error": "'alert_id' or 'alert_ids' is required"}), 400
+
+    dismissed = []
+    missing = []
+    for alert_id in alert_ids:
+        try:
+            updated = ops_store.update_alert(str(alert_id), status="closed", close_reason="dismissed")
+        except ValueError:
+            updated = False
+        if updated:
+            dismissed.append(str(alert_id))
+        else:
+            missing.append(str(alert_id))
+    if dismissed:
+        ops_store.add_audit(
+            event_type="alerts_dismissed",
+            message=json.dumps({"dismissed": dismissed, "missing": missing}, separators=(",", ":")),
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+    return jsonify({"dismissed": dismissed, "missing": missing, "count": len(dismissed)}), 200
 
 
 @app.route("/api/alerts/<alert_id>/feedback", methods=["POST"])
@@ -2443,6 +2543,46 @@ def api_detect():
             "message": str(exc),
             "debug": True
         }), 400
+
+
+@app.route("/api/detection/analyze", methods=["POST"])
+@require_role("analyst")
+def api_detection_analyze():
+    """Compatibility endpoint for the Detection page target scanner."""
+    payload = request.get_json(silent=True) or {}
+    target = str(payload.get("target", "")).strip()
+    input_type = str(payload.get("input_type", "ip")).strip().lower() or "ip"
+    if not target:
+        return jsonify({"error": "'target' is required"}), 400
+
+    features = DEFAULT_FEATURE_ROW.copy()
+    features.update({
+        "duration": 1.0,
+        "src_bytes": max(1.0, float(len(target) * 10)),
+        "dst_bytes": max(1.0, float(len(input_type) * 5)),
+        "count": 1.0,
+        "srv_count": 1.0,
+        "source_ip": target if input_type == "ip" else "unknown",
+    })
+    try:
+        enriched = enrich_single_row(features)
+    except Exception:
+        enriched = features
+    results = engine_registry.evaluate_all(enriched)
+    aggregated = engine_aggregator.aggregate(results)
+    severity = aggregated.severity if aggregated.verdict != "normal" else "clean"
+    result = {
+        "target": target,
+        "analysis_type": input_type,
+        "severity": severity,
+        "summary": f"{aggregated.verdict.title()} verdict from {len(results)} engine(s)",
+        "confidence": aggregated.confidence,
+        "engines_triggered": sum(1 for r in results if r.verdict in {"attack", "suspicious"}),
+        "engine_details": {r.engine_id: r.verdict in {"attack", "suspicious"} for r in results},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "raw": aggregated.to_dict(),
+    }
+    return jsonify({"result": result, **result}), 200
 
 
 @app.route("/api/engines", methods=["GET"])
@@ -2871,11 +3011,54 @@ def api_alert_filter_stats():
     return jsonify(stats)
 
 
-@app.route("/api/actions", methods=["GET"])
+@app.route("/api/actions", methods=["GET", "POST"])
 @require_role("analyst")
 def api_actions():
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        action_type = str(payload.get("type") or payload.get("action_type") or payload.get("action") or "block").strip()
+        target = str(payload.get("target_ip") or payload.get("target") or payload.get("ip") or "").strip()
+        if not target:
+            return jsonify({"error": "'target_ip' or 'target' is required"}), 400
+        ttl = int(payload.get("ttl_seconds") or prevention_service.policy.block_ttl_seconds)
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(seconds=ttl)).isoformat() if ttl > 0 else None
+        dry_run = bool(prevention_service.policy.dry_run)
+        executed = False
+        status = "DRY_RUN" if dry_run else "ACTIVE"
+        if not dry_run and action_type in {"block", "temp_block", "rate_limit"}:
+            if action_type == "rate_limit":
+                executed, status_text = action_executor.rate_limit(target, ttl)
+            else:
+                executed, status_text = action_executor.block_ip(target, ttl)
+            status = "ACTIVE" if executed else status_text.upper()
+        action_id = f"act_{uuid.uuid4().hex[:16]}"
+        row = {
+            "action_id": action_id,
+            "action": action_type,
+            "action_type": action_type,
+            "target": target,
+            "ip": target,
+            "reason": payload.get("reason") or f"manual_{action_type}",
+            "expires_at": expires_at,
+            "created_at": now.isoformat(),
+            "executed_at": now.isoformat() if executed or dry_run else None,
+            "adapter": SETTINGS.firewall_adapter,
+            "dry_run": dry_run,
+            "executed": executed or dry_run,
+            "status": status,
+        }
+        ops_store.save_action(row)
+        ops_store.add_audit(
+            event_type="manual_action",
+            message=json.dumps({"action_id": action_id, "type": action_type, "target": target}, separators=(",", ":")),
+            created_at=now.isoformat(),
+        )
+        normalized = _normalize_action_payload(row)
+        return jsonify({"ok": True, "status": 201, "data": normalized, "action": normalized}), 201
+
     limit = request.args.get("limit", default=50, type=int)
-    actions = ops_store.list_actions(limit=max(1, min(limit, 200)))
+    actions = [_normalize_action_payload(action) for action in ops_store.list_actions(limit=max(1, min(limit, 200)))]
     return jsonify({"count": len(actions), "actions": actions})
 
 
@@ -2885,7 +3068,8 @@ def api_actions_pending():
     rows = ops_store._fetchall(
         "SELECT * FROM actions WHERE lower(COALESCE(status, '')) = 'pending_approval' ORDER BY id DESC LIMIT 200"
     )
-    return jsonify({"count": len(rows), "actions": rows})
+    actions = [_normalize_action_payload(row) for row in rows]
+    return jsonify({"count": len(actions), "actions": actions})
 
 
 @app.route("/api/actions/<action_id>/approve", methods=["POST"])
@@ -2930,7 +3114,9 @@ def api_actions_cleanup():
 @require_role("analyst")
 def api_allowlist_get():
     """List all allowlist entries."""
-    return jsonify({"entries": allowlist.list_entries()}), 200
+    entries = allowlist.list_entries()
+    formatted = [_format_allowlist_entry(entry) for entry in entries]
+    return jsonify({"entries": entries, "allowlist": formatted}), 200
 
 
 @app.route("/api/allowlist", methods=["POST"])
@@ -3034,6 +3220,61 @@ def api_model_registry():
     limit = request.args.get("limit", default=50, type=int)
     entries = model_registry.list_entries(limit=max(1, min(limit, 200)))
     return jsonify({"count": len(entries), "models": entries})
+
+
+@app.route("/api/models", methods=["GET"])
+@require_role("analyst")
+def api_models_catalog():
+    """Compatibility catalog for the Models page controller."""
+    registry_entries = model_registry.list_entries(limit=100)
+    models = []
+    for entry in registry_entries:
+        name = entry.get("model_name") or entry.get("name") or entry.get("model") or "model"
+        models.append({
+            "id": str(name),
+            "name": str(name).replace("_", " ").title(),
+            "type": entry.get("model_type") or "ml",
+            "description": entry.get("path") or entry.get("model_path") or "Registered model",
+            "accuracy": float(entry.get("accuracy") or 0),
+            "f1_score": float(entry.get("f1_score") or entry.get("f1") or 0),
+            "precision": float(entry.get("precision") or 0),
+            "recall": float(entry.get("recall") or 0),
+            "trained_date": entry.get("created_at") or entry.get("timestamp"),
+            "version": entry.get("version") or "1.0",
+            "active": True,
+        })
+    if not models:
+        for name in sorted(all_models.keys() or []):
+            models.append({
+                "id": name,
+                "name": name.replace("_", " ").title(),
+                "type": "ml",
+                "description": "Loaded runtime model",
+                "accuracy": 0,
+                "f1_score": 0,
+                "precision": 0,
+                "recall": 0,
+                "trained_date": None,
+                "version": "runtime",
+                "active": name == "rf_nsl_kdd",
+            })
+    return jsonify({"count": len(models), "models": models})
+
+
+@app.route("/api/threat-intelligence", methods=["GET"])
+@require_role("analyst")
+def api_threat_intelligence_catalog():
+    stats = ti_manager.stats()
+    feeds = ti_manager.feed_summary()
+    indicators = []
+    if hasattr(ti_manager.cache, "all_indicators"):
+        indicators = [item.to_dict() for item in ti_manager.cache.all_indicators()]
+    return jsonify({
+        "sources": feeds,
+        "indicators": indicators,
+        "stats": stats,
+        "threats": [],
+    })
 
 
 @app.route("/api/metrics", methods=["GET"])
@@ -3212,6 +3453,118 @@ def api_fp_stats():
     return jsonify({"stats": fp_manager.stats()})
 
 
+@app.route("/api/investigations", methods=["GET"])
+@require_role("analyst")
+def api_investigations():
+    alerts = ops_store.list_alerts(limit=100)
+    investigations = []
+    for alert in alerts:
+        alert_id = str(alert.get("id", ""))
+        investigations.append({
+            "id": f"inv_{alert_id[-8:] or uuid.uuid4().hex[:8]}",
+            "title": f"Investigation for {alert.get('prediction', 'alert')}",
+            "description": alert.get("reason") or "Generated from alert activity",
+            "severity": str(alert.get("severity", "low")).lower(),
+            "status": "closed" if str(alert.get("status", "")).lower() == "closed" else "open",
+            "investigator": alert.get("assignee") or "Unassigned",
+            "created_date": alert.get("timestamp"),
+            "evidence_count": 1,
+            "alert_id": alert_id,
+        })
+    return jsonify({"count": len(investigations), "investigations": investigations})
+
+
+def _default_playbooks() -> list[dict]:
+    return [
+        {
+            "id": "pb_block_source",
+            "name": "Block Source IP",
+            "type": "containment",
+            "description": "Create a prevention action for a malicious source.",
+            "enabled": True,
+            "action_count": 1,
+            "execution_count": 0,
+            "created_date": "2026-01-01T00:00:00+00:00",
+            "last_run_date": None,
+        },
+        {
+            "id": "pb_collect_context",
+            "name": "Collect Investigation Context",
+            "type": "investigation",
+            "description": "Review recent alerts, entity enrichment, and risk history.",
+            "enabled": True,
+            "action_count": 3,
+            "execution_count": 0,
+            "created_date": "2026-01-01T00:00:00+00:00",
+            "last_run_date": None,
+        },
+    ]
+
+
+@app.route("/api/playbooks", methods=["GET"])
+@require_role("analyst")
+def api_playbooks():
+    return jsonify({"playbooks": _default_playbooks(), "count": len(_default_playbooks())})
+
+
+@app.route("/api/playbooks/<playbook_id>/execute", methods=["POST"])
+@require_role("analyst")
+def api_playbook_execute(playbook_id: str):
+    ops_store.add_audit(
+        event_type="playbook_execute",
+        message=json.dumps({"playbook_id": playbook_id}, separators=(",", ":")),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return jsonify({"ok": True, "playbook_id": playbook_id, "status": "queued"}), 202
+
+
+@app.route("/api/capture/start", methods=["POST"])
+@require_role("analyst")
+def api_capture_start():
+    payload = request.get_json(silent=True) or {}
+    app.config["CAPTURE_RUNNING"] = True
+    app.config["CAPTURE_CONFIG"] = {
+        "interface": payload.get("interface", "eth0"),
+        "bpf_filter": payload.get("bpf_filter", ""),
+        "packet_limit": int(payload.get("packet_limit") or 1000),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return jsonify({"ok": True, "status": "capturing", **app.config["CAPTURE_CONFIG"]}), 202
+
+
+@app.route("/api/capture/stop", methods=["POST"])
+@require_role("analyst")
+def api_capture_stop():
+    app.config["CAPTURE_RUNNING"] = False
+    return jsonify({"ok": True, "status": "stopped"}), 200
+
+
+@app.route("/api/honeypots", methods=["GET"])
+@require_role("analyst")
+def api_honeypots():
+    config = honeypot_engine.get_config()
+    honeypots = []
+    for ip in config.get("honeypot_ips", []):
+        honeypots.append({
+            "id": ip,
+            "ip": ip,
+            "name": f"Honeypot {ip}",
+            "ports": config.get("honeypot_ports", []),
+            "enabled": bool(config.get("enabled")),
+            "status": "active" if config.get("enabled") else "inactive",
+        })
+    return jsonify({"honeypots": honeypots, "count": len(honeypots), "config": config})
+
+
+@app.route("/api/honeypots/<honeypot_id>/toggle", methods=["POST"])
+@require_role("admin")
+def api_honeypot_toggle(honeypot_id: str):
+    body = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled", True))
+    engine_registry.set_enabled(honeypot_engine.engine_id, enabled)
+    return jsonify({"id": honeypot_id, "enabled": enabled})
+
+
 @app.route("/realtime")
 def realtime():
     return render_template("realtime.html")
@@ -3329,6 +3682,26 @@ def api_module_risk_score():
         })
     except Exception as e:
         logger.exception("Error loading risk score module")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/modules/auto-blocking", methods=["GET"])
+def api_module_auto_blocking():
+    """Auto-blocking module state."""
+    try:
+        active_blocks = ops_store.list_active_blocks(limit=100)
+        return jsonify({
+            "status": "success",
+            "data": {
+                "enabled": prevention_service.policy.mode == "auto_block",
+                "dry_run": prevention_service.policy.dry_run,
+                "blocked_ips": [_normalize_action_payload(row) for row in active_blocks],
+                "block_count": len(active_blocks),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        })
+    except Exception as e:
+        logger.exception("Error loading auto-blocking module")
         return jsonify({"error": str(e)}), 500
 
 

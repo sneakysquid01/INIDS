@@ -55,19 +55,20 @@ class FlowAlertWindow:
         sig_id = None
         if event.alert:
             sig_id = event.alert.signature_id
-            self.seen_signatures.add(sig_id)
-        
+
         # Track highest scoring alert
         score = event.metadata.get("detection_score", 0.0) if event.metadata else 0.0
         if score > self.max_score:
             self.max_score = score
             self.max_score_alert = event
-        
+
         # Deduplicate by signature (if available)
         if sig_id and sig_id in self.seen_signatures:
             # Already seen this alert type
             return False
-        
+        if sig_id:
+            self.seen_signatures.add(sig_id)
+
         self.alerts.append(event)
         return True
 
@@ -160,12 +161,11 @@ class FlowAggregator:
             
             elif self.mode == AggregationMode.TOP_ALERT_PER_FLOW:
                 # Only keep highest scoring alert
-                import copy
                 max_event = window.max_score_alert
                 
                 if window.add_alert(event):
                     # Return if this is the new max
-                    if event == max_event:
+                    if window.max_score_alert is event or max_event is None:
                         self.total_events_out += 1
                         return True
                     else:

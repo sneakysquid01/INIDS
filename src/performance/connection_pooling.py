@@ -220,7 +220,7 @@ class ConnectionPool:
                 del self.active_connections[conn.connection_id]
             
             if self._is_connection_valid(conn):
-                self.idle_connections.append(conn)
+                self.idle_connections.appendleft(conn)
                 self.stats.current_idle = len(self.idle_connections)
             else:
                 self._close_connection(conn)

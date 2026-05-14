@@ -34,10 +34,10 @@ class InMemoryIngestionQueue:
     Backward compatibility wrapper.
     Uses SQLite instead of in-memory storage for INIDS 2.0 persistence.
     """
-    def __init__(self, max_items: int = 10000):
-        if _USE_SQLITE:
+    def __init__(self, max_items: int = 10000, persistent: bool = False, db_path: str = "data/ingestion.db"):
+        if persistent and _USE_SQLITE:
             # Use SQLite for persistence
-            self._impl = SQLiteIngestionQueue(db_path="data/ingestion.db", max_items=max_items)
+            self._impl = SQLiteIngestionQueue(db_path=db_path, max_items=max_items)
         else:
             # Fallback to in-memory
             self.max_items = max_items

@@ -2,6 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Load simple KEY=VALUE pairs from the project .env file if present."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        return
 
 
 @dataclass(frozen=True)
@@ -27,6 +47,7 @@ class Settings:
     honeypot_ips: str = ""
     honeypot_ports: str = ""
     honeypot_enabled: bool = True
+    elasticsearch_enabled: bool = False
     elasticsearch_hosts: str = "localhost"
     elasticsearch_port: int = 9200
     elasticsearch_use_ssl: bool = False
@@ -53,6 +74,7 @@ def _safe_bool(env_key: str, default: bool) -> bool:
 
 
 def load_settings() -> Settings:
+    _load_dotenv()
     port = _safe_int("PORT", 5000)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
@@ -68,6 +90,7 @@ def load_settings() -> Settings:
     honeypot_ips = os.getenv("INIDS_HONEYPOT_IPS", "").strip()
     honeypot_ports = os.getenv("INIDS_HONEYPOT_PORTS", "").strip()
     honeypot_enabled = _safe_bool("INIDS_HONEYPOT_ENABLED", True)
+    elasticsearch_enabled = _safe_bool("ELASTICSEARCH_ENABLED", False)
     if not secret:
         raise RuntimeError("SECRET_KEY environment variable is required for security")
     rate_reqs = _safe_int("RATE_LIMIT_REQUESTS", 120)
@@ -104,6 +127,7 @@ def load_settings() -> Settings:
         honeypot_ips=honeypot_ips,
         honeypot_ports=honeypot_ports,
         honeypot_enabled=honeypot_enabled,
+        elasticsearch_enabled=elasticsearch_enabled,
         elasticsearch_hosts=elasticsearch_hosts,
         elasticsearch_port=elasticsearch_port,
         elasticsearch_use_ssl=elasticsearch_use_ssl,

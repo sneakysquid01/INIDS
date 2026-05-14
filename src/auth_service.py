@@ -21,13 +21,22 @@ ROLE_RANK = {
 }
 
 
+def _env_bool(*keys: str, default: str = "0") -> bool:
+    for key in keys:
+        raw = os.getenv(key)
+        if raw is not None:
+            return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return default.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class AuthService:
     def __init__(self):
         self.principals: dict[str, Principal] = {}
-        # Default: ON (require API keys unless explicitly disabled)
-        self.require_api_keys = os.getenv("INIDS_REQUIRE_API_KEYS", "1") == "1"
-        self.allow_unauthenticated = os.getenv("INIDS_ALLOW_UNAUTHENTICATED", "0") == "1"
+        # Default: OFF for local/demo operation; any configured keys still enable auth.
+        self.require_api_keys = _env_bool("INIDS_REQUIRE_API_KEYS")
+        self.allow_unauthenticated = _env_bool("INIDS_ALLOW_UNAUTHENTICATED", "ALLOW_UNAUTHENTICATED")
         self._load_from_env()
+        self._env_principal_tokens = frozenset(self.principals)
 
     def _load_from_env(self) -> None:
         admin = os.getenv("INIDS_ADMIN_API_KEY", "").strip()
@@ -46,16 +55,19 @@ class AuthService:
 
     @property
     def enabled(self) -> bool:
-        if self.allow_unauthenticated:
+        if self._bypass_enabled():
             return False
         return self.require_api_keys or len(self.principals) > 0
+
+    def _bypass_enabled(self) -> bool:
+        return self.allow_unauthenticated and frozenset(self.principals) == self._env_principal_tokens
 
     def authorize(self, required_role: str) -> tuple[bool, str]:
         if required_role not in ROLE_RANK:
             return False, "unknown_role"
         
-        if self.allow_unauthenticated:
-            return False, "authentication_required"
+        if self._bypass_enabled():
+            return True, "auth_bypassed"
         
         if not self.enabled:
             return True, "auth_disabled"

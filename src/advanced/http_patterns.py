@@ -113,10 +113,12 @@ SCANNER_SIGNATURES = {
             r"(?i)bot",
         ],
         "ua_patterns": [
-            r"(?i)googlebotbot",
+            r"(?i)googlebot",
             r"(?i)bingbot",
             r"(?i)facebook",
             r"(?i)twitter",
+            r"(?i)crawler",
+            r"(?i)spider",
         ],
     },
 }
@@ -330,7 +332,7 @@ class BotDetector:
                     max_confidence = confidence
                     bot_type = scanner_name
 
-        return (max_confidence > 0.5, bot_type, max_confidence)
+        return (max_confidence >= 0.5, bot_type, max_confidence)
 
 
 class HTTPAnomalyDetector:
@@ -447,27 +449,31 @@ class EncodingDetector:
     def __init__(self):
         self.lock = threading.RLock()
 
-    def detect_encodings(self, data: str) -> List[str]:
+    def detect_encodings(self, data: str | bytes) -> List[str]:
         """Detect encoding patterns in data."""
         encodings = []
+        if isinstance(data, bytes):
+            data_bytes = data
+        else:
+            data_bytes = str(data).encode("utf-8", errors="ignore")
 
         with self.lock:
             # Check base64
-            if re.match(ENCODING_INDICATORS["base64"], data):
-                if len(data) % 4 == 0:
+            if re.match(ENCODING_INDICATORS["base64"], data_bytes):
+                if len(data_bytes) % 4 == 0:
                     encodings.append("base64")
 
             # Check hex
-            if re.match(ENCODING_INDICATORS["hex"], data):
-                if len(data) % 2 == 0 and len(data) >= 8:
+            if re.match(ENCODING_INDICATORS["hex"], data_bytes):
+                if len(data_bytes) % 2 == 0 and len(data_bytes) >= 8:
                     encodings.append("hex")
 
             # Check URL encoding
-            if re.search(ENCODING_INDICATORS["url_encoded"], data):
+            if re.search(ENCODING_INDICATORS["url_encoded"], data_bytes):
                 encodings.append("url_encoded")
 
             # Check Unicode
-            if re.search(ENCODING_INDICATORS["unicode_encoded"], data):
+            if re.search(ENCODING_INDICATORS["unicode_encoded"], data_bytes):
                 encodings.append("unicode_encoded")
 
         return encodings
@@ -517,7 +523,8 @@ class HTTPPatternAnalyzer:
 
         with self.lock:
             # Detect signatures
-            result.signatures_found = self.sig_detector.find_signatures(body)
+            signature_payload = url.encode("utf-8", errors="ignore") + body
+            result.signatures_found = self.sig_detector.find_signatures(signature_payload)
 
             # Detect anomalies
             result.anomalies_detected = self.anomaly_detector.detect_anomalies(
@@ -566,7 +573,7 @@ class HTTPPatternAnalyzer:
         if result.signatures_found:
             for sig in result.signatures_found:
                 if sig.severity == "critical":
-                    score += 0.3
+                    score += 0.4
                 elif sig.severity == "high":
                     score += 0.15
                 elif sig.severity == "medium":

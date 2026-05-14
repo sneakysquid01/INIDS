@@ -4,6 +4,6 @@ Handles dataset collection, retraining scheduling, and model management
 """
 
 from .dataset_collector import DatasetCollector, TrainingRecord
-from .retraining_scheduler import RertrainingScheduler
+from .retraining_scheduler import RetrainingScheduler, RertrainingScheduler
 
-__all__ = ["DatasetCollector", "TrainingRecord", "RertrainingScheduler"]
+__all__ = ["DatasetCollector", "TrainingRecord", "RetrainingScheduler", "RertrainingScheduler"]

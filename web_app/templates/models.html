@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Models — INIDS 3.0{% endblock %}
+{% block title %}Models - INIDS 3.0{% endblock %}
 {% block page_title %}Models{% endblock %}
 
 {% block content %}
-<div class="flex flex-col h-screen bg-[#0a0c10]">
-    <!-- PAGE HEADER -->
+<div class="flex flex-col min-h-screen bg-[#0a0c10]">
     <div class="mb-6">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-white font-syne">ML Models</h1>
                 <p class="text-[#8f9099] text-sm mt-1">Machine learning model registry and performance metrics</p>
@@ -15,20 +14,22 @@
             <div id="model-stats" class="flex gap-4">
                 <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
                     <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Models</div>
-                    <div id="stat-models" class="text-2xl font-bold text-white mt-1">0</div>
+                    <div id="stat-models" class="text-2xl font-bold text-white mt-1">
+                        {{ models|length if models else registry_entries|length }}
+                    </div>
                 </div>
                 <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-2">
                     <div class="text-[#8f9099] text-xs uppercase tracking-wider">Active</div>
-                    <div id="stat-active" class="text-2xl font-bold text-[#10b981] mt-1">0</div>
+                    <div id="stat-active" class="text-2xl font-bold text-[#10b981] mt-1">
+                        {{ models|length if models else 0 }}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- FILTER BAR -->
     <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-2 gap-4">
-            <!-- STATUS FILTERS -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div>
                 <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
                 <div id="status-filters" class="flex flex-wrap gap-2">
@@ -39,7 +40,6 @@
                 </div>
             </div>
 
-            <!-- TYPE FILTERS -->
             <div>
                 <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Type</div>
                 <div id="type-filters" class="flex flex-wrap gap-2">
@@ -50,230 +50,95 @@
             </div>
         </div>
 
-        <!-- SEARCH INPUT -->
         <div class="mt-4">
-            <input 
-                id="search-models" 
-                type="text" 
+            <input
+                id="search-models"
+                type="text"
                 placeholder="Search by model name or description..."
                 class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
             />
         </div>
     </div>
 
-    <!-- MODELS GRID -->
-    <div class="flex-1 overflow-y-auto">
-        <div id="models-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-6">
-            <!-- Model cards mount here -->
-        </div>
-    </div>
-</div>
-
-<script type="module" src="{{ url_for('static', filename='js/pages/models.page.js') }}"></script>
-{% endblock %}
-/* ==========================================================
-   MODELS — SOC STANDARD
-========================================================== */
-
-.models-wrapper {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.model-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.model-card.best {
-  box-shadow:
-    inset 0 0 0 1px rgba(39,201,122,0.35),
-    0 0 18px rgba(39,201,122,0.25);
-}
-
-.model-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.model-metrics div {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.model-metrics strong {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.chart-box {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255,255,255,0.02);
-  padding: 16px;
-  margin-bottom: 16px;
-  text-align: center;
-}
-</style>
-{% endblock %}
-
-{% block content %}
-
-<!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Model Comparison</h1>
-    <div class="page-subtitle">ML EVALUATION & REGISTRY</div>
-  </div>
-  <div class="page-meta">
-    <div class="status-chip live">
-      <div class="sys-status-dot"></div>
-      IDS ONLINE
-    </div>
-    <span class="badge-info">MODELS</span>
-  </div>
-</div>
-
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
-  <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — MODEL METRICS REFLECT LIVE CONDITIONS
-  </div>
-</div>
-{% endif %}
-
-<div class="ds-card layer-elevated interactive">
-  <div class="ds-card-body">
-    <div class="models-wrapper">
-
-      <!-- MODEL CARDS -->
-      {% if has_data and models %}
-      <div class="model-grid">
-        {% for model in models %}
-        {% set accuracy = model.get('accuracy', 0) %}
-        {% set precision = model.get('precision', accuracy) %}
-        {% set recall = model.get('recall', accuracy) %}
-        {% set f1_score = model.get('f1_score', 0) %}
-        {% set training_time = model.get('training_time', 0) %}
-
-        <div class="ds-card layer-panel model-card {% if loop.first %}best{% endif %}">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span class="panel-title-accent accent-cyan"></span>
-              {{ model.get('name', 'Unnamed Model')|replace('_', ' ')|title }}
-            </div>
-            {% if loop.first %}
-            <span class="panel-tag tag-green">BEST</span>
-            {% endif %}
-          </div>
-
-          <div class="ds-card-body">
-            <div class="model-metrics">
-              <div><strong>Accuracy</strong> {{ "%.2f"|format(accuracy * 100) }}%</div>
-              <div><strong>Precision</strong> {{ "%.2f"|format(precision * 100) }}%</div>
-              <div><strong>Recall</strong> {{ "%.2f"|format(recall * 100) }}%</div>
-              <div><strong>F1</strong> {{ "%.4f"|format(f1_score) }}</div>
-            </div>
-
-            <div style="margin-top:8px; font-size:11px; color:var(--text-muted);">
-              Training time: {{ "%.2f"|format(training_time) }} s
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-
-      <!-- VISUALIZATIONS -->
-      <div>
-        <div class="section-divider">
-          <div class="section-divider-line"></div>
-          <div class="section-divider-label">Performance Visualizations</div>
-          <div class="section-divider-line"></div>
-        </div>
-
-        {% if chart_files.model_comparison %}
-        <div class="chart-box">
-          <img src="{{ url_for('static', filename='model_comparison.png') }}"
-               alt="Model Comparison"
-               style="max-width:100%;">
-        </div>
-        {% endif %}
-
-        {% if chart_files.training_time_comparison %}
-        <div class="chart-box">
-          <img src="{{ url_for('static', filename='training_time_comparison.png') }}"
-               alt="Training Time Comparison"
-               style="max-width:100%;">
-        </div>
-        {% endif %}
-
-        {% if chart_files.roc_curves %}
-        <div class="chart-box">
-          <img src="{{ url_for('static', filename='roc_curves.png') }}"
-               alt="ROC Curves"
-               style="max-width:100%;">
-        </div>
-        {% endif %}
-
-        {% if not chart_files.model_comparison and not chart_files.training_time_comparison and not chart_files.roc_curves %}
-        <div class="empty-state">
-          No visualization artifacts available yet.
-        </div>
-        {% endif %}
-      </div>
-
-      {% else %}
-      <div class="empty-state">
-        No model comparison results found.
-      </div>
-      {% endif %}
-
-      <!-- REGISTRY -->
-      <div class="section-divider">
-        <div class="section-divider-line"></div>
-        <div class="section-divider-label">Model Registry</div>
-        <div class="section-divider-line"></div>
-      </div>
-
-      {% if registry_entries %}
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Accuracy</th>
-              <th>F1 Score</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for entry in registry_entries %}
-            <tr>
-              <td class="mono-val">{{ entry.name }}</td>
-              <td>{{ "%.2f"|format(entry.accuracy * 100) }}%</td>
-              <td>{{ "%.4f"|format(entry.f1_score) }}</td>
-              <td>{{ entry.created_at }}</td>
-            </tr>
+    <div id="models-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-6">
+        {% if has_data and models %}
+            {% for model in models %}
+            {% set accuracy = model.get('accuracy', 0) %}
+            {% set precision = model.get('precision', accuracy) %}
+            {% set recall = model.get('recall', accuracy) %}
+            {% set f1_score = model.get('f1_score', 0) %}
+            <article class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <h2 class="text-white font-semibold text-sm">{{ model.get('name', 'Unnamed Model')|replace('_', ' ')|title }}</h2>
+                        <p class="text-[#8f9099] text-xs mt-1">classification</p>
+                    </div>
+                    <span class="w-3 h-3 rounded-full bg-[#10b981] mt-1"></span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-[#0a0c10] rounded px-2 py-1">
+                        <div class="text-[#8f9099]">Accuracy</div>
+                        <div class="text-[#10b981] font-semibold">{{ "%.2f"|format(accuracy * 100) }}%</div>
+                    </div>
+                    <div class="bg-[#0a0c10] rounded px-2 py-1">
+                        <div class="text-[#8f9099]">F1 Score</div>
+                        <div class="text-white font-semibold">{{ "%.4f"|format(f1_score) }}</div>
+                    </div>
+                    <div class="bg-[#0a0c10] rounded px-2 py-1">
+                        <div class="text-[#8f9099]">Precision</div>
+                        <div class="text-white font-semibold">{{ "%.0f"|format(precision * 100) }}%</div>
+                    </div>
+                    <div class="bg-[#0a0c10] rounded px-2 py-1">
+                        <div class="text-[#8f9099]">Recall</div>
+                        <div class="text-white font-semibold">{{ "%.0f"|format(recall * 100) }}%</div>
+                    </div>
+                </div>
+            </article>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="empty-state">
-        No registry entries available.
-      </div>
-      {% endif %}
-
+        {% else %}
+            <div class="col-span-full text-center py-12 text-[#8f9099] text-sm uppercase tracking-wider">
+                No models available
+            </div>
+        {% endif %}
     </div>
-  </div>
-</div>
 
+    <section class="mt-2 mb-8">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-white">Recent Registry Entries</h2>
+            {% if latest_results %}
+            <span class="text-xs text-[#8f9099] font-mono">{{ latest_results }}</span>
+            {% endif %}
+        </div>
+        <div class="overflow-x-auto bg-[#151922] border border-[#1a1f2e] rounded-lg">
+            {% if registry_entries %}
+            <table class="min-w-full text-sm">
+                <thead class="text-[#8f9099] border-b border-[#1a1f2e]">
+                    <tr>
+                        <th class="text-left font-medium px-4 py-3">Name</th>
+                        <th class="text-left font-medium px-4 py-3">Accuracy</th>
+                        <th class="text-left font-medium px-4 py-3">F1 Score</th>
+                        <th class="text-left font-medium px-4 py-3">Created</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1a1f2e]">
+                    {% for entry in registry_entries %}
+                    <tr>
+                        <td class="px-4 py-3 text-white font-mono">{{ entry.get('name', 'unknown') }}</td>
+                        <td class="px-4 py-3 text-[#10b981]">{{ "%.2f"|format(entry.get('accuracy', 0) * 100) }}%</td>
+                        <td class="px-4 py-3 text-white">{{ "%.4f"|format(entry.get('f1_score', 0)) }}</td>
+                        <td class="px-4 py-3 text-[#8f9099]">{{ entry.get('created_at', '') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-center py-8 text-[#8f9099] text-sm">No registry entries available</div>
+            {% endif %}
+        </div>
+    </section>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ url_for('static', filename='js/pages/models.page.js') }}"></script>
 {% endblock %}

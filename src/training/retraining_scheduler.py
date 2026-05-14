@@ -16,7 +16,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-class RertrainingScheduler:
+class RetrainingScheduler:
     """
     Manages model retraining schedule and execution.
     Supports scheduled, drift-triggered, and feedback-triggered retraining.
@@ -32,7 +32,7 @@ class RertrainingScheduler:
         drift_threshold: float = 0.2  # PSI threshold for drift detection
     ):
         """
-        Initialize RertrainingScheduler.
+        Initialize RetrainingScheduler.
 
         Args:
             dataset_collector: DatasetCollector instance
@@ -212,6 +212,7 @@ class RertrainingScheduler:
             logger.error(f"Failed to evaluate model: {e}")
             return {}
 
+
     def _calculate_improvement(
         self,
         metrics_old: Dict[str, float],
@@ -266,3 +267,7 @@ class RertrainingScheduler:
             "scheduler_running": self._running
         })
         return stats
+
+
+# Backward-compatible alias for older imports/typos used across earlier phases.
+RertrainingScheduler = RetrainingScheduler

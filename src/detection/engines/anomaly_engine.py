@@ -51,6 +51,7 @@ class AnomalyEngine(DetectionEngine):
         self._buffer: list[list[float]] = []
         self._buffer_lock = threading.Lock()
         self._fitted = False
+        self._feature_count_warning_logged = False
 
         # Try to load a previously persisted model.
         if self._model_path and self._model_path.exists():
@@ -128,6 +129,23 @@ class AnomalyEngine(DetectionEngine):
         self._model = model
         self._fitted = True
 
+    def _vector_from_features(self, features: dict[str, Any]) -> np.ndarray:
+        values = [float(features.get(f, 0.0)) for f in self._feature_names]
+        expected = getattr(self._model, "n_features_in_", len(values))
+        if expected != len(values):
+            if not self._feature_count_warning_logged:
+                logger.warning(
+                    "AnomalyEngine feature count mismatch: schema=%d model=%d; applying compatibility padding",
+                    len(values),
+                    expected,
+                )
+                self._feature_count_warning_logged = True
+            if expected > len(values):
+                values.extend([0.0] * (expected - len(values)))
+            else:
+                values = values[:expected]
+        return np.array(values, dtype=float).reshape(1, -1)
+
     # ------------------------------------------------------------------
     # DetectionEngine interface
     # ------------------------------------------------------------------
@@ -144,9 +162,7 @@ class AnomalyEngine(DetectionEngine):
         return self._model is not None and hasattr(self._model, "predict")
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
-        vector = np.array(
-            [float(features.get(f, 0.0)) for f in self._feature_names]
-        ).reshape(1, -1)
+        vector = self._vector_from_features(features)
 
         pred = int(self._model.predict(vector)[0])  # -1 = anomaly, 1 = normal
         score = float(self._model.decision_function(vector)[0])

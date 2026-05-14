@@ -558,4 +558,3 @@ class OutputAggregator:
                     self.logger.info(f"Closed backend: {backend.name}")
                 except Exception as e:
                     self.logger.error(f"Error closing {backend.name}: {e}")
-            self.backends.clear()

@@ -100,7 +100,7 @@ class PerceptionIntegration:
             worker = Thread(
                 target=self._worker_loop,
                 name=f"PerceptionWorker-{i}",
-                daemon=False
+                daemon=True
             )
             worker.start()
             self._workers.append(worker)

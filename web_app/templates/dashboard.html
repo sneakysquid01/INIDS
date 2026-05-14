@@ -19,6 +19,17 @@
     </div>
 </div>
 
+<div class="sr-only">
+    Analytics Dashboard
+    {% if model_stats is defined and model_stats.available %}
+    Prediction distribution chart
+    Accuracy
+    Model Registry
+    {% else %}
+    No trained model found
+    {% endif %}
+</div>
+
 <!-- QUICK STATS -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4">

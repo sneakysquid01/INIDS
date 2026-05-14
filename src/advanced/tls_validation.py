@@ -613,10 +613,6 @@ class CertificateValidator:
         # Deduct for warnings
         confidence -= len(result.warnings) * 0.1
         
-        # Deduct if parsing incomplete
-        if not result.certificate_info:
-            confidence -= 0.5
-        
         return max(min(confidence, 1.0), 0.0)
     
     def get_stats(self) -> TLSStats:

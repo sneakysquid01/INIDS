@@ -112,7 +112,7 @@ class ObjectPool:
                 if self.reset_func:
                     self.reset_func(obj)
                 
-                self.pool.append(obj)
+                self.pool.appendleft(obj)
                 self.stats.current_pooled = len(self.pool)
     
     def get_stats(self) -> PoolStats:
@@ -201,27 +201,30 @@ class FlowContextPool:
             max_size: Maximum flow contexts to pool
         """
         def create_flow_context():
-            from src.packet_capture import FlowContext, TCPState
+            from src.flow_tracking.flow_table import FlowContext, FlowState
             return FlowContext(
+                flow_id="",
                 src_ip="",
                 dst_ip="",
                 src_port=0,
                 dst_port=0,
-                proto="",
-                state=TCPState.NEW,
+                protocol="",
+                state=FlowState.NEW,
             )
         
         def reset_flow_context(ctx):
+            from src.flow_tracking.flow_table import FlowAction, FlowState
             ctx.src_ip = ""
             ctx.dst_ip = ""
             ctx.src_port = 0
             ctx.dst_port = 0
-            ctx.proto = ""
+            ctx.protocol = ""
             ctx.packets_toserver = 0
             ctx.packets_toclient = 0
             ctx.bytes_toserver = 0
             ctx.bytes_toclient = 0
-            ctx.detection_action = "ALLOW"
+            ctx.state = FlowState.NEW
+            ctx.action = FlowAction.ALLOW
             ctx.features_cache = {}
         
         self.pool = ObjectPool(
