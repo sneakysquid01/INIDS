@@ -68,10 +68,14 @@ class UfwFirewallAdapter(FirewallAdapter):
 
     def _run(self, args: list[str]) -> tuple[bool, str]:
         try:
-            result = self.run_cmd(args, capture_output=True, text=True)
+            result = self.run_cmd(args, capture_output=True, text=True, timeout=5, check=False)
             return result.returncode == 0, str(getattr(result, "stdout", "") or "")
-        except Exception:
-            return False, ""
+        except subprocess.TimeoutExpired:
+            logger.error("ufw_subprocess_timeout args=%s", args)
+            return False, "timeout"
+        except Exception as exc:
+            logger.exception("ufw_subprocess_failed args=%s", args)
+            return False, f"exception:{type(exc).__name__}"
 
     def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
         try:
@@ -114,10 +118,14 @@ class NftablesFirewallAdapter(FirewallAdapter):
 
     def _run(self, args: list[str]) -> tuple[bool, str]:
         try:
-            result = self.run_cmd(args, capture_output=True, text=True)
+            result = self.run_cmd(args, capture_output=True, text=True, timeout=5, check=False)
             return result.returncode == 0, str(getattr(result, "stdout", "") or "")
-        except Exception:
-            return False, ""
+        except subprocess.TimeoutExpired:
+            logger.error("nft_subprocess_timeout args=%s", args)
+            return False, "timeout"
+        except Exception as exc:
+            logger.exception("nft_subprocess_failed args=%s", args)
+            return False, f"exception:{type(exc).__name__}"
 
     def block(self, ip: str, ttl_seconds: int | None = None) -> bool:
         try:

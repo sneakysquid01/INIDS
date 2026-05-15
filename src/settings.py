@@ -54,6 +54,9 @@ class Settings:
     elasticsearch_verify_certs: bool = False
     elasticsearch_username: str = ""
     elasticsearch_password: str = ""
+    adapter_call_timeout_s: float = 3.0
+    adapter_cb_failure_threshold: int = 3
+    adapter_cb_open_duration_s: float = 60.0
 
 
 def _safe_int(env_key: str, default: int) -> int:
@@ -105,6 +108,9 @@ def load_settings() -> Settings:
     elasticsearch_verify_certs = _safe_bool("ELASTICSEARCH_VERIFY_CERTS", False)
     elasticsearch_username = os.getenv("ELASTICSEARCH_USERNAME", "").strip()
     elasticsearch_password = os.getenv("ELASTICSEARCH_PASSWORD", "").strip()
+    adapter_call_timeout_s = float(os.getenv("ADAPTER_CALL_TIMEOUT_S", "3.0"))
+    adapter_cb_failure_threshold = _safe_int("ADAPTER_CB_FAILURE_THRESHOLD", 3)
+    adapter_cb_open_duration_s = float(os.getenv("ADAPTER_CB_OPEN_DURATION_S", "60.0"))
     return Settings(
         host=host,
         port=port,
@@ -134,4 +140,7 @@ def load_settings() -> Settings:
         elasticsearch_verify_certs=elasticsearch_verify_certs,
         elasticsearch_username=elasticsearch_username,
         elasticsearch_password=elasticsearch_password,
+        adapter_call_timeout_s=adapter_call_timeout_s,
+        adapter_cb_failure_threshold=adapter_cb_failure_threshold,
+        adapter_cb_open_duration_s=adapter_cb_open_duration_s,
     )

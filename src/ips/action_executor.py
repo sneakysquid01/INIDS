@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import concurrent.futures as cf
 import ipaddress
 import logging
+import time
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any
 import uuid
 
@@ -20,12 +23,73 @@ class ActionExecutor:
         adapter_name: str = "mock",
         ops_store=None,
         event_bus: EventBus | None = None,
+        adapter_timeout_s: float = 3.0,
+        cb_failure_threshold: int = 3,
+        cb_open_duration_s: float = 60.0,
     ):
         self.adapter = adapter
         self.adapter_name = adapter_name
         self.ops_store = ops_store
         self.event_bus = event_bus
+        self.adapter_timeout_s = adapter_timeout_s
         self.logger = logging.getLogger(__name__)
+        # Circuit breaker state
+        self._cb_failure_count: int = 0
+        self._cb_open_until: float = 0.0
+        self._cb_failure_threshold: int = cb_failure_threshold
+        self._cb_open_duration_s: float = cb_open_duration_s
+        self._cb_lock = Lock()
+
+    def _call_adapter_with_timeout(self, fn, *args) -> tuple[bool, str]:
+        """
+        Execute adapter call in isolated thread with hard timeout.
+        Returns (success, status_string).
+        Never raises — failure is returned as status.
+        """
+        with cf.ThreadPoolExecutor(max_workers=1) as _exec:
+            future = _exec.submit(fn, *args)
+            try:
+                result = future.result(timeout=self.adapter_timeout_s)
+                # Handle the result tuple returned by adapter methods
+                if isinstance(result, tuple):
+                    return result[0], str(result[1])
+                return bool(result), "success"
+            except cf.TimeoutError:
+                self.logger.error(
+                    "adapter_timeout target=%s timeout_s=%s",
+                    args[0] if args else "unknown",
+                    self.adapter_timeout_s
+                )
+                return False, "adapter_timeout"
+            except Exception as exc:
+                self.logger.exception("adapter_call_failed target=%s", args[0] if args else "unknown")
+                return False, f"adapter_exception:{type(exc).__name__}"
+
+    def _circuit_open(self) -> bool:
+        """Check if circuit breaker is open."""
+        with self._cb_lock:
+            if self._cb_open_until == 0.0:
+                return False
+            if time.time() > self._cb_open_until:
+                self._cb_open_until = 0.0
+                self._cb_failure_count = 0
+                self.logger.info("circuit_breaker_closed adapter=%s", self.adapter_name)
+                return False
+            return True
+
+    def _record_adapter_result(self, success: bool) -> None:
+        """Record adapter result and update circuit breaker state."""
+        with self._cb_lock:
+            if success:
+                self._cb_failure_count = 0
+            else:
+                self._cb_failure_count += 1
+                if self._cb_failure_count >= self._cb_failure_threshold:
+                    self._cb_open_until = time.time() + self._cb_open_duration_s
+                    self.logger.error(
+                        "circuit_breaker_open adapter=%s for %ss",
+                        self.adapter_name, self._cb_open_duration_s
+                    )
 
     @staticmethod
     def _normalize_ip(target: str) -> str | None:
@@ -39,10 +103,12 @@ class ActionExecutor:
         if target is None:
             return False, "invalid_ip"
         try:
-            ok = self.adapter.block(target, ttl)
-            return bool(ok), "blocked" if ok else "block_failed"
+            ok, status = self._call_adapter_with_timeout(self.adapter.block, target, ttl)
+            self._record_adapter_result(ok)
+            return ok, "blocked" if ok else status
         except Exception:
             self.logger.exception("block_ip failed target=%s", target)
+            self._record_adapter_result(False)
             return False, "block_exception"
 
     def unblock_ip(self, ip: str) -> tuple[bool, str]:
@@ -50,10 +116,12 @@ class ActionExecutor:
         if target is None:
             return False, "invalid_ip"
         try:
-            ok = self.adapter.unblock(target)
-            return bool(ok), "unblocked" if ok else "unblock_failed"
+            ok, status = self._call_adapter_with_timeout(self.adapter.unblock, target)
+            self._record_adapter_result(ok)
+            return ok, "unblocked" if ok else status
         except Exception:
             self.logger.exception("unblock_ip failed target=%s", target)
+            self._record_adapter_result(False)
             return False, "unblock_exception"
 
     def rate_limit(self, ip: str, ttl: int = 60) -> tuple[bool, str]:
@@ -70,6 +138,28 @@ class ActionExecutor:
         if target is None:
             self._emit_audit("action_skipped", f"invalid_target source={decision_event.risk.detection.source}")
             return None
+
+        # Check circuit breaker before processing action
+        if self._circuit_open():
+            now = datetime.now(timezone.utc)
+            ttl_seconds = int(decision_event.ttl_seconds or getattr(policy, "block_ttl_seconds", 300))
+            expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat() if ttl_seconds > 0 else None
+            action_id = f"act_{uuid.uuid4().hex[:16]}"
+            action = ActionEvent(
+                decision=decision_event,
+                action="block",
+                target=target,
+                reason=f"{decision_event.reason} (circuit_open)",
+                dry_run=False,
+                executed=False,
+                status="CIRCUIT_OPEN",
+                adapter=self.adapter_name,
+                expires_at=expires_at,
+                created_at=now.isoformat(),
+            )
+            self._persist_action(action, action_id=action_id, executed_at=None)
+            self._emit_audit("circuit_breaker_fast_fail", f"target={target} decision={decision}")
+            return action
 
         ttl_seconds = int(decision_event.ttl_seconds or getattr(policy, "block_ttl_seconds", 300))
         now = datetime.now(timezone.utc)

@@ -56,10 +56,12 @@ class ThresholdEngine(DetectionEngine):
         engine_id: str = "threshold",
         window_seconds: float = 60.0,
         connection_rate_limit: int = 200,
+        fp_manager: Any = None,
     ) -> None:
         self._engine_id = engine_id
         self._window = window_seconds
         self._conn_limit = connection_rate_limit
+        self._fp_manager = fp_manager
         self._counters: dict[str, _RateCounter] = defaultdict(_RateCounter)
         self._max_tracked_ips = 50_000
         self._lock = Lock()
@@ -111,6 +113,23 @@ class ThresholdEngine(DetectionEngine):
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
         source_ip = str(features.get("source_ip", "unknown"))
+
+        # Check if source is a known false positive (suppressed)
+        if self._fp_manager is not None and source_ip != "unknown":
+            try:
+                if self._fp_manager.is_suppressed(source_ip):
+                    logger.debug("ThresholdEngine: source %s suppressed by FP manager", source_ip)
+                    return EngineResult(
+                        engine_id=self._engine_id,
+                        engine_type=self.engine_type,
+                        verdict="normal",
+                        confidence=100.0,
+                        severity="low",
+                        attack_type="normal",
+                        metadata={"suppressed_by_fp_manager": True},
+                    )
+            except Exception:
+                logger.exception("FP manager suppression check failed for %s", source_ip)
 
         # Track connection rate per source IP.
         now = time.monotonic()

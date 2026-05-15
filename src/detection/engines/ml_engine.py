@@ -20,9 +20,10 @@ class MLEngine(DetectionEngine):
     pipeline on equal footing with signature / anomaly / threshold engines.
     """
 
-    def __init__(self, model: Any, *, engine_id: str = "ml_primary") -> None:
+    def __init__(self, model: Any, *, engine_id: str = "ml_primary", fp_manager: Any = None) -> None:
         self._model = model
         self._engine_id = engine_id
+        self._fp_manager = fp_manager
 
     # ------------------------------------------------------------------
     # DetectionEngine interface
@@ -42,6 +43,24 @@ class MLEngine(DetectionEngine):
         return ready
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
+        # Check if source is a known false positive (suppressed)
+        source_ip = features.get("source_ip")
+        if self._fp_manager is not None and source_ip:
+            try:
+                if self._fp_manager.is_suppressed(source_ip):
+                    logger.debug("MLEngine: source %s suppressed by FP manager", source_ip)
+                    return EngineResult(
+                        engine_id=self._engine_id,
+                        engine_type=self.engine_type,
+                        verdict="normal",
+                        confidence=100.0,
+                        severity="low",
+                        attack_type="normal",
+                        metadata={"suppressed_by_fp_manager": True},
+                    )
+            except Exception:
+                logger.exception("FP manager suppression check failed for %s", source_ip)
+        
         # Validate required columns
         logger.debug(f"MLEngine.evaluate() called with {len(features)} features")
         required_columns = set(FEATURE_COLUMNS)

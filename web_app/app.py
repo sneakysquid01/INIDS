@@ -35,6 +35,7 @@ from src.ips.policy_engine import PolicyEngine
 from src.ips.risk_engine import RiskEngine
 from src.ips.scheduler import PreventionScheduler
 from src.policy.policy_store import PolicyStore
+from src.prevention_service import PolicyConfig
 from src.ha.health_check import HealthCheck
 from src.ha.leader_election import LeaderElection
 from src.input_sanitizer import SanitizationError, sanitize_id, sanitize_ip_address
@@ -231,10 +232,11 @@ engine_registry = EngineRegistry()
 engine_aggregator = EngineAggregator(AggregationStrategy.ANY_TRIGGER)
 RULES_PATH = os.path.join(BASE_DIR, "rules", "default_rules.yaml")
 signature_engine = SignatureEngine(RULES_PATH if os.path.exists(RULES_PATH) else None, fp_manager=fp_manager)
-threshold_engine = ThresholdEngine()
+threshold_engine = ThresholdEngine(fp_manager=fp_manager)
 anomaly_engine = AnomalyEngine(
     buffer_size=3000,
     model_path=os.path.join(MODELS_DIR, "anomaly_engine.pkl"),
+    fp_manager=fp_manager,
 )
 
 engine_registry.register(signature_engine)
@@ -631,6 +633,30 @@ def _stream_ingest_records(records: list[dict], source: str) -> int:
     return len(records)
 
 
+def _apply_escalation_to_risk(risk_event: RiskScoreEvent, escalation_level: int) -> RiskScoreEvent:
+    """Apply escalation level boost to risk score.
+    
+    Higher escalation levels (repeated hits from same source) increase risk urgency.
+    Escalation multiplier: 1.0 (level 0) → 1.5 (level 1) → 2.0 (level 2+)
+    """
+    if escalation_level is None or escalation_level < 0:
+        return risk_event
+    
+    escalation_multiplier = min(1.0 + (escalation_level * 0.5), 2.0)
+    boosted_score = risk_event.risk_score * escalation_multiplier
+    
+    # Preserve original components but note escalation in debug info
+    risk_event.risk_score = min(boosted_score, 100.0)  # Cap at 100
+    logger.debug(
+        "escalation_risk_boost source_ip=%s level=%d original=%.2f boosted=%.2f",
+        getattr(risk_event, 'source_ip', 'unknown'),
+        escalation_level,
+        risk_event.risk_score / escalation_multiplier,
+        risk_event.risk_score,
+    )
+    return risk_event
+
+
 def _on_detection_event(event: DetectionEvent) -> None:
     source_is_allowlisted = allowlist.contains(event.source_ip)
     if source_is_allowlisted:
@@ -679,6 +705,19 @@ def _on_detection_event(event: DetectionEvent) -> None:
         frequency=float(getattr(policy, "risk_weight_frequency", 0.2)),
     )
     risk_event = risk_engine.calculate(event, weights_override=weights_override)
+    
+    # Record hit in escalation tracker and apply escalation boost to risk score
+    if event.suspicious and event.source_ip:
+        try:
+            escalation_level = escalation_tracker.record_hit(
+                source_ip=event.source_ip,
+                severity=event.severity
+            )
+            if escalation_level is not None:
+                risk_event = _apply_escalation_to_risk(risk_event, escalation_level)
+        except Exception:
+            logger.exception("Escalation tracking failed for %s", event.source_ip)
+    
     event_bus.publish(risk_event)
     try:
         ops_store.add_audit(
@@ -1201,7 +1240,7 @@ def load_models():
         model = all_models['rf_nsl_kdd']
         detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
         # Register the primary ML model as a detection engine.
-        ml_engine = MLEngine(model, engine_id="ml_primary")
+        ml_engine = MLEngine(model, engine_id="ml_primary", fp_manager=fp_manager)
         engine_registry.register(ml_engine)
         
         # --- Initialize RertrainingScheduler for INIDS 2.0 ---
@@ -1216,6 +1255,25 @@ def load_models():
             )
             retraining_scheduler.start()
             logger.info("RertrainingScheduler initialized and started for daily model retraining")
+    
+    # Load threat intelligence feeds after models are loaded
+    try:
+        _load_threat_intel_feeds()
+    except Exception:
+        logger.exception("Failed to load threat intelligence feeds")
+
+
+def _load_threat_intel_feeds() -> None:
+    """Load and initialize threat intelligence feeds for the TI engine.
+    
+    Populates the TI manager cache with indicators from configured sources.
+    Handles graceful degradation if feeds are unavailable.
+    """
+    try:
+        load_threat_intel()
+        logger.info("threat_intel_feeds_loaded successfully")
+    except Exception:
+        logger.exception("threat_intel_feeds_load_failed: TI engine may operate with reduced capability")
 
 
 def load_threat_intel():
@@ -2633,6 +2691,12 @@ def api_policy():
         changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
         reason = str(payload.get("reason", "policy_update")).strip() or "policy_update"
         pv = policy_store.update(policy.to_dict(), changed_by=changed_by, reason=reason)
+        # Ensure runtime policy is synchronized with the store
+        if policy_store.current is not None:
+            reloaded_config = policy_store.current.config
+            reloaded_policy = PolicyConfig(**reloaded_config)
+            prevention_service.policy = reloaded_policy
+            logger.info("policy_runtime_reloaded version=%s", pv.version)
         ops_store.add_audit(
             event_type="policy_update",
             message=(
@@ -2683,6 +2747,12 @@ def api_policy_rollback():
         risk_weight_frequency=config.get("risk_weight_frequency"),
         dry_run=config.get("dry_run"),
     )
+    # Ensure runtime policy is synchronized with the store after rollback
+    if policy_store.current is not None:
+        reloaded_config = policy_store.current.config
+        reloaded_policy = PolicyConfig(**reloaded_config)
+        prevention_service.policy = reloaded_policy
+        logger.info("policy_rolled_back_and_reloaded to version=%s", pv.version)
     ops_store.add_audit(
         event_type="policy_rollback",
         message=f"rollback_to={to_version} new_version={pv.version}",

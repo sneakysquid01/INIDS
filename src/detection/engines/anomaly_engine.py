@@ -39,12 +39,14 @@ class AnomalyEngine(DetectionEngine):
         random_state: int = 42,
         buffer_size: int = 3000,
         model_path: str | Path | None = None,
+        fp_manager: Any = None,
     ) -> None:
         self._engine_id = engine_id
         self._contamination = contamination
         self._n_estimators = n_estimators
         self._random_state = random_state
         self._model: Any = None
+        self._fp_manager = fp_manager
         self._feature_names: list[str] = list(NUMERIC_FEATURES)
         self._buffer_size = int(buffer_size)
         self._model_path = Path(model_path) if model_path else None
@@ -162,6 +164,25 @@ class AnomalyEngine(DetectionEngine):
         return self._model is not None and hasattr(self._model, "predict")
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
+        source_ip = features.get("source_ip")
+        
+        # Check if source is a known false positive (suppressed)
+        if self._fp_manager is not None and source_ip:
+            try:
+                if self._fp_manager.is_suppressed(source_ip):
+                    logger.debug("AnomalyEngine: source %s suppressed by FP manager", source_ip)
+                    return EngineResult(
+                        engine_id=self._engine_id,
+                        engine_type=self.engine_type,
+                        verdict="normal",
+                        confidence=100.0,
+                        severity="low",
+                        attack_type="normal",
+                        metadata={"suppressed_by_fp_manager": True},
+                    )
+            except Exception:
+                logger.exception("FP manager suppression check failed for %s", source_ip)
+        
         vector = self._vector_from_features(features)
 
         pred = int(self._model.predict(vector)[0])  # -1 = anomaly, 1 = normal
