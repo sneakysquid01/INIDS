@@ -5,12 +5,92 @@ Supports PCAP, live capture, NetFlow, and in-memory sources
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import ipaddress
+import re
+import time
 from typing import Generator, Optional, List
 from datetime import datetime
 import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# D-03: Packet capture output sanitization
+# ---------------------------------------------------------------------------
+
+_PROTOCOL_ALLOWLIST = frozenset({"tcp", "udp", "icmp", "icmpv6", "arp", "dns", "http", "tls", "unknown"})
+_MAC_PATTERN = re.compile(r'^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$')
+
+# Port range: 0-65535 (0 is valid for ICMP and raw captures)
+PORT_MIN = 0
+PORT_MAX = 65535
+# Packet length: 0-65535 bytes (standard Ethernet MTU with jumbo frame headroom)
+PACKET_LEN_MAX = 65535
+# VLAN ID range: 0-4094 (4095 reserved)
+VLAN_ID_MAX = 4094
+# Timestamp: allow times from Unix epoch to now + 1 day (clock-skew tolerance)
+TIMESTAMP_MIN = 0.0
+_ONE_DAY = 86400.0
+
+
+def _clamp(value: int | float, lo: int | float, hi: int | float) -> int | float:
+    return max(lo, min(hi, value))
+
+
+def _sanitize_ip_field(value: str) -> str:
+    """Return a validated IP string, or empty string on failure."""
+    if not value:
+        return ""
+    try:
+        return str(ipaddress.ip_address(str(value).strip()))
+    except ValueError:
+        logger.warning("packet_sanitizer: invalid IP field stripped: %r", value[:40])
+        return ""
+
+
+def _sanitize_protocol(value: str) -> str:
+    """Normalize protocol to allowlist; fall back to 'unknown'."""
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in _PROTOCOL_ALLOWLIST else "unknown"
+
+
+def _sanitize_mac(value: str | None) -> str | None:
+    """Return the MAC if it matches the expected format, else None."""
+    if value is None:
+        return None
+    stripped = str(value).strip()
+    return stripped if _MAC_PATTERN.match(stripped) else None
+
+
+def sanitize_packet_output(pkt: "Packet") -> "Packet":
+    """Return a new Packet with all fields sanitized and numeric fields clamped.
+
+    Modifies a copy — never mutates the original.
+    """
+    now = time.time()
+    ts = _clamp(float(pkt.timestamp or 0.0), TIMESTAMP_MIN, now + _ONE_DAY)
+    src_port = int(_clamp(int(pkt.src_port or 0), PORT_MIN, PORT_MAX))
+    dst_port = int(_clamp(int(pkt.dst_port or 0), PORT_MIN, PORT_MAX))
+    pkt_len = int(_clamp(int(pkt.packet_len or 0), 0, PACKET_LEN_MAX))
+    vlan_id = None
+    if pkt.vlan_id is not None:
+        vlan_id = int(_clamp(int(pkt.vlan_id), 0, VLAN_ID_MAX))
+
+    return Packet(
+        timestamp=ts,
+        src_mac=_sanitize_mac(pkt.src_mac),
+        dst_mac=_sanitize_mac(pkt.dst_mac),
+        src_ip=_sanitize_ip_field(pkt.src_ip),
+        dst_ip=_sanitize_ip_field(pkt.dst_ip),
+        src_port=src_port,
+        dst_port=dst_port,
+        protocol=_sanitize_protocol(pkt.protocol),
+        packet_data=pkt.packet_data if isinstance(pkt.packet_data, bytes) else b"",
+        packet_len=pkt_len,
+        flow_id=pkt.flow_id,
+        vlan_id=vlan_id,
+    )
 
 
 @dataclass

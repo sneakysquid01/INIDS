@@ -4,6 +4,9 @@ import web_app.app as app_module
 from src.model_registry import ModelRegistry
 from src.ops_store import OpsStore
 
+_VIEWER_KEY = "dashboard-test-viewer-key"
+_VIEWER_HEADERS = {"X-API-Key": _VIEWER_KEY}
+
 
 class ConstantPredictModel:
     def predict(self, df):
@@ -11,9 +14,12 @@ class ConstantPredictModel:
 
 
 def _setup_client(monkeypatch, tmp_path):
+    monkeypatch.setenv("INIDS_VIEWER_API_KEY", _VIEWER_KEY)
+    store = OpsStore(str(tmp_path / "ops_test.db"))
     monkeypatch.setattr(app_module, "all_models", {})
     monkeypatch.setattr(app_module, "load_models", lambda: None)
-    monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops_test.db")))
+    monkeypatch.setattr(app_module, "ops_store", store)
+    app_module.app.ops_store = store
     monkeypatch.setattr(app_module, "model_registry", ModelRegistry(str(tmp_path / "model_registry.json")))
     return app_module.app.test_client()
 
@@ -23,7 +29,7 @@ def test_dashboard_renders_without_model(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "model", None)
     monkeypatch.setattr(app_module, "detection_service", None)
 
-    response = client.get("/dashboard")
+    response = client.get("/dashboard", headers=_VIEWER_HEADERS)
     assert response.status_code == 200
     page = response.get_data(as_text=True)
     assert "Analytics Dashboard" in page
@@ -36,7 +42,7 @@ def test_dashboard_renders_model_analytics(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "model", ConstantPredictModel())
     monkeypatch.setattr(app_module, "detection_service", None)
 
-    response = client.get("/dashboard")
+    response = client.get("/dashboard", headers=_VIEWER_HEADERS)
     assert response.status_code == 200
     page = response.get_data(as_text=True)
     assert "Prediction distribution chart" in page

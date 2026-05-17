@@ -166,7 +166,7 @@ def test_stream_processor_enrichment_failure_falls_back_to_raw(monkeypatch):
     assert "byte_ratio" not in captured["features"]
 
 
-def test_api_detect_enrichment_failure_falls_back_to_raw(monkeypatch):
+def test_api_detect_enrichment_failure_falls_back_to_raw(monkeypatch, tmp_path):
     import web_app.app as app_mod
 
     app_mod.app.config["TESTING"] = True
@@ -185,14 +185,18 @@ def test_api_detect_enrichment_failure_falls_back_to_raw(monkeypatch):
     monkeypatch.setattr(app_mod.engine_registry, "evaluate_all", lambda f: [])
     monkeypatch.setattr(app_mod.engine_aggregator, "aggregate", lambda r: FakeAgg())
 
-    import base64
+    from src.ops_store import OpsStore
+    _analyst_key = "fe-test-analyst-key"
+    monkeypatch.setenv("INIDS_ANALYST_API_KEY", _analyst_key)
+    store = OpsStore(str(tmp_path / "fe_test.db"))
+    monkeypatch.setattr(app_mod, "ops_store", store)
+    app_mod.app.ops_store = store
 
-    headers = {"Authorization": f"Basic {base64.b64encode(b'analyst:secret').decode()}"}
     with app_mod.app.test_client() as client:
         resp = client.post(
             "/api/detect",
             json={"source": "10.0.0.1", "features": {"src_bytes": 10, "dst_bytes": 20}},
-            headers=headers,
+            headers={"X-API-Key": _analyst_key},
         )
 
     assert resp.status_code == 200
@@ -200,7 +204,7 @@ def test_api_detect_enrichment_failure_falls_back_to_raw(monkeypatch):
     assert data["verdict"] == "normal"
 
 
-def test_api_detect_uses_enriched_features(monkeypatch):
+def test_api_detect_uses_enriched_features(monkeypatch, tmp_path):
     import web_app.app as app_mod
 
     app_mod.app.config["TESTING"] = True
@@ -226,14 +230,18 @@ def test_api_detect_uses_enriched_features(monkeypatch):
     monkeypatch.setattr(app_mod.engine_registry, "evaluate_all", eval_all)
     monkeypatch.setattr(app_mod.engine_aggregator, "aggregate", lambda r: FakeAgg())
 
-    import base64
+    from src.ops_store import OpsStore
+    _analyst_key = "fe-test2-analyst-key"
+    monkeypatch.setenv("INIDS_ANALYST_API_KEY", _analyst_key)
+    store = OpsStore(str(tmp_path / "fe_test2.db"))
+    monkeypatch.setattr(app_mod, "ops_store", store)
+    app_mod.app.ops_store = store
 
-    headers = {"Authorization": f"Basic {base64.b64encode(b'analyst:secret').decode()}"}
     with app_mod.app.test_client() as client:
         resp = client.post(
             "/api/detect",
             json={"source": "10.0.0.2", "features": {"src_bytes": 10, "dst_bytes": 20}},
-            headers=headers,
+            headers={"X-API-Key": _analyst_key},
         )
 
     assert resp.status_code == 200

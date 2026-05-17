@@ -35,10 +35,9 @@ from src.ips.policy_engine import PolicyEngine
 from src.ips.risk_engine import RiskEngine
 from src.ips.scheduler import PreventionScheduler
 from src.policy.policy_store import PolicyStore
-from src.prevention_service import PolicyConfig
 from src.ha.health_check import HealthCheck
 from src.ha.leader_election import LeaderElection
-from src.input_sanitizer import SanitizationError, sanitize_id, sanitize_ip_address
+from src.input_sanitizer import SanitizationError, sanitize_id, sanitize_ip_address, sanitize_string
 from src.correlation_tracing import correlation_id_middleware, get_correlation_id
 from src.csrf_protection import csrf_protect_middleware, require_csrf_token
 
@@ -67,7 +66,7 @@ OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else o
 from src.detection_service import DetectionService, drain_to_ops_store
 from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
-from src.auth_service import require_role, auth_status, _auth_service
+from src.auth.decorators import require_roles
 from src.metrics_service import MetricsService
 from src.ingestion_service import InMemoryIngestionQueue, RedisStreamIngestionQueue, IngestionService
 from src.prevention.allowlist import Allowlist
@@ -107,11 +106,14 @@ from src.middleware import (
     register_middleware, RateLimitConfig, RateLimitMiddleware, IPBlockingMiddleware,
     SecurityHeadersMiddleware, AuditLogMiddleware
 )
-from src.auth_jwt import JWTAuthManager, RunAsManager, require_auth, require_role as jwt_require_role, inject_current_user
+from src.auth.jwt_manager import get_jwt_manager
+from src.auth.auth_service import UnifiedAuthService
 from src.validation_schemas import validate_predict_request, validate_detect_request, validate_policy
 from src.elasticsearch_client import ElasticsearchConfig, ElasticsearchStore
 from src.elasticsearch_audit_bridge import init_elasticsearch_audit_bridge, get_elasticsearch_audit_bridge
 from src.async_utils import get_async_executor
+
+_APP_START_TIME = time.time()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
@@ -171,12 +173,7 @@ event_bus = EventBus()
 detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
-
-# --- Initialize JWT Authentication (after ops_store) ---
-jwt_manager = JWTAuthManager(secret_key=SETTINGS.flask_secret_key)
-runas_manager = RunAsManager(jwt_manager, ops_store)
-app.jwt_manager = jwt_manager
-app.runas_manager = runas_manager
+app.ops_store = ops_store  # F-AUTH-REMOVE: wired so require_roles() finds it via current_app
 
 # --- Initialize Elasticsearch Audit Bridge (Week 2) ---
 audit_bridge = None
@@ -199,12 +196,9 @@ app.elasticsearch_bridge = audit_bridge
 async_executor = get_async_executor(max_workers=4)
 app.async_executor = async_executor
 
-# Make jwt_manager available in request context
 @app.before_request
-def inject_jwt_manager():
-    request.jwt_manager = jwt_manager
+def _inject_request_context():
     action_executor.ops_store = ops_store
-    runas_manager.audit_store = ops_store
     incident_aggregator._ops_store = ops_store
     allowlist._ops_store = ops_store
     fp_manager._ops_store = ops_store
@@ -869,7 +863,7 @@ def _build_dashboard_metrics_payload(
     fp_rate = round((false_positives / total_feedback * 100) if total_feedback else 0, 1)
 
     return {
-        "system_uptime": "4.2h",
+        "system_uptime": round(time.time() - _APP_START_TIME, 1),
         "system_health": 98,
         "system_capacity": 45,
         "active_attacks": active_attacks,
@@ -964,6 +958,7 @@ def _ensure_scheduler_started() -> None:
     prevention_scheduler.start()
     app._prevention_scheduler_started = True
     _start_siem_flush_thread()
+    _start_alert_retention_thread()
     # Load TI feeds once at scheduler start (no-op if ti_feed_dir is unset).
     if SETTINGS.ti_feed_dir:
         _load_ti_feeds()
@@ -1057,6 +1052,54 @@ def _start_siem_flush_thread() -> None:
     app._siem_flush_started = True
 
 
+def _run_alert_retention() -> int:
+    """Delete alerts older than INIDS_ALERT_RETENTION_DAYS. Returns count deleted.
+
+    D-08: Returns 0 and no-ops if INIDS_ALERT_RETENTION_DAYS is 0 or unset.
+    Rollback: set INIDS_ALERT_RETENTION_DAYS=0 to disable immediately.
+    WARNING: destructive — any alert deleted cannot be recovered without backup.
+    """
+    try:
+        days_str = os.environ.get("INIDS_ALERT_RETENTION_DAYS", "0").strip()
+        days = int(days_str) if days_str else 0
+    except (ValueError, TypeError):
+        days = 0
+    if days <= 0:
+        return 0  # retention disabled
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        deleted = ops_store.delete_alerts_older_than(cutoff)
+        if deleted > 0:
+            logger.info("alert_retention: deleted %d alerts older than %d days", deleted, days)
+        return deleted
+    except Exception:
+        logger.exception("alert_retention: deletion failed")
+        return 0
+
+
+def _start_alert_retention_thread() -> None:
+    """Start a daily daemon thread for the alert retention job (D-08)."""
+    if getattr(app, "_alert_retention_started", False):
+        return
+    import threading as _threading
+
+    def _retention_loop() -> None:
+        while True:
+            time.sleep(86400)  # run once per day
+            try:
+                if not leader_election.is_leader:
+                    continue
+                _run_alert_retention()
+            except Exception:
+                logger.exception("Alert retention loop failed")
+
+    t = _threading.Thread(target=_retention_loop, daemon=True, name="alert-retention")
+    t.start()
+    app._alert_retention_started = True
+    logger.info("Alert retention thread started (INIDS_ALERT_RETENTION_DAYS=%s)",
+                os.environ.get("INIDS_ALERT_RETENTION_DAYS", "0 (disabled)"))
+
+
 def _start_leader_election() -> None:
     if getattr(app, "_leader_election_started", False):
         return
@@ -1085,17 +1128,15 @@ def _register_health_probes() -> None:
     )
 
     def _ops_probe() -> dict:
+        # D-07: health probe is read-only — no INSERT to audit log.
+        # A test write would pollute the audit table with synthetic entries
+        # and could mask genuine audit record volume in monitoring.
         try:
-            # Test both read and write access
             ops_store.list_alerts(limit=1)
-            # Try a test audit write
-            ops_store.add_audit(
-                event_type="health_check",
-                message="health_probe",
-            )
+            ops_store.list_audits(limit=1)
             return {"ready": True}
         except Exception as exc:
-            return {"ready": False, "error": str(exc), "note": "database_write_failed"}
+            return {"ready": False, "error": str(exc), "note": "database_read_failed"}
 
     health_check.register("ops_db", _ops_probe)
 
@@ -1177,13 +1218,11 @@ def _register_signal_handlers() -> None:
 def _validate_runtime_security() -> None:
     if SETTINGS.require_secret_key and not os.getenv("SECRET_KEY", "").strip():
         raise RuntimeError("SECRET_KEY environment variable is required")
-    if SETTINGS.require_api_keys and not auth_status().get("enabled", False):
-        raise RuntimeError("API keys are required for protected endpoints")
     _validate_all_routes_have_auth_decorator()
 
 
 # PLAN.md Phase A Step 3 (A-03): PUBLIC_ROUTES are exempt from auth decorator requirement.
-# All other routes must have @require_role, @require_auth, or a JWT auth decorator.
+# All other routes must have @require_roles (F-AUTH-REMOVE: legacy decorators removed).
 PUBLIC_ROUTES = frozenset({
     "/health",
     "/api/health",
@@ -1197,23 +1236,13 @@ PUBLIC_ROUTES = frozenset({
     "/static/<path:filename>",
 })
 
-_AUTH_DECORATOR_NAMES = frozenset({
-    "require_role",
-    "require_auth",
-    "jwt_require_role",
-    "wrapper",          # functools.wraps preserves wrapper name — checked by closure inspection
-})
-
 
 def _validate_all_routes_have_auth_decorator() -> None:
-    """Fail-closed startup check: every non-public route must have an auth decorator.
+    """Fail-closed startup check: every non-public route must have a require_roles decorator.
 
-    PLAN.md Phase A Step 3 (A-03) / G-RBAC-1: accepts @require_role and @require_auth
-    during the Phase A-B transition. Fails on first uncovered route.
+    F-AUTH-REMOVE: checks _required_roles attribute set by require_roles() on the
+    original function; works with functools.wraps because @wraps copies __dict__.
     """
-    from src.auth_service import require_role as _require_role_fn
-    require_role_code = getattr(_require_role_fn, "__code__", None)
-
     uncovered = []
     for rule in app.url_map.iter_rules():
         if rule.rule in PUBLIC_ROUTES:
@@ -1223,20 +1252,8 @@ def _validate_all_routes_have_auth_decorator() -> None:
         view_func = app.view_functions.get(rule.endpoint)
         if view_func is None:
             continue
-        # Walk the decorator chain: check if require_role or require_auth wraps this view
-        func = view_func
-        covered = False
-        for _ in range(10):  # max decorator chain depth
-            fn_name = getattr(func, "__name__", "")
-            if fn_name in {"wrapper", "require_role", "require_auth", "jwt_require_role"}:
-                covered = True
-                break
-            # Check if this function's globals contain require_role (i.e., it IS require_role's wrapper)
-            wrapped = getattr(func, "__wrapped__", None)
-            if wrapped is not None:
-                func = wrapped
-            else:
-                break
+        # require_roles() sets _required_roles on the original func; @wraps copies __dict__
+        covered = hasattr(view_func, "_required_roles")
         if not covered:
             uncovered.append(f"{rule.endpoint} ({rule.rule})")
 
@@ -1248,7 +1265,7 @@ def _validate_all_routes_have_auth_decorator() -> None:
         )
         raise RuntimeError(
             f"PLAN.md A-03: {len(uncovered)} route(s) have no auth decorator. "
-            f"Add @require_role() or mark as public: {uncovered}"
+            f"Add @require_roles() or mark as public: {uncovered}"
         )
 
 
@@ -1573,7 +1590,7 @@ def _after_request_metrics(response):
 
 
 @app.route("/")
-@require_role("viewer")
+@require_roles("viewer")
 def home():
     """Landing page with runtime status and navigation into the SOC console."""
     metrics_snapshot = {
@@ -1589,13 +1606,13 @@ def home():
         loaded_models_count=len(all_models),
         queue_size=ingestion_queue.size(),
         firewall_adapter=SETTINGS.firewall_adapter,
-        auth_enabled=auth_status().get("enabled", False),
+        auth_enabled=True,
         metrics_snapshot=metrics_snapshot,
     )
 
 
 @app.route("/predict", methods=["GET", "POST"])
-@require_role("viewer")
+@require_roles("viewer")
 def predict():
     """Live prediction page with suspicious activity logic."""
     prediction = None
@@ -1645,49 +1662,49 @@ def predict():
 
 
 @app.route("/alerts")
-@require_role("viewer")
+@require_roles("viewer")
 def alerts_page():
     """Security alerts monitoring page."""
     return render_template("alerts.html")
 
 
 @app.route("/actions")
-@require_role("viewer")
+@require_roles("viewer")
 def actions_page():
     """Prevention actions and approval workflow page."""
     return render_template("actions.html")
 
 
 @app.route("/detection")
-@require_role("viewer")
+@require_roles("viewer")
 def detection_page():
     """Detection console for running multi-engine detection."""
     return render_template("detection.html")
 
 
 @app.route("/engines")
-@require_role("viewer")
+@require_roles("viewer")
 def engines_page():
     """Detection engines management page."""
     return render_template("engines.html")
 
 
 @app.route("/policy")
-@require_role("viewer")
+@require_roles("viewer")
 def policy_page():
     """Policy editor and configuration page."""
     return render_template("policy.html")
 
 
 @app.route("/allowlist")
-@require_role("viewer")
+@require_roles("viewer")
 def allowlist_page():
     """Allowlist manager page for trusted IPs and domains."""
     return render_template("allowlist.html")
 
 
 @app.route("/threat-intel")
-@require_role("viewer")
+@require_roles("viewer")
 def threat_intel_page():
     """Threat intelligence lookup page."""
     return render_template("threat_intel.html")
@@ -1700,7 +1717,7 @@ def health_page():
 
 
 @app.route("/dashboard")
-@require_role("viewer")
+@require_roles("viewer")
 def dashboard():
     """Visual dashboard of system predictions and accuracy."""
     try:
@@ -1757,7 +1774,7 @@ def dashboard():
         return render_template(
             "dashboard.html",
             generated_at=now.isoformat(),
-            auth_info=auth_status(),
+            auth_info={"enabled": True, "configured_roles": ["admin", "analyst", "viewer", "sensor"]},
             queue_size=ingestion_queue.size(),
             rate_limit_requests=SETTINGS.rate_limit_requests,
             rate_limit_window_seconds=SETTINGS.rate_limit_window_seconds,
@@ -1783,7 +1800,7 @@ def dashboard():
         return render_template(
             "dashboard.html",
             generated_at=datetime.now(timezone.utc).isoformat(),
-            auth_info=auth_status(),
+            auth_info={"enabled": True, "configured_roles": ["admin", "analyst", "viewer", "sensor"]},
             queue_size=ingestion_queue.size(),
             rate_limit_requests=SETTINGS.rate_limit_requests,
             rate_limit_window_seconds=SETTINGS.rate_limit_window_seconds,
@@ -1811,7 +1828,7 @@ def dashboard():
 
 
 @app.route("/monitor")
-@require_role("viewer")
+@require_roles("viewer")
 def monitor():
     """INIDS 2.0 Monitor - Real-time threat dashboard."""
     try:
@@ -1822,7 +1839,7 @@ def monitor():
 
 
 @app.route("/investigate")
-@require_role("analyst")
+@require_roles("analyst")
 def investigate():
     """INIDS 2.0 Investigate - Alert analysis and deep-dive."""
     try:
@@ -1833,7 +1850,7 @@ def investigate():
 
 
 @app.route("/respond")
-@require_role("analyst")
+@require_roles("analyst")
 def respond():
     """INIDS 2.0 Respond - Action management and approvals."""
     try:
@@ -1844,7 +1861,7 @@ def respond():
 
 
 @app.route("/learn")
-@require_role("viewer")
+@require_roles("viewer")
 def learn():
     """INIDS 2.0 Learn - ML model management and training."""
     try:
@@ -1855,7 +1872,7 @@ def learn():
 
 
 @app.route("/dashboard/main")
-@require_role("viewer")
+@require_roles("viewer")
 def dashboard_main():
     """New demo platform dashboard with 15 capability modules."""
     try:
@@ -1866,7 +1883,7 @@ def dashboard_main():
 
 
 @app.route("/api/dashboard/metrics", methods=["GET"])
-@require_role("viewer")
+@require_roles("viewer")
 def api_dashboard_metrics():
     """Get current dashboard metrics."""
     try:
@@ -1879,7 +1896,7 @@ def api_dashboard_metrics():
 
 
 @app.route("/api/dashboard/refresh", methods=["POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_dashboard_refresh():
     """Refresh dashboard data."""
     try:
@@ -1893,7 +1910,7 @@ def api_dashboard_refresh():
 
 
 @app.route("/api/demo/start", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_demo_start():
     """Start demo traffic simulation."""
     try:
@@ -1909,7 +1926,7 @@ def api_demo_start():
 
 
 @app.route("/api/demo/stop", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_demo_stop():
     """Stop demo traffic simulation."""
     try:
@@ -1924,7 +1941,7 @@ def api_demo_stop():
 
 
 @app.route("/models")
-@require_role("analyst")
+@require_roles("analyst")
 def models_page():
     """Comparison page of all trained models and their metrics."""
     chart_files = {
@@ -1960,7 +1977,7 @@ def models_page():
         registry_entries=registry_entries,
     )
 @app.route("/batch", methods=["GET", "POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def batch_predict():
     """Batch prediction from CSV upload."""
     ensure_model_loaded()
@@ -2011,50 +2028,10 @@ def batch_predict():
     return render_template("batch.html")
 
 
-@app.route("/api/health", methods=["GET"])
-def api_health():
-    model_ready = ensure_detection_service()
-    _ensure_pipeline_started()
-    readiness = health_check.check()
-    return jsonify({
-        "status": "ok",
-        "model_loaded": model_ready,
-        "readiness": readiness,
-        "alerts_buffered": len(ops_store.list_alerts(limit=1000)),
-        "ops_db": OPS_DB_PATH,
-        "auth": auth_status(),
-        "metrics": {
-            "requests_total": metrics_service.get("requests_total"),
-            "predictions_total": metrics_service.get("predictions_total"),
-        },
-        "ingestion_queue_size": ingestion_queue.size(),
-        "rate_limit": {
-            "requests": SETTINGS.rate_limit_requests,
-            "window_seconds": SETTINGS.rate_limit_window_seconds,
-        },
-        "firewall_adapter": SETTINGS.firewall_adapter,
-        "detection_engines": engine_registry.list_engines(),
-        "pipeline": _pipeline_status(),
-        "leader_election": leader_election.status(),
-    })
-
-
-@app.route("/api/health/live", methods=["GET"])
-def api_health_live():
-    return jsonify({"status": "live", "process_up": True}), 200
-
-
-@app.route("/api/health/ready", methods=["GET"])
-def api_health_ready():
-    _ensure_pipeline_started()
-    report = health_check.check()
-    return jsonify(report), (200 if report.get("status") == "healthy" else 503)
-
-
 # ========== PERCEPTION LAYER ENDPOINTS ==========
 
 @app.route("/api/perception/pulse", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_pulse():
     """Get current system pulse status (real-time metrics)."""
     try:
@@ -2066,7 +2043,7 @@ def api_perception_pulse():
 
 
 @app.route("/api/perception/pulse/timeseries/<metric>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_pulse_timeseries(metric):
     """Get time-series data for a specific metric."""
     try:
@@ -2082,7 +2059,7 @@ def api_perception_pulse_timeseries(metric):
 
 
 @app.route("/api/perception/confidence/<detection_id>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_confidence(detection_id):
     """Get confidence breakdown for a specific detection."""
     try:
@@ -2096,7 +2073,7 @@ def api_perception_confidence(detection_id):
 
 
 @app.route("/api/perception/attack-story/<attack_id>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_attack_story(attack_id):
     """Get the narrative story for an attack."""
     try:
@@ -2108,7 +2085,7 @@ def api_perception_attack_story(attack_id):
 
 
 @app.route("/api/perception/attack-stories", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_attack_stories():
     """Get recent attack stories."""
     try:
@@ -2124,7 +2101,7 @@ def api_perception_attack_stories():
 
 
 @app.route("/api/perception/feature-importance", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_feature_importance():
     """Get feature importance ranking across all detections."""
     try:
@@ -2146,7 +2123,7 @@ def api_perception_feature_importance():
 
 
 @app.route("/api/perception/integration-status", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_perception_integration_status():
     """Get real-time integration status including latency metrics and throughput."""
     try:
@@ -2157,697 +2134,9 @@ def api_perception_integration_status():
         return jsonify({"error": str(e)}), 500
 
 
-# ========== AUTHENTICATION ENDPOINTS ==========
-
-@app.route("/api/auth/login", methods=["POST"])
-def api_auth_login():
-    """Issue a JWT token after validating the caller's API key.
-
-    PLAN.md Phase A Step 4 (A-04): Login now requires a valid X-API-Key header.
-    Role is derived from the key's assigned principal — callers cannot self-assign roles.
-    This is a bridge until Step 16 (UnifiedAuthService) replaces this handler.
-
-    Request Header:
-        X-API-Key: <api-key>
-    Request JSON (optional, for audit):
-        { "username": "my-service-account" }
-
-    Response:
-        { "token": "...", "expires_in": 3600, "user": "...", "roles": ["..."] }
-    """
-    api_key = request.headers.get("X-API-Key", "").strip()
-    if not api_key:
-        logger.warning("api_auth_login: rejected — no X-API-Key provided")
-        return jsonify({"error": "X-API-Key header is required"}), 401
-
-    # Validate key against the configured principals
-    principal = _auth_service.principals.get(api_key)
-    if principal is None:
-        logger.warning("api_auth_login: rejected — invalid API key")
-        return jsonify({"error": "Invalid API key"}), 401
-
-    # Role derived from key — caller cannot override
-    roles = [principal.role]
-    payload = request.get_json(silent=True) or {}
-    username = payload.get("username", f"api-key-{principal.role}")
-
-    try:
-        token = jwt_manager.create_token(
-            user_id=username,
-            username=username,
-            roles=roles,
-            expires_in=3600,  # PLAN.md: 1-hour token expiry is non-negotiable
-        )
-        logger.info("api_auth_login: JWT issued user=%s roles=%s", username, roles)
-        return jsonify({
-            "token": token,
-            "expires_in": 3600,
-            "user": username,
-            "roles": roles,
-        }), 200
-    except Exception:
-        logger.exception("api_auth_login: token creation failed")
-        return jsonify({"error": "Authentication failed"}), 401
-
-
-@app.route("/api/auth/refresh", methods=["POST"])
-def api_auth_refresh():
-    """Refresh a JWT token that is still valid or within the 5-minute grace window.
-
-    PLAN.md Phase A Step 4 (A-04): allow_expired=True is removed.
-    Tokens expired by more than REFRESH_GRACE_SECONDS are rejected outright.
-    This closes the infinite-lifetime token vulnerability.
-
-    Request Header:
-        Authorization: Bearer <token>
-    Response:
-        { "token": "...", "expires_in": 3600 }
-    """
-    REFRESH_GRACE_SECONDS = 300  # 5-minute window before/after expiry
-
-    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
-    if not token:
-        return jsonify({"error": "Missing token"}), 401
-
-    try:
-        # First: try normal validation (token still valid)
-        is_valid, claims, error = jwt_manager.verify_token(token)
-
-        if not is_valid:
-            # Token is invalid — check if it's within the grace window
-            import time as _time
-            try:
-                # Decode without verification to inspect expiry
-                _, expired_claims, _ = jwt_manager.verify_token(token, allow_expired=True)
-                if expired_claims is None:
-                    return jsonify({"error": "Cannot parse token"}), 401
-                now = _time.time()
-                seconds_overdue = now - expired_claims.exp
-                if seconds_overdue > REFRESH_GRACE_SECONDS:
-                    logger.warning(
-                        "api_auth_refresh: rejected — token expired %ds ago (grace=%ds) user=%s",
-                        int(seconds_overdue), REFRESH_GRACE_SECONDS, expired_claims.sub,
-                    )
-                    return jsonify({"error": "Token expired — please re-authenticate"}), 401
-                claims = expired_claims
-            except Exception:
-                return jsonify({"error": f"Invalid token: {error}"}), 401
-
-        if not claims:
-            return jsonify({"error": "Could not parse token"}), 401
-
-        new_token = jwt_manager.create_token(
-            user_id=claims.user_id,
-            username=claims.sub,
-            roles=claims.roles,
-            expires_in=3600,  # PLAN.md: 1-hour token expiry is non-negotiable
-        )
-        logger.info("api_auth_refresh: token refreshed user=%s", claims.sub)
-        return jsonify({"token": new_token, "expires_in": 3600, "user": claims.sub}), 200
-
-    except Exception:
-        logger.exception("api_auth_refresh: failed")
-        return jsonify({"error": "Token refresh failed"}), 401
-
-
-@app.route("/api/auth/validate", methods=["GET"])
-def api_auth_validate():
-    """Validate current JWT token.
-    
-    Request Header:
-        Authorization: Bearer <token>
-    
-    Response:
-        {
-            "valid": true,
-            "user": "admin",
-            "roles": ["admin", "analyst"],
-            "expires_at": "2026-04-16T10:35:42Z"
-        }
-    """
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    
-    if not token:
-        return jsonify({"valid": False, "error": "No token provided"}), 401
-    
-    is_valid, claims, error = jwt_manager.verify_token(token)
-    
-    if not is_valid:
-        return jsonify({
-            "valid": False,
-            "error": error
-        }), 401
-    
-    # Convert exp timestamp to ISO string
-    from datetime import datetime, timezone
-    exp_dt = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
-    
-    return jsonify({
-        "valid": True,
-        "user": claims.sub,
-        "user_id": claims.user_id,
-        "roles": claims.roles,
-        "expires_at": exp_dt.isoformat(),
-        "run_as_admin": claims.run_as_admin,
-        "is_runas": claims.run_as_admin is not None
-    }), 200
-
-
-@app.route("/api/auth/runas", methods=["POST"])
-@require_auth
-@jwt_require_role("admin")
-def api_auth_runas():
-    """Create run-as token (admin impersonating user).
-    
-    Request JSON:
-        {
-            "target_user": "analyst",
-            "target_roles": ["analyst"],
-            "reason": "Investigating ticket #123"
-        }
-    
-    Request Header:
-        Authorization: Bearer <admin_token>
-    
-    Response:
-        {
-            "token": "eyJ0eXAiOiJKV1Q...",
-            "expires_in": 3600,
-            "admin": "admin",
-            "target_user": "analyst",
-            "context_hash": "abc123def456"
-        }
-    """
-    payload = request.get_json(silent=True) or {}
-    target_user = payload.get("target_user", "")
-    target_roles = payload.get("target_roles", ["analyst"])
-    reason = payload.get("reason", "Admin task")
-    
-    if not target_user:
-        return jsonify({"error": "target_user is required"}), 400
-    
-    try:
-        success, token_or_error, context_hash = runas_manager.create_runas_token(
-            admin_user=request.claims.sub,
-            target_user=target_user,
-            admin_roles=request.claims.roles,
-            target_roles=target_roles,
-            reason=reason
-        )
-        
-        if not success:
-            return jsonify({"error": token_or_error}), 400
-        
-        logger.info(f"Run-as token created: {request.claims.sub} → {target_user}")
-        
-        return jsonify({
-            "token": token_or_error,  # token_or_error is token on success
-            "expires_in": 3600,
-            "admin": request.claims.sub,
-            "target_user": target_user,
-            "context_hash": context_hash
-        }), 200
-    
-    except Exception as e:
-        logger.error(f"Run-as token creation failed: {str(e)}")
-        return jsonify({"error": "Failed to create run-as token"}), 500
-
-
-# ========== AUDIT & OBSERVABILITY ENDPOINTS ==========
-
-@app.route("/api/audit/logs", methods=["GET"])
-@require_auth
-def api_audit_logs():
-    """Get audit logs.
-    
-    Query Parameters:
-        - limit: Maximum number of logs (default: 100, max: 500)
-        - user: Filter by user
-    
-    Response:
-        [
-            {
-                "timestamp": "2026-04-15T10:35:42.123Z",
-                "user": "admin",
-                "method": "POST",
-                "path": "/api/predict",
-                "status": 200,
-                "response_time_ms": 125.4,
-                "source_ip": "192.168.1.100",
-                "error": null
-            }
-        ]
-    """
-    limit = min(int(request.args.get("limit", 100)), 500)
-    user_filter = request.args.get("user")
-    
-    try:
-        logs = app.audit_log.get_logs(limit=limit)
-        
-        if user_filter:
-            logs = [log for log in logs if log['user'] == user_filter]
-        
-        return jsonify(logs), 200
-    
-    except Exception as e:
-        logger.error(f"Failed to retrieve audit logs: {str(e)}")
-        return jsonify({"error": "Failed to retrieve logs"}), 500
-
-
-@app.route("/api/audit/user-activity", methods=["GET"])
-@require_auth
-@jwt_require_role("admin")
-def api_audit_user_activity():
-    """Get activity for specific user.
-    
-    Query Parameters:
-        - user: Username (required)
-        - hours: Look back (default: 24)
-    
-    Response: List of audit entries
-    """
-    user = request.args.get("user")
-    hours = int(request.args.get("hours", 24))
-    
-    if not user:
-        return jsonify({"error": "user parameter is required"}), 400
-    
-    try:
-        activity = app.audit_log.get_user_activity(user, hours=hours)
-        return jsonify(activity), 200
-    
-    except Exception as e:
-        logger.error(f"Failed to retrieve user activity: {str(e)}")
-        return jsonify({"error": "Failed to retrieve activity"}), 500
-
-
-@app.route("/api/auth/status", methods=["GET"])
-def api_auth_status():
-    """Get authentication system status.
-
-    Response:
-        {
-            "auth_enabled": true,
-            "jwt_algorithm": "ES256",
-            "rate_limiting_enabled": true,
-            "ip_blocking_enabled": true,
-            "audit_logging_enabled": true
-        }
-    """
-    return jsonify({
-        "auth_enabled": True,
-        "jwt_algorithm": jwt_manager.algorithm,
-        "rate_limiting_enabled": True,
-        "ip_blocking_enabled": True,
-        "audit_logging_enabled": True,
-        "middleware_stack": [
-            "rate_limiting",
-            "ip_blocking",
-            "security_headers",
-            "audit_logging"
-        ]
-    }), 200
-
-
-@app.route("/api/auth/revoke", methods=["POST"])
-def api_auth_revoke():
-    """Revoke a JWT by adding its jti to the revocation list (C-04 Step 18).
-
-    The RS256 signature is verified even if the token has expired — this allows
-    clients to revoke tokens from a compromised session after the 1-hour window.
-    Forged or HS256 tokens are rejected with 401.
-
-    Request Header:
-        Authorization: Bearer <token>
-    Response (200):
-        {"revoked": true, "jti": "<jti>"}
-    """
-    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
-    if not token:
-        return jsonify({"error": "Authorization: Bearer <token> header required"}), 400
-
-    try:
-        from src.auth.jwt_manager import get_jwt_manager as _get_rs256_mgr
-        _rs256 = _get_rs256_mgr()
-        ok, payload, error = _rs256.decode_ignoring_expiry(token)
-        if not ok or payload is None:
-            return jsonify({"error": "Invalid token", "reason": error}), 401
-
-        jti = payload.get("jti", "")
-        if not jti:
-            return jsonify({"error": "Token has no jti claim — cannot revoke"}), 400
-
-        user_id = str(payload.get("user_id", payload.get("sub", "")))
-        exp = payload.get("exp", 0)
-        expires_at = (
-            datetime.fromtimestamp(exp, tz=timezone.utc).isoformat() if exp else ""
-        )
-        revoked_at = datetime.now(timezone.utc).isoformat()
-
-        ops_store.add_revoked_token(
-            jti=jti,
-            user_id=user_id,
-            expires_at=expires_at,
-            revoked_at=revoked_at,
-        )
-        logger.info("api_auth_revoke: jti=%s user_id=%s", jti, user_id)
-        return jsonify({"revoked": True, "jti": jti}), 200
-    except Exception:
-        logger.exception("api_auth_revoke: failed")
-        return jsonify({"error": "Revocation failed"}), 500
-
-
-@app.route("/api/admin/cleanup-tokens", methods=["POST"])
-@require_role("admin")
-def api_admin_cleanup_tokens():
-    """Delete expired JWT revocation records (C-04 daily cleanup).
-
-    Removes revoked_tokens rows whose expires_at is in the past. These tokens
-    would be rejected by expiry anyway — the revocation record is no longer needed.
-
-    Response:
-        {"deleted": <count>}
-    """
-    try:
-        deleted = ops_store.cleanup_revoked_tokens()
-        logger.info("api_admin_cleanup_tokens: deleted=%d expired revocation records", deleted)
-        return jsonify({"deleted": deleted}), 200
-    except Exception:
-        logger.exception("api_admin_cleanup_tokens: failed")
-        return jsonify({"error": "Cleanup failed"}), 500
-
-
-@app.route("/api/predict", methods=["POST"])
-@require_role("analyst")
-def api_predict():
-    if not ensure_detection_service():
-        return jsonify({"error": "No trained model found"}), 503
-
-    payload = request.get_json(silent=True) or {}
-    
-    # Validate request against schema
-    is_valid, error_msg = validate_predict_request(payload)
-    if not is_valid:
-        return jsonify({"error": f"Invalid request: {error_msg}"}), 400
-    
-    features = payload.get("features", {})
-    profile = payload.get("profile", "balanced")
-
-    if not isinstance(features, dict) or not features:
-        return jsonify({"error": "'features' must be a non-empty object"}), 400
-
-    try:
-        request_started_at = time.time()
-        for col in NUMERIC_MODEL_COLUMNS:
-            if col in features:
-                features[col] = float(features[col])
-        source = payload.get("source_ip", payload.get("source", "unknown"))
-        metrics_service.inc("predictions_total")
-        result = detection_service.predict_from_features(
-            features,
-            profile=profile,
-            source_ip=source,
-            attack_type=payload.get("attack_type"),
-        )
-        response = result.to_dict()
-        # Correlate with prevention action: find most recent action for this target
-        # within last 60 seconds (avoids fragile timestamp correlation)
-        recent_actions = ops_store.list_actions(limit=20)
-        prevention_action = next(
-            (
-                action
-                for action in recent_actions
-                if str(action.get("target", "")).strip() == str(source).strip()
-                and (time.time() - _to_epoch_seconds(action.get("created_at"), default=0.0)) <= 60.0
-            ),
-            None,
-        )
-        response["prevention_action"] = prevention_action
-        return jsonify(response)
-    except Exception as exc:
-        logger.exception("API predict error (FULL TRACE)")
-        return jsonify({
-            "error": str(type(exc).__name__),
-            "message": str(exc),
-            "debug": True
-        }), 400
-
-
-@app.route("/api/alerts", methods=["GET"])
-@require_role("analyst")
-def api_alerts():
-    limit = request.args.get("limit", default=50, type=int)
-    severity = request.args.get("severity", default=None, type=str)
-    status = request.args.get("status", default=None, type=str)
-    alerts = [
-        _normalize_alert_payload(alert)
-        for alert in ops_store.list_alerts(limit=max(1, min(limit, 200)), severity=severity, status=status)
-    ]
-    return jsonify({"count": len(alerts), "alerts": alerts})
-
-
-@app.route("/api/alerts/dismiss", methods=["POST"])
-@require_role("analyst")
-def api_alerts_dismiss():
-    body = request.get_json(silent=True) or {}
-    alert_ids = body.get("alert_ids")
-    if alert_ids is None:
-        alert_id = body.get("alert_id")
-        alert_ids = [alert_id] if alert_id else []
-    if not isinstance(alert_ids, list) or not alert_ids:
-        return jsonify({"error": "'alert_id' or 'alert_ids' is required"}), 400
-
-    dismissed = []
-    missing = []
-    for alert_id in alert_ids:
-        try:
-            updated = ops_store.update_alert(str(alert_id), status="closed", close_reason="dismissed")
-        except ValueError:
-            updated = False
-        if updated:
-            dismissed.append(str(alert_id))
-        else:
-            missing.append(str(alert_id))
-    if dismissed:
-        ops_store.add_audit(
-            event_type="alerts_dismissed",
-            message=json.dumps({"dismissed": dismissed, "missing": missing}, separators=(",", ":")),
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
-    return jsonify({"dismissed": dismissed, "missing": missing, "count": len(dismissed)}), 200
-
-
-@app.route("/api/alerts/<alert_id>/feedback", methods=["POST"])
-@require_role("analyst")
-def api_alert_feedback(alert_id: str):
-    """Record analyst FP/TP feedback for a detection alert."""
-    body = request.get_json(silent=True) or {}
-    verdict = str(body.get("verdict", "")).strip().lower()
-    engine_id = str(body.get("engine_id", "ml_engine")).strip()
-    rule_id = str(body.get("rule_id", "model")).strip()
-    if verdict == "fp":
-        fp_manager.report_fp(engine_id, rule_id, alert_id=alert_id)
-    elif verdict == "tp":
-        fp_manager.report_tp(engine_id, rule_id)
-    else:
-        return jsonify({"error": "verdict must be 'fp' or 'tp'"}), 400
-    return jsonify({
-        "alert_id": alert_id,
-        "verdict": verdict,
-        "suppressed": fp_manager.is_suppressed(engine_id, rule_id),
-    }), 200
-
-
-@app.route("/api/alerts/<alert_id>", methods=["PATCH"])
-@require_role("analyst")
-def api_alert_update(alert_id: str):
-    # Validate alert_id format (alphanumeric, hyphen, underscore only)
-    import re
-    if not re.match(r'^[a-zA-Z0-9_-]+$', alert_id):
-        return jsonify({"error": "invalid_alert_id"}), 400
-    
-    body = request.get_json(silent=True) or {}
-    status = body.get("status")
-    assignee = body.get("assignee")
-    close_reason = body.get("close_reason")
-    if status is None and assignee is None and close_reason is None:
-        return jsonify({"error": "at least one of 'status', 'assignee', 'close_reason' is required"}), 400
-
-    try:
-        updated = ops_store.update_alert(
-            alert_id,
-            status=status,
-            assignee=assignee,
-            close_reason=close_reason,
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    if not updated:
-        return jsonify({"error": "alert_not_found"}), 404
-
-    ops_store.add_audit(
-        event_type="alert_update",
-        message=json.dumps(
-            {
-                "alert_id": alert_id,
-                "status": status,
-                "assignee": assignee,
-                "close_reason": close_reason,
-            },
-            separators=(",", ":"),
-        ),
-        created_at=datetime.now(timezone.utc).isoformat(),
-    )
-    return jsonify({"updated": True, "alert_id": alert_id}), 200
-
-
-@app.route("/api/fp-suppressions", methods=["GET"])
-@require_role("analyst")
-def api_fp_suppressions_list():
-    return jsonify({"count": len(ops_store.list_fp_suppressions()), "suppressions": ops_store.list_fp_suppressions()})
-
-
-@app.route("/api/fp-suppressions", methods=["POST"])
-@require_role("admin")
-def api_fp_suppression_add():
-    body = request.get_json(silent=True) or {}
-    engine_id = str(body.get("engine_id", "")).strip()
-    rule_id = str(body.get("rule_id", "")).strip()
-    if not engine_id or not rule_id:
-        return jsonify({"error": "'engine_id' and 'rule_id' are required"}), 400
-    newly = fp_manager.suppress(engine_id, rule_id)
-    return jsonify({"engine_id": engine_id, "rule_id": rule_id, "suppressed": True, "new": bool(newly)})
-
-
-@app.route("/api/fp-suppressions/<engine_id>/<rule_id>", methods=["DELETE"])
-@require_role("admin")
-def api_fp_suppression_remove(engine_id: str, rule_id: str):
-    removed = fp_manager.unsuppress(engine_id, rule_id)
-    if not removed:
-        return jsonify({"error": "suppression_not_found"}), 404
-    return jsonify({"engine_id": engine_id, "rule_id": rule_id, "removed": True}), 200
-
-
-@app.route("/api/detect", methods=["POST"])
-@require_role("analyst")
-def api_detect():
-    """Multi-engine detection endpoint.
-
-    Runs all enabled detection engines against the submitted features and
-    returns the aggregated verdict along with per-engine results.
-    """
-    payload = request.get_json(silent=True) or {}
-    features = payload.get("features", {})
-    if not isinstance(features, dict) or not features:
-        return jsonify({"error": "'features' must be a non-empty object"}), 400
-
-    try:
-        for col in NUMERIC_MODEL_COLUMNS:
-            if col in features:
-                features[col] = float(features[col])
-
-        source_ip = payload.get("source", "unknown")
-        features["source_ip"] = source_ip
-
-        metrics_service.inc("predictions_total")
-        try:
-            engine_features = enrich_single_row(features)
-        except Exception:
-            logger.warning("Feature enrichment failed in /api/detect; falling back to raw features", exc_info=True)
-            engine_features = features
-
-        eval_start = time.monotonic()
-        results = engine_registry.evaluate_all(engine_features)
-        metrics_service.observe_latency("engine_eval_latency", eval_start)
-        metrics_service.inc("engine_evaluations_total")
-        aggregated = engine_aggregator.aggregate(results)
-
-        if aggregated.verdict in ("attack", "suspicious"):
-            metrics_service.inc("alerts_total")
-        if aggregated.verdict == "attack":
-            metrics_service.inc("engine_attacks_total")
-
-        for result in results:
-            if result.verdict == "attack":
-                metrics_service.inc(f"engine_{result.engine_id}_attacks_total")
-            metrics_service.inc(f"engine_{result.engine_id}_evaluations_total")
-
-        return jsonify(aggregated.to_dict())
-    except Exception as exc:
-        logger.exception("Multi-engine detect error (FULL TRACE)")
-        return jsonify({
-            "error": str(type(exc).__name__),
-            "message": str(exc),
-            "debug": True
-        }), 400
-
-
-@app.route("/api/detection/analyze", methods=["POST"])
-@require_role("analyst")
-def api_detection_analyze():
-    """Compatibility endpoint for the Detection page target scanner."""
-    payload = request.get_json(silent=True) or {}
-    target = str(payload.get("target", "")).strip()
-    input_type = str(payload.get("input_type", "ip")).strip().lower() or "ip"
-    if not target:
-        return jsonify({"error": "'target' is required"}), 400
-
-    features = DEFAULT_FEATURE_ROW.copy()
-    features.update({
-        "duration": 1.0,
-        "src_bytes": max(1.0, float(len(target) * 10)),
-        "dst_bytes": max(1.0, float(len(input_type) * 5)),
-        "count": 1.0,
-        "srv_count": 1.0,
-        "source_ip": target if input_type == "ip" else "unknown",
-    })
-    try:
-        enriched = enrich_single_row(features)
-    except Exception:
-        enriched = features
-    results = engine_registry.evaluate_all(enriched)
-    aggregated = engine_aggregator.aggregate(results)
-    severity = aggregated.severity if aggregated.verdict != "normal" else "clean"
-    result = {
-        "target": target,
-        "analysis_type": input_type,
-        "severity": severity,
-        "summary": f"{aggregated.verdict.title()} verdict from {len(results)} engine(s)",
-        "confidence": aggregated.confidence,
-        "engines_triggered": sum(1 for r in results if r.verdict in {"attack", "suspicious"}),
-        "engine_details": {r.engine_id: r.verdict in {"attack", "suspicious"} for r in results},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "raw": aggregated.to_dict(),
-    }
-    return jsonify({"result": result, **result}), 200
-
-
-@app.route("/api/engines", methods=["GET"])
-@require_role("analyst")
-def api_engines():
-    """List all registered detection engines and their status."""
-    return jsonify({"engines": engine_registry.list_engines()})
-
-
-@app.route("/api/engines/<engine_id>/toggle", methods=["POST"])
-@require_role("admin")
-def api_toggle_engine(engine_id: str):
-    """Enable or disable a detection engine at runtime."""
-    payload = request.get_json(silent=True) or {}
-    enabled = payload.get("enabled")
-    if enabled is None:
-        return jsonify({"error": "'enabled' is required"}), 400
-    ok = engine_registry.set_enabled(engine_id, bool(enabled))
-    if not ok:
-        return jsonify({"error": f"engine '{engine_id}' not found"}), 404
-    return jsonify({"engine_id": engine_id, "enabled": bool(enabled)})
-
-
-
 
 @app.route("/api/policy", methods=["GET", "POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_policy():
     if request.method == "GET":
         return jsonify(prevention_service.policy.to_dict())
@@ -2868,15 +2157,19 @@ def api_policy():
             risk_weight_frequency=payload.get("risk_weight_frequency"),
             dry_run=payload.get("dry_run"),
         )
-        changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
-        reason = str(payload.get("reason", "policy_update")).strip() or "policy_update"
+        try:
+            changed_by = sanitize_string(
+                payload.get("changed_by", "admin_api") or "admin_api",
+                max_length=100, allow_special_chars=True, allow_spaces=True,
+            ) or "admin_api"
+            reason = sanitize_string(
+                payload.get("reason", "policy_update") or "policy_update",
+                max_length=500, allow_special_chars=True, allow_spaces=True,
+            ) or "policy_update"
+        except SanitizationError as _exc:
+            changed_by, reason = "admin_api", "policy_update"
         pv = policy_store.update(policy.to_dict(), changed_by=changed_by, reason=reason)
-        # Ensure runtime policy is synchronized with the store
-        if policy_store.current is not None:
-            reloaded_config = policy_store.current.config
-            reloaded_policy = PolicyConfig(**reloaded_config)
-            prevention_service.policy = reloaded_policy
-            logger.info("policy_runtime_reloaded version=%s", pv.version)
+        logger.info("policy_runtime_reloaded version=%s", pv.version)
         ops_store.add_audit(
             event_type="policy_update",
             message=(
@@ -2892,7 +2185,7 @@ def api_policy():
 
 
 @app.route("/api/policy/history", methods=["GET"])
-@require_role("admin")
+@require_roles("admin")
 def api_policy_history():
     limit = request.args.get("limit", default=50, type=int)
     history = policy_store.history(limit=max(1, min(limit, 500)))
@@ -2900,14 +2193,20 @@ def api_policy_history():
 
 
 @app.route("/api/policy/rollback", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_policy_rollback():
     payload = request.get_json(silent=True) or {}
     to_version = payload.get("to_version")
     if to_version is None:
         return jsonify({"error": "'to_version' is required"}), 400
 
-    changed_by = str(payload.get("changed_by", "admin_api")).strip() or "admin_api"
+    try:
+        changed_by = sanitize_string(
+            payload.get("changed_by", "admin_api") or "admin_api",
+            max_length=100, allow_special_chars=True, allow_spaces=True,
+        ) or "admin_api"
+    except SanitizationError:
+        changed_by = "admin_api"
     pv = policy_store.rollback(int(to_version), changed_by=changed_by)
     if pv is None:
         return jsonify({"error": "version_not_found"}), 404
@@ -2927,12 +2226,7 @@ def api_policy_rollback():
         risk_weight_frequency=config.get("risk_weight_frequency"),
         dry_run=config.get("dry_run"),
     )
-    # Ensure runtime policy is synchronized with the store after rollback
-    if policy_store.current is not None:
-        reloaded_config = policy_store.current.config
-        reloaded_policy = PolicyConfig(**reloaded_config)
-        prevention_service.policy = reloaded_policy
-        logger.info("policy_rolled_back_and_reloaded to version=%s", pv.version)
+    logger.info("policy_rolled_back to version=%s", pv.version)
     ops_store.add_audit(
         event_type="policy_rollback",
         message=f"rollback_to={to_version} new_version={pv.version}",
@@ -2946,7 +2240,7 @@ def api_policy_rollback():
 # ====================================================================
 
 @app.route("/api/honeypot/config", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_honeypot_config_get():
     """Get current honeypot configuration."""
     ips = honeypot_engine.get_config()["honeypot_ips"]
@@ -2960,7 +2254,7 @@ def api_honeypot_config_get():
 
 
 @app.route("/api/honeypot/config", methods=["POST", "PATCH"])
-@require_role("admin")
+@require_roles("admin")
 def api_honeypot_config_update():
     """Update honeypot configuration (hot-reload - no restart needed)."""
     payload = request.get_json(silent=True) or {}
@@ -3010,7 +2304,7 @@ def api_honeypot_config_update():
 # ====================================================================
 
 @app.route("/api/incidents", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_incidents_list():
     """List all incidents with hierarchical grouping."""
     limit = request.args.get("limit", default=50, type=int)
@@ -3019,7 +2313,7 @@ def api_incidents_list():
 
 
 @app.route("/api/incidents/<incident_id>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_incident_details(incident_id: str):
     """Get detailed incident with all activities and alerts."""
     details = incident_aggregator.get_incident_details(incident_id)
@@ -3029,7 +2323,7 @@ def api_incident_details(incident_id: str):
 
 
 @app.route("/api/activities", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_activities_list():
     """List all activities (alert groupings)."""
     limit = request.args.get("limit", default=50, type=int)
@@ -3038,7 +2332,7 @@ def api_activities_list():
 
 
 @app.route("/api/temporal/patterns", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_temporal_patterns_list():
     """List all registered temporal correlation patterns for multi-stage attack detection."""
     patterns = []
@@ -3052,7 +2346,7 @@ def api_temporal_patterns_list():
 
 
 @app.route("/api/temporal/patterns", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_temporal_patterns_register():
     """Register a new temporal correlation pattern."""
     body = request.get_json(silent=True) or {}
@@ -3085,7 +2379,7 @@ def api_temporal_patterns_register():
 
 
 @app.route("/api/temporal/state/<source_ip>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_temporal_state(source_ip: str):
     """Get current temporal correlation state for a source IP."""
     if source_ip not in temporal_correlation_engine.temporal_store.events_by_ip:
@@ -3103,7 +2397,7 @@ def api_temporal_state(source_ip: str):
 # ============ Entity Enrichment Endpoints ============
 
 @app.route("/api/entity/enrich/<source_ip>", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_entity_enrich(source_ip: str):
     """Enrich an IP with context (GeoIP, threat intel, historical data)."""
     try:
@@ -3118,7 +2412,7 @@ def api_entity_enrich(source_ip: str):
 
 
 @app.route("/api/entity/<source_ip>/threat-level", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_entity_threat_level(source_ip: str):
     """Get threat level assessment for an IP."""
     try:
@@ -3138,7 +2432,7 @@ def api_entity_threat_level(source_ip: str):
 # ============ Alert Filtering Endpoints ============
 
 @app.route("/api/alerts/filter-rules", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_alert_filter_rules():
     """List all alert filtering rules."""
     all_rules = alert_filter.get_all_rules()
@@ -3150,7 +2444,7 @@ def api_alert_filter_rules():
 
 
 @app.route("/api/alerts/filter-rules/exclude", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_alert_add_exclude_rule():
     """Add an exclude rule (blocks alerts completely)."""
     body = request.get_json(silent=True) or {}
@@ -3178,7 +2472,7 @@ def api_alert_add_exclude_rule():
 
 
 @app.route("/api/alerts/filter-rules/ignore", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_alert_add_ignore_rule():
     """Add an ignore rule (deprioritizes alerts)."""
     body = request.get_json(silent=True) or {}
@@ -3208,7 +2502,7 @@ def api_alert_add_ignore_rule():
 
 
 @app.route("/api/alerts/filter-rules/merge", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_alert_add_merge_rule():
     """Add a merge rule (combines similar alerts)."""
     body = request.get_json(silent=True) or {}
@@ -3239,7 +2533,7 @@ def api_alert_add_merge_rule():
 
 
 @app.route("/api/alerts/filter-rules/<rule_id>", methods=["DELETE"])
-@require_role("admin")
+@require_roles("admin")
 def api_alert_delete_rule(rule_id: str):
     """Delete a filter rule."""
     if alert_filter.remove_rule(rule_id):
@@ -3254,7 +2548,7 @@ def api_alert_delete_rule(rule_id: str):
 
 
 @app.route("/api/alerts/filter-stats", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_alert_filter_stats():
     """Get alert filtering statistics."""
     stats = alert_filter.get_rule_stats()
@@ -3262,7 +2556,7 @@ def api_alert_filter_stats():
 
 
 @app.route("/api/actions", methods=["GET", "POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_actions():
     if request.method == "POST":
         payload = request.get_json(silent=True) or {}
@@ -3313,17 +2607,15 @@ def api_actions():
 
 
 @app.route("/api/actions/pending", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_actions_pending():
-    rows = ops_store._fetchall(
-        "SELECT * FROM actions WHERE lower(COALESCE(status, '')) = 'pending_approval' ORDER BY id DESC LIMIT 200"
-    )
+    rows = ops_store.list_pending_actions(limit=200)
     actions = [_normalize_action_payload(row) for row in rows]
     return jsonify({"count": len(actions), "actions": actions})
 
 
 @app.route("/api/actions/<action_id>/approve", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_action_approve(action_id: str):
     body = request.get_json(silent=True) or {}
     ttl_seconds = body.get("ttl_seconds")
@@ -3345,7 +2637,7 @@ def api_action_approve(action_id: str):
 
 
 @app.route("/api/actions/cleanup", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_actions_cleanup():
     payload = request.get_json(silent=True) or {}
     now_iso = payload.get("now")
@@ -3361,7 +2653,7 @@ def api_actions_cleanup():
 
 
 @app.route("/api/allowlist", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_allowlist_get():
     """List all allowlist entries."""
     entries = allowlist.list_entries()
@@ -3370,14 +2662,19 @@ def api_allowlist_get():
 
 
 @app.route("/api/allowlist", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_allowlist_add():
     """Add an IP or CIDR to the allowlist."""
     body = request.get_json(silent=True) or {}
     entry = str(body.get("entry", "")).strip()
-    reason = str(body.get("reason", "")).strip()
     if not entry:
         return jsonify({"error": "'entry' is required"}), 400
+    try:
+        reason = sanitize_string(
+            body.get("reason", "") or "", max_length=500, allow_special_chars=True, allow_spaces=True
+        )
+    except SanitizationError as exc:
+        return jsonify({"error": f"invalid_input: {exc}"}), 400
     added = allowlist.add(entry, reason=reason)
     ops_store.add_audit(
         event_type="allowlist_add",
@@ -3388,7 +2685,7 @@ def api_allowlist_add():
 
 
 @app.route("/api/allowlist/<path:entry>", methods=["DELETE"])
-@require_role("admin")
+@require_roles("admin")
 def api_allowlist_remove(entry: str):
     """Remove an entry from the allowlist."""
     removed = allowlist.remove(entry)
@@ -3402,70 +2699,10 @@ def api_allowlist_remove(entry: str):
     return jsonify({"entry": entry, "removed": True}), 200
 
 
-@app.route("/api/audit", methods=["GET"])
-@require_role("admin")
-def api_audit():
-    limit = request.args.get("limit", default=100, type=int)
-    audits = ops_store.list_audits(limit=max(1, min(limit, 500)))
-    return jsonify({"count": len(audits), "audits": audits})
-
-
-@app.route("/api/siem/flush", methods=["GET"])
-@require_role("admin")
-def api_siem_flush():
-    limit = request.args.get("limit", default=500, type=int)
-    limit = max(1, min(limit, 5000))
-    jsonl = siem_exporter.flush_jsonl(limit)
-    lines = [line for line in jsonl.splitlines() if line.strip()]
-    return jsonify({"count": len(lines), "jsonl": jsonl, "stats": siem_exporter.stats()})
-
-
-@app.route("/api/threat-intel/stats", methods=["GET"])
-@require_role("analyst")
-def api_ti_stats():
-    """Return TI cache statistics and loaded feed summary."""
-    return jsonify({
-        "stats": ti_manager.stats(),
-        "feeds": ti_manager.feed_summary(),
-        "engine_ready": ti_engine.is_ready(),
-        "engine_enabled": engine_registry.is_enabled(ti_engine.engine_id),
-    })
-
-
-@app.route("/api/threat-intel/lookup", methods=["POST"])
-@require_role("analyst")
-def api_ti_lookup():
-    """Look up a single IP against the TI cache."""
-    body = request.get_json(silent=True) or {}
-    ip = str(body.get("ip", "")).strip()
-    if not ip:
-        return jsonify({"error": "'ip' is required"}), 400
-    indicator = ti_manager.lookup_ip(ip)
-    if indicator is None:
-        return jsonify({"ip": ip, "found": False, "indicator": None}), 200
-    return jsonify({"ip": ip, "found": True, "indicator": indicator.to_dict()}), 200
-
-
-@app.route("/api/explain", methods=["POST"])
-@require_role("analyst")
-def api_explain():
-    payload = request.get_json(silent=True) or {}
-    features = payload.get("features", {})
-    top_k = int(payload.get("top_k", 5))
-    top_k = max(1, min(top_k, 20))
-
-    if not isinstance(features, dict) or not features:
-        return jsonify({"error": "'features' must be a non-empty object"}), 400
-
-    try:
-        explanation = DetectionService.explain_features(features, top_k=top_k)
-        return jsonify({"top_k": top_k, "explanation": explanation})
-    except Exception as exc:
-        return jsonify({"error": "invalid_request"}), 400
 
 
 @app.route("/api/models/registry", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_model_registry():
     limit = request.args.get("limit", default=50, type=int)
     entries = model_registry.list_entries(limit=max(1, min(limit, 200)))
@@ -3473,7 +2710,7 @@ def api_model_registry():
 
 
 @app.route("/api/models", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_models_catalog():
     """Compatibility catalog for the Models page controller."""
     registry_entries = model_registry.list_entries(limit=100)
@@ -3512,7 +2749,7 @@ def api_models_catalog():
 
 
 @app.route("/api/threat-intelligence", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_threat_intelligence_catalog():
     stats = ti_manager.stats()
     feeds = ti_manager.feed_summary()
@@ -3527,125 +2764,16 @@ def api_threat_intelligence_catalog():
     })
 
 
-@app.route("/api/metrics", methods=["GET"])
-@require_role("analyst")
-def api_metrics():
-    return Response(metrics_service.as_prometheus(), mimetype="text/plain; version=0.0.4")
-
-
-@app.route("/api/ingest", methods=["POST"])
-@require_role("analyst")
-def api_ingest():
-    payload = request.get_json(silent=True) or {}
-    source = payload.get("source", "ingestion_api")
-    rows = payload.get("rows")
-    pipeline_started = _ensure_pipeline_started()
-
-    backpressure = getattr(app, "_pipeline_backpressure", None)
-    if pipeline_started and backpressure is not None and backpressure.level == BackpressureLevel.SHEDDING:
-        return jsonify({"error": "pipeline_backpressure", "pipeline": _pipeline_status()}), 503
-
-    try:
-        if isinstance(rows, list):
-            if not rows:
-                return jsonify({"error": "rows cannot be empty"}), 400
-            if pipeline_started:
-                added = _stream_ingest_records(rows, source=source)
-            else:
-                added = ingestion_service.enqueue_batch(rows, source=source)
-        else:
-            features = payload.get("features")
-            if not isinstance(features, dict) or not features:
-                return jsonify({"error": "provide either non-empty 'rows' or 'features'"}), 400
-            if pipeline_started:
-                added = _stream_ingest_records([features], source=source)
-            else:
-                ingestion_service.enqueue_record(features, source=source)
-                added = 1
-
-        metrics_service.inc("ingested_total", amount=added)
-        return jsonify({
-            "queued": added,
-            "queue_size": ingestion_queue.size(),
-            "pipeline": _pipeline_status(),
-        })
-    except Exception as exc:
-        return jsonify({"error": "invalid_request"}), 400
-
-
-@app.route("/api/ingest/log", methods=["POST"])
-@require_role("analyst")
-def api_ingest_log():
-    payload = request.get_json(silent=True) or {}
-    source_type = str(payload.get("type", "zeek")).lower()
-    records = payload.get("records")
-    pipeline_started = _ensure_pipeline_started()
-    backpressure = getattr(app, "_pipeline_backpressure", None)
-    if pipeline_started and backpressure is not None and backpressure.level == BackpressureLevel.SHEDDING:
-        return jsonify({"error": "pipeline_backpressure", "pipeline": _pipeline_status()}), 503
-    if not isinstance(records, list) or not records:
-        return jsonify({"error": "'records' must be a non-empty list"}), 400
-
-    try:
-        transformed = []
-        for rec in records:
-            if source_type == "zeek":
-                transformed.append(parse_zeek_conn_log(rec))
-            elif source_type == "suricata":
-                transformed.append(parse_suricata_eve_flow(rec))
-            else:
-                return jsonify({"error": "type must be 'zeek' or 'suricata'"}), 400
-
-        if pipeline_started:
-            added = _stream_ingest_records(transformed, source=f"{source_type}_log")
-        else:
-            added = ingestion_service.enqueue_batch(transformed, source=f"{source_type}_log")
-        metrics_service.inc("ingested_total", amount=added)
-        return jsonify({"queued": added, "queue_size": ingestion_queue.size(), "type": source_type})
-    except Exception as exc:
-        return jsonify({"error": "invalid_request"}), 400
-
-
-@app.route("/api/ingest/process", methods=["POST"])
-@require_role("analyst")
-def api_ingest_process():
-    if not ensure_detection_service():
-        return jsonify({"error": "No trained model found"}), 503
-
-    payload = request.get_json(silent=True) or {}
-    try:
-        max_items = int(payload.get("max_items", 50))
-    except (ValueError, TypeError):
-        return jsonify({"error": "max_items must be an integer"}), 400
-    max_items = max(1, min(max_items, 500))
-
-    def _handler(features, source):
-        result = detection_service.predict_from_features(
-            features,
-            profile="balanced",
-            source_ip=source,
-        )
-        metrics_service.inc("processed_ingestion_total")
-        result_payload = result.to_dict()
-        result_payload["prevention_action"] = None
-        return result_payload
-
-    processed = ingestion_service.process_all(_handler, max_items=max_items)
-    return jsonify({
-        "processed": len(processed),
-        "queue_size": ingestion_queue.size(),
-        "results": processed,
-    })
 
 
 @app.route("/about")
-@require_role("viewer")
+@require_roles("viewer")
 def about():
     return render_template("about.html")
 
 
 @app.route("/api/detections/history", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_detections_history():
     limit = request.args.get("limit", default=50, type=int)
     limit = max(1, min(limit, 200))
@@ -3666,7 +2794,7 @@ def api_detections_history():
 
 
 @app.route("/api/anomaly/status", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_anomaly_status():
     buf = anomaly_engine.buffer_status()
     buf["engine_id"] = anomaly_engine.engine_id
@@ -3676,7 +2804,7 @@ def api_anomaly_status():
 
 
 @app.route("/api/escalation/summary", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_escalation_summary():
     summary = escalation_tracker.summary()
     return jsonify({
@@ -3686,7 +2814,7 @@ def api_escalation_summary():
 
 
 @app.route("/api/escalation/evict", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_escalation_evict():
     removed = escalation_tracker.evict_stale()
     summary = escalation_tracker.summary()
@@ -3699,13 +2827,13 @@ def api_escalation_evict():
 
 
 @app.route("/api/fp-stats", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_fp_stats():
     return jsonify({"stats": fp_manager.stats()})
 
 
 @app.route("/api/investigations", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_investigations():
     alerts = ops_store.list_alerts(limit=100)
     investigations = []
@@ -3753,13 +2881,13 @@ def _default_playbooks() -> list[dict]:
 
 
 @app.route("/api/playbooks", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_playbooks():
     return jsonify({"playbooks": _default_playbooks(), "count": len(_default_playbooks())})
 
 
 @app.route("/api/playbooks/<playbook_id>/execute", methods=["POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_playbook_execute(playbook_id: str):
     ops_store.add_audit(
         event_type="playbook_execute",
@@ -3770,7 +2898,7 @@ def api_playbook_execute(playbook_id: str):
 
 
 @app.route("/api/capture/start", methods=["POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_capture_start():
     payload = request.get_json(silent=True) or {}
     app.config["CAPTURE_RUNNING"] = True
@@ -3784,14 +2912,14 @@ def api_capture_start():
 
 
 @app.route("/api/capture/stop", methods=["POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_capture_stop():
     app.config["CAPTURE_RUNNING"] = False
     return jsonify({"ok": True, "status": "stopped"}), 200
 
 
 @app.route("/api/honeypots", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_honeypots():
     config = honeypot_engine.get_config()
     honeypots = []
@@ -3808,7 +2936,7 @@ def api_honeypots():
 
 
 @app.route("/api/honeypots/<honeypot_id>/toggle", methods=["POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_honeypot_toggle(honeypot_id: str):
     body = request.get_json(silent=True) or {}
     enabled = bool(body.get("enabled", True))
@@ -3817,19 +2945,19 @@ def api_honeypot_toggle(honeypot_id: str):
 
 
 @app.route("/realtime")
-@require_role("viewer")
+@require_roles("viewer")
 def realtime():
     return render_template("realtime.html")
 
 
 @app.route("/capture")
-@require_role("analyst")
+@require_roles("analyst")
 def capture():
     return render_template("capture.html")
 
 
 @app.route("/honeypot")
-@require_role("analyst")
+@require_roles("analyst")
 def honeypot():
     return render_template("honeypot.html")
 
@@ -3839,7 +2967,7 @@ def honeypot():
 # ============================================================================
 
 @app.route("/modules/<module_id>")
-@require_role("viewer")
+@require_roles("viewer")
 def module_view(module_id):
     """Render module template by ID."""
     modules = {
@@ -3874,7 +3002,7 @@ def module_view(module_id):
 # MODULE DATA APIs - Compose existing endpoints for module consumption
 
 @app.route("/api/modules/real-time-detection", methods=["GET"])
-@require_role("viewer")
+@require_roles("viewer")
 def api_module_real_time_detection():
     """Real-time detection events."""
     try:
@@ -3893,7 +3021,7 @@ def api_module_real_time_detection():
 
 
 @app.route("/api/modules/multi-engine", methods=["GET"])
-@require_role("viewer")
+@require_roles("viewer")
 def api_module_multi_engine():
     """Multi-engine voting consensus."""
     try:
@@ -3921,7 +3049,7 @@ def api_module_multi_engine():
 
 
 @app.route("/api/modules/risk-score", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_risk_score():
     """Risk score visualization."""
     try:
@@ -3943,7 +3071,7 @@ def api_module_risk_score():
 
 
 @app.route("/api/modules/auto-blocking", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_auto_blocking():
     """Auto-blocking module state."""
     try:
@@ -3964,7 +3092,7 @@ def api_module_auto_blocking():
 
 
 @app.route("/api/modules/approval-workflow", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_approval_workflow():
     """Approval workflow HITL."""
     try:
@@ -3989,7 +3117,7 @@ def api_module_approval_workflow():
 
 
 @app.route("/api/modules/false-positive", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_false_positive():
     """False positive learning feedback."""
     try:
@@ -4012,7 +3140,7 @@ def api_module_false_positive():
 
 
 @app.route("/api/modules/threat-intel", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_threat_intel():
     """Threat intelligence enrichment."""
     try:
@@ -4031,7 +3159,7 @@ def api_module_threat_intel():
 
 
 @app.route("/api/modules/analytics", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_analytics():
     """Analytics dashboard."""
     try:
@@ -4055,7 +3183,7 @@ def api_module_analytics():
 
 
 @app.route("/api/modules/escalation", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_escalation():
     """Escalation state machine."""
     try:
@@ -4074,7 +3202,7 @@ def api_module_escalation():
 
 
 @app.route("/api/modules/pipeline-monitor", methods=["GET"])
-@require_role("viewer")
+@require_roles("viewer")
 def api_module_pipeline_monitor():
     """Pipeline monitoring metrics."""
     try:
@@ -4094,7 +3222,7 @@ def api_module_pipeline_monitor():
 
 
 @app.route("/api/modules/policy-tuning", methods=["GET", "POST"])
-@require_role("admin")
+@require_roles("admin")
 def api_module_policy_tuning():
     """Policy tuning simulator."""
     try:
@@ -4125,7 +3253,7 @@ def api_module_policy_tuning():
 
 
 @app.route("/api/modules/alert-lifecycle", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_alert_lifecycle():
     """Alert lifecycle manager (Kanban board)."""
     try:
@@ -4153,7 +3281,7 @@ def api_module_alert_lifecycle():
 
 
 @app.route("/api/modules/engine-playground", methods=["GET", "POST"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_engine_playground():
     """Engine toggle playground."""
     try:
@@ -4212,7 +3340,7 @@ def api_module_engine_playground():
 
 
 @app.route("/api/modules/pattern-detector", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_pattern_detector():
     """Behavioral pattern detector (network graph)."""
     try:
@@ -4247,7 +3375,7 @@ def api_module_pattern_detector():
 # NEW MODULE API ENDPOINTS - Task 2: Modules 2-15
 
 @app.route("/api/modules/multi-engine-voting", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_multi_engine_voting():
     """Multi-engine voting consensus."""
     try:
@@ -4279,7 +3407,7 @@ def api_module_multi_engine_voting():
 
 
 @app.route("/api/modules/risk-score-visualizer", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_risk_score_visualizer():
     """Risk score visualization."""
     try:
@@ -4352,7 +3480,7 @@ def _module_update_broadcaster():
 
 
 @app.route("/api/modules/evasion-detection", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_evasion_detection():
     """Evasion technique detection."""
     try:
@@ -4373,7 +3501,7 @@ def api_module_evasion_detection():
 
 
 @app.route("/api/modules/packet-inspection", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_packet_inspection():
     """Deep packet inspection results."""
     try:
@@ -4394,7 +3522,7 @@ def api_module_packet_inspection():
 
 
 @app.route("/api/modules/behavioral-profiling", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_behavioral_profiling():
     """User and entity behavioral profiling."""
     try:
@@ -4413,7 +3541,7 @@ def api_module_behavioral_profiling():
 
 
 @app.route("/api/modules/threat-intelligence", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_threat_intelligence():
     """Threat intelligence feeds and IOC matches."""
     try:
@@ -4434,7 +3562,7 @@ def api_module_threat_intelligence():
 
 
 @app.route("/api/modules/drift-monitor", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_drift_monitor():
     """Model drift monitoring."""
     try:
@@ -4451,7 +3579,7 @@ def api_module_drift_monitor():
 
 
 @app.route("/api/modules/anomaly-learning", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_anomaly_learning():
     """Auto-learning anomaly patterns."""
     try:
@@ -4471,7 +3599,7 @@ def api_module_anomaly_learning():
 
 
 @app.route("/api/modules/fp-suppression", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_fp_suppression():
     """False positive suppression rules."""
     try:
@@ -4492,7 +3620,7 @@ def api_module_fp_suppression():
 
 
 @app.route("/api/modules/escalation-tracker", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_escalation_tracker():
     """Incident escalation tracking."""
     try:
@@ -4511,7 +3639,7 @@ def api_module_escalation_tracker():
 
 
 @app.route("/api/modules/network-topology", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_network_topology():
     """Network topology visualization."""
     try:
@@ -4527,7 +3655,7 @@ def api_module_network_topology():
 
 
 @app.route("/api/modules/policy-enforcement", methods=["GET"])
-@require_role("admin")
+@require_roles("admin")
 def api_module_policy_enforcement():
     """Security policy enforcement."""
     try:
@@ -4548,7 +3676,7 @@ def api_module_policy_enforcement():
 
 
 @app.route("/api/modules/forensic-timeline", methods=["GET"])
-@require_role("analyst")
+@require_roles("analyst")
 def api_module_forensic_timeline():
     """Forensic event timeline."""
     try:
@@ -4784,6 +3912,18 @@ def handle_request_attack_story(data):
     if attack_id:
         story = attack_story_engine.get_attack_story(attack_id)
         emit('perception_attack_story', story)
+
+
+from web_app.blueprints.health import health_bp
+from web_app.blueprints.auth import auth_bp
+from web_app.blueprints.ingest import ingest_bp
+from web_app.blueprints.observability import observability_bp
+from web_app.blueprints.detection import detection_bp
+app.register_blueprint(health_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(ingest_bp)
+app.register_blueprint(observability_bp)
+app.register_blueprint(detection_bp)
 
 
 @app.errorhandler(404)

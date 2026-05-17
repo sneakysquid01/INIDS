@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.firewall_adapters import FirewallAdapter, MockFirewallAdapter
+
+
+def _read_dry_run_from_env() -> bool:
+    """Read dry_run from INIDS_DRY_RUN env var.
+
+    D-04: dry_run must require explicit INIDS_DRY_RUN configuration.
+    Fail-safe default: if INIDS_DRY_RUN is not set or is unrecognised,
+    stay in dry-run mode (True). Only "false", "0", "no", "off" disable it.
+    """
+    raw = os.environ.get("INIDS_DRY_RUN", "").strip().lower()
+    if raw in {"false", "0", "no", "off"}:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -18,7 +32,7 @@ class PolicyConfig:
     risk_rate_limit_threshold: float = 0.6
     risk_temp_block_threshold: float = 0.75
     risk_block_threshold: float = 0.85
-    dry_run: bool = True
+    dry_run: bool = field(default_factory=_read_dry_run_from_env)
     block_requires_approval: bool = False
     risk_weight_confidence: float = 0.5
     risk_weight_severity: float = 0.3

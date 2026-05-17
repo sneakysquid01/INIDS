@@ -11,11 +11,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-APP_PY = os.path.join(ROOT, "web_app", "app.py")
+AUTH_BP_PY = os.path.join(ROOT, "web_app", "blueprints", "auth.py")
 
 
 def _read_source():
-    with open(APP_PY, encoding="utf-8") as f:
+    with open(AUTH_BP_PY, encoding="utf-8") as f:
         return f.read()
 
 
@@ -43,14 +43,14 @@ def test_api_auth_login_rejects_missing_key_in_source():
 
 
 def test_api_auth_login_no_arbitrary_username_role_in_source():
-    """api_auth_login must not assign roles from user-supplied username."""
+    """api_auth_login must derive roles from the API key's auth context, not user input."""
     source = _read_source()
     idx = source.find("def api_auth_login")
     handler_src = source[idx:idx + 2000]
-    # The old code assigned roles=["analyst"] unconditionally from username
-    # New code derives roles from the principal looked up by API key
-    assert "principal.role" in handler_src, (
-        "api_auth_login must derive role from the API key's principal, not from user input"
+    # F-AUTH-REMOVE: UnifiedAuthService replaced legacy principal lookup.
+    # Roles come from auth_ctx.roles (OpsStore-backed lookup), never from user input.
+    assert "auth_ctx.roles" in handler_src, (
+        "api_auth_login must derive roles from auth_ctx (UnifiedAuthService), not from user input"
     )
 
 

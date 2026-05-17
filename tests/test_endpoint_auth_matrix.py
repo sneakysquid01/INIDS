@@ -1,22 +1,17 @@
+from __future__ import annotations
 """Comprehensive RBAC matrix tests for every protected endpoint.
 
-Verifies that:
-- Unauthenticated requests return 401 on protected endpoints when auth is on.
-- viewer role cannot access analyst-only or admin-only endpoints.
-- analyst role can access analyst endpoints but not admin-only ones.
-- admin role can access all protected endpoints.
-- Open endpoints (health, live, ready, /api/predict) are accessible without keys.
+F-AUTH-REMOVE: test setup now seeds OpsStore with API keys instead of patching
+legacy AuthService principals.
 
 Matrix rows  = (endpoint, method, min_required_role)
 Matrix cols  = (no-key, viewer, analyst, admin)
 Expected     = 401 | 401 | 200/other | 200/other
 """
-from __future__ import annotations
 
 import pytest
 import web_app.app as app_module
 from src.ops_store import OpsStore
-import src.auth_service as auth_module
 
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
@@ -28,19 +23,18 @@ TOKENS = {
     "admin": "admin-tok",
 }
 
-PRINCIPALS = {
-    TOKENS["viewer"]: auth_module.Principal(role="viewer", token=TOKENS["viewer"]),
-    TOKENS["analyst"]: auth_module.Principal(role="analyst", token=TOKENS["analyst"]),
-    TOKENS["admin"]: auth_module.Principal(role="admin", token=TOKENS["admin"]),
-}
-
 
 def _setup_client(monkeypatch, tmp_path):
+    monkeypatch.setenv("INIDS_VIEWER_API_KEY", TOKENS["viewer"])
+    monkeypatch.setenv("INIDS_ANALYST_API_KEY", TOKENS["analyst"])
+    monkeypatch.setenv("INIDS_ADMIN_API_KEY", TOKENS["admin"])
+    # OpsStore seeded from env-var keys in _seed_service_accounts() during migration
+    store = OpsStore(str(tmp_path / "ops.db"))
     monkeypatch.setattr(app_module, "detection_service", None)
     monkeypatch.setattr(app_module, "all_models", {})
     monkeypatch.setattr(app_module, "load_models", lambda: None)
-    monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops.db")))
-    monkeypatch.setattr(auth_module._auth_service, "principals", PRINCIPALS)
+    monkeypatch.setattr(app_module, "ops_store", store)
+    app_module.app.ops_store = store  # so require_roles() finds it via current_app
     return app_module.app.test_client()
 
 
@@ -79,11 +73,16 @@ class TestOpenEndpoints:
         # /ready returns 200 when fully ready, 503 when not — both are valid and not 401
         assert _get(client, "/api/health/ready").status_code in (200, 503)
 
-    def test_predict_no_key_still_200(self, monkeypatch, tmp_path):
-        """POST /api/predict has no role guard — should function without a key."""
+    def test_predict_no_key_returns_401(self, monkeypatch, tmp_path):
+        """POST /api/predict requires analyst role — no key must return 401."""
         client = _setup_client(monkeypatch, tmp_path)
         resp = _post(client, "/api/predict", body={"features": {"duration": 0}})
-        # Model not loaded → 200 or 500, but NOT 401
+        assert resp.status_code == 401
+
+    def test_predict_analyst_key_allowed(self, monkeypatch, tmp_path):
+        """POST /api/predict with analyst key must not return 401."""
+        client = _setup_client(monkeypatch, tmp_path)
+        resp = _post(client, "/api/predict", role="analyst", body={"features": {"duration": 0}})
         assert resp.status_code != 401
 
 

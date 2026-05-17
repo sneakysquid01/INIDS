@@ -1,33 +1,41 @@
-from flask import Flask
+"""F-AUTH-REMOVE: src/auth_service.py (legacy API-key AuthService) has been deleted.
 
-import src.auth_service as auth_module
-
-
-def test_auth_disabled_allows_access(monkeypatch):
-    monkeypatch.setattr(auth_module._auth_service, "principals", {})
-    ok, reason = auth_module._auth_service.authorize("admin")
-    assert ok is True
-    assert reason == "auth_disabled"
+These tests verify the deletion completed successfully and that the replacement
+(UnifiedAuthService in src/auth/) provides equivalent guarantees.
+"""
+import importlib
+import importlib.util
 
 
-def test_auth_enabled_enforces_role(monkeypatch):
-    monkeypatch.setattr(
-        auth_module._auth_service,
-        "principals",
-        {
-            "viewer-token": auth_module.Principal(role="viewer", token="viewer-token"),
-            "admin-token": auth_module.Principal(role="admin", token="admin-token"),
-        },
+def test_legacy_auth_service_module_deleted():
+    """src.auth_service must not be importable after F-AUTH-REMOVE."""
+    spec = importlib.util.find_spec("src.auth_service")
+    assert spec is None, (
+        "src/auth_service.py still exists — F-AUTH-REMOVE requires it to be deleted"
     )
 
-    app = Flask(__name__)
 
-    with app.test_request_context(headers={"X-API-Key": "viewer-token"}):
-        ok, reason = auth_module._auth_service.authorize("admin")
-        assert ok is False
-        assert reason == "insufficient_role"
+def test_unified_auth_service_importable():
+    """src.auth.auth_service (UnifiedAuthService) must be importable."""
+    from src.auth.auth_service import UnifiedAuthService
+    assert UnifiedAuthService is not None
 
-    with app.test_request_context(headers={"X-API-Key": "admin-token"}):
-        ok, reason = auth_module._auth_service.authorize("admin")
-        assert ok is True
-        assert reason == "admin"
+
+def test_unified_auth_service_has_authenticate_api_key():
+    from src.auth.auth_service import UnifiedAuthService
+    assert callable(getattr(UnifiedAuthService, "authenticate_api_key", None))
+
+
+def test_unified_auth_service_has_authenticate_jwt():
+    from src.auth.auth_service import UnifiedAuthService
+    assert callable(getattr(UnifiedAuthService, "authenticate_jwt", None))
+
+
+def test_unified_auth_service_has_create_token():
+    from src.auth.auth_service import UnifiedAuthService
+    assert callable(getattr(UnifiedAuthService, "create_token", None))
+
+
+def test_unified_auth_service_has_revoke_token():
+    from src.auth.auth_service import UnifiedAuthService
+    assert callable(getattr(UnifiedAuthService, "revoke_token", None))

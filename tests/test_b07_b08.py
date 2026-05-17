@@ -165,116 +165,51 @@ class TestCORSMiddlewareEnvVar:
 
 
 # ---------------------------------------------------------------------------
-# B-08: Sensor key role unit tests
+# B-08: Sensor key role — UnifiedAuthService (F-AUTH-REMOVE: legacy AuthService deleted)
 # ---------------------------------------------------------------------------
 
 
 class TestSensorKeyRole:
-    """Unit tests for sensor role in AuthService."""
+    """Verify sensor role seeding in OpsStore via UnifiedAuthService."""
 
-    def _make_service_with_sensor(self, sensor_key="sensor-test-key"):
-        with patch.dict(os.environ, {"INIDS_SENSOR_API_KEY": sensor_key}):
-            from src import auth_service as auth_mod
-            import importlib
-            importlib.reload(auth_mod)
-            return auth_mod.AuthService()
+    def test_sensor_key_seeded_with_sensor_role(self, tmp_path, monkeypatch):
+        """INIDS_SENSOR_API_KEY must be seeded with role='sensor' in OpsStore."""
+        monkeypatch.setenv("INIDS_SENSOR_API_KEY", "sensor-test-key")
+        from src.ops_store import OpsStore
+        from src.auth.auth_service import UnifiedAuthService
+        store = OpsStore(str(tmp_path / "ops.db"))
+        svc = UnifiedAuthService(store)
+        ctx = svc.authenticate_api_key("sensor-test-key")
+        assert ctx is not None
+        assert "sensor" in ctx.roles, f"Expected role 'sensor', got roles={ctx.roles}"
 
-    def test_sensor_key_registered_as_sensor_role(self):
-        svc = self._make_service_with_sensor()
-        principal = svc.principals.get("sensor-test-key")
-        assert principal is not None
-        assert principal.role == "sensor", (
-            f"Expected role='sensor', got role='{principal.role}'"
-        )
+    def test_sensor_role_is_not_analyst(self, tmp_path, monkeypatch):
+        """Sensor key must carry role='sensor', not 'analyst'."""
+        monkeypatch.setenv("INIDS_SENSOR_API_KEY", "sensor-test-key")
+        from src.ops_store import OpsStore
+        from src.auth.auth_service import UnifiedAuthService
+        store = OpsStore(str(tmp_path / "ops.db"))
+        svc = UnifiedAuthService(store)
+        ctx = svc.authenticate_api_key("sensor-test-key")
+        assert ctx is not None
+        assert "analyst" not in ctx.roles
 
-    def test_sensor_role_not_analyst(self):
-        svc = self._make_service_with_sensor()
-        principal = svc.principals.get("sensor-test-key")
-        assert principal.role != "analyst"
+    def test_analyst_key_carries_analyst_role(self, tmp_path, monkeypatch):
+        """Analyst key must carry role='analyst'."""
+        monkeypatch.setenv("INIDS_ANALYST_API_KEY", "analyst-key")
+        from src.ops_store import OpsStore
+        from src.auth.auth_service import UnifiedAuthService
+        store = OpsStore(str(tmp_path / "ops.db"))
+        ctx = UnifiedAuthService(store).authenticate_api_key("analyst-key")
+        assert ctx is not None
+        assert "analyst" in ctx.roles
 
-    def test_auth_status_includes_sensor_role(self):
-        with patch.dict(os.environ, {"INIDS_SENSOR_API_KEY": "sensor-test-key"}):
-            from src import auth_service as auth_mod
-            import importlib
-            importlib.reload(auth_mod)
-            status = auth_mod.auth_status()
-        assert "sensor" in status["configured_roles"]
-
-    def test_sensor_authorize_allowed_on_detect_endpoint(self):
-        from flask import Flask
-        svc = self._make_service_with_sensor()
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/api/detect",
-            method="POST",
-            headers={"X-API-Key": "sensor-test-key"},
-        ):
-            ok, reason = svc.authorize("analyst")
-        assert ok is True
-        assert reason == "sensor"
-
-    def test_sensor_authorize_denied_on_alerts_endpoint(self):
-        from flask import Flask
-        svc = self._make_service_with_sensor()
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/api/alerts",
-            method="GET",
-            headers={"X-API-Key": "sensor-test-key"},
-        ):
-            ok, reason = svc.authorize("analyst")
-        assert ok is False
-        assert reason == "insufficient_role"
-
-    def test_sensor_authorize_denied_on_fp_suppressions(self):
-        from flask import Flask
-        svc = self._make_service_with_sensor()
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/api/fp-suppressions",
-            method="POST",
-            headers={"X-API-Key": "sensor-test-key"},
-        ):
-            ok, reason = svc.authorize("analyst")
-        assert ok is False
-        assert reason == "insufficient_role"
-
-    def test_sensor_allowed_endpoints_constant_defined(self):
-        from src.auth_service import SENSOR_ALLOWED_ENDPOINTS
-        assert "/api/detect" in SENSOR_ALLOWED_ENDPOINTS
-        assert "/api/stream" in SENSOR_ALLOWED_ENDPOINTS
-
-    def test_analyst_key_still_hierarchical(self):
-        """Analyst key must still work on analyst-level endpoints."""
-        from flask import Flask
-        with patch.dict(os.environ, {"INIDS_ANALYST_API_KEY": "analyst-key"}):
-            from src import auth_service as auth_mod
-            import importlib
-            importlib.reload(auth_mod)
-            svc = auth_mod.AuthService()
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/api/alerts",
-            method="GET",
-            headers={"X-API-Key": "analyst-key"},
-        ):
-            ok, reason = svc.authorize("analyst")
-        assert ok is True
-
-    def test_viewer_key_denied_on_analyst_endpoint(self):
-        """Viewer key must still be denied on analyst-level endpoints."""
-        from flask import Flask
-        with patch.dict(os.environ, {"INIDS_VIEWER_API_KEY": "viewer-key"}):
-            from src import auth_service as auth_mod
-            import importlib
-            importlib.reload(auth_mod)
-            svc = auth_mod.AuthService()
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/api/alerts",
-            method="GET",
-            headers={"X-API-Key": "viewer-key"},
-        ):
-            ok, reason = svc.authorize("analyst")
-        assert ok is False
-        assert reason == "insufficient_role"
+    def test_viewer_key_carries_viewer_role(self, tmp_path, monkeypatch):
+        """Viewer key must carry role='viewer'."""
+        monkeypatch.setenv("INIDS_VIEWER_API_KEY", "viewer-key")
+        from src.ops_store import OpsStore
+        from src.auth.auth_service import UnifiedAuthService
+        store = OpsStore(str(tmp_path / "ops.db"))
+        ctx = UnifiedAuthService(store).authenticate_api_key("viewer-key")
+        assert ctx is not None
+        assert "viewer" in ctx.roles

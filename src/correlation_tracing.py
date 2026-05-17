@@ -20,25 +20,50 @@ _correlation_id_context: ContextVar[str] = ContextVar('correlation_id', default=
 CORRELATION_ID_HEADER = 'X-Correlation-ID'
 REQUEST_ID_HEADER = 'X-Request-ID'
 
+_MAX_CORRELATION_ID_LEN = 64
+# Characters that allow log injection — reject the entire header value if present
+_LOG_INJECTION_CHARS = frozenset({'\n', '\r', '\x00'})
+
 
 def generate_correlation_id() -> str:
-    """Generate a new correlation ID using UUID v4.
-    
-    Returns:
-        A unique correlation ID string
-    """
+    """Generate a new correlation ID using UUID v4."""
     return f"req_{uuid.uuid4().hex[:16]}"
+
+
+def sanitize_correlation_id(value: str | None) -> str:
+    """Sanitize an incoming X-Correlation-ID header value.
+
+    Returns a server-generated ID when the value is absent or contains
+    log-injection characters (\\n, \\r, null byte). Non-printable characters
+    are stripped; the result is truncated to 64 characters.
+    """
+    if not value:
+        return generate_correlation_id()
+
+    if any(c in value for c in _LOG_INJECTION_CHARS):
+        logger.warning("correlation_id_rejected reason=log_injection_chars value_len=%d", len(value))
+        return generate_correlation_id()
+
+    sanitized = "".join(c for c in value if c.isprintable())
+    sanitized = sanitized[:_MAX_CORRELATION_ID_LEN]
+
+    if not sanitized:
+        return generate_correlation_id()
+
+    return sanitized
 
 
 def set_correlation_id(correlation_id: str) -> None:
     """Set the correlation ID for the current context.
-    
+
     Args:
         correlation_id: The correlation ID to set
     """
     _correlation_id_context.set(correlation_id)
-    if hasattr(g, '_'):
+    try:
         g.correlation_id = correlation_id
+    except RuntimeError:
+        pass  # outside Flask application context — ContextVar is the authority
 
 
 def get_correlation_id() -> str:
@@ -56,13 +81,11 @@ def get_correlation_id() -> str:
     if hasattr(g, 'correlation_id'):
         return g.correlation_id
     
-    # Try request headers
+    # Try request headers — sanitize before trusting
     if request:
-        correlation_id = request.headers.get(
-            CORRELATION_ID_HEADER,
-            request.headers.get(REQUEST_ID_HEADER)
-        )
-        if correlation_id:
+        raw = request.headers.get(CORRELATION_ID_HEADER) or request.headers.get(REQUEST_ID_HEADER)
+        if raw:
+            correlation_id = sanitize_correlation_id(raw)
             set_correlation_id(correlation_id)
             return correlation_id
     
@@ -105,13 +128,9 @@ def correlation_id_middleware(app) -> None:
     @app.before_request
     def before_request():
         """Process incoming request and set up correlation ID."""
-        # Get correlation ID from request headers or generate new
-        correlation_id = request.headers.get(
-            CORRELATION_ID_HEADER,
-            request.headers.get(REQUEST_ID_HEADER, generate_correlation_id())
-        )
-        
-        # Set correlation ID in context and Flask g
+        raw = request.headers.get(CORRELATION_ID_HEADER) or request.headers.get(REQUEST_ID_HEADER)
+        correlation_id = sanitize_correlation_id(raw)
+
         set_correlation_id(correlation_id)
         g.correlation_id = correlation_id
         g.request_start_time = __import__('time').time()

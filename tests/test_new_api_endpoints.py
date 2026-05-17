@@ -20,10 +20,6 @@ def client():
 
 
 def _analyst_headers():
-    from web_app.app import SETTINGS
-    from src.auth_service import auth_status
-    if not auth_status().get("enabled"):
-        return {}
     return {}
 
 

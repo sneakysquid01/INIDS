@@ -16,6 +16,7 @@ Features:
 """
 
 import logging
+import uuid
 from typing import List, Dict, Any, Optional, Set, Tuple
 from datetime import datetime, timezone, timedelta
 
@@ -316,7 +317,7 @@ class RBACManager:
             
             # Log decision
             audit_log = AuditLog(
-                id=f"{user_id}_{permission}_{datetime.now(timezone.utc).isoformat()}",
+                id=uuid.uuid4().hex,
                 user_id=user_id,
                 action=permission,
                 resource_id=resource_id,

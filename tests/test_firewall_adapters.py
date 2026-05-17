@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter
@@ -9,7 +10,7 @@ class FakeRunner:
         self.stdout = stdout
         self.calls = []
 
-    def __call__(self, args, capture_output=True, text=True):
+    def __call__(self, args, capture_output=True, text=True, **kwargs):
         self.calls.append(args)
         return SimpleNamespace(returncode=self.returncode, stdout=self.stdout)
 
@@ -28,15 +29,32 @@ def test_ufw_adapter_calls_expected_commands():
 
 
 def test_nftables_unblock_uses_handle_deletes():
-    list_out = 'ip saddr 1.2.3.4 drop # handle 9\n'
+    list_out = json.dumps({
+        "nftables": [
+            {
+                "rule": {
+                    "handle": 9,
+                    "expr": [
+                        {
+                            "match": {
+                                "left": {"payload": {"protocol": "ip", "field": "saddr"}},
+                                "right": "1.2.3.4",
+                            }
+                        },
+                        {"drop": None},
+                    ],
+                }
+            }
+        ]
+    })
 
     class Runner:
         def __init__(self):
             self.calls = []
 
-        def __call__(self, args, capture_output=True, text=True):
+        def __call__(self, args, capture_output=True, text=True, **kwargs):
             self.calls.append(args)
-            if args[:3] == ["nft", "-a", "list"]:
+            if args[:3] == ["nft", "-j", "list"]:
                 return SimpleNamespace(returncode=0, stdout=list_out)
             return SimpleNamespace(returncode=0, stdout="")
 

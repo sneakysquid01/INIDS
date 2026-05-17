@@ -19,7 +19,7 @@ class OpsStore:
     """Operational persistence supporting SQLite (dev) and PostgreSQL (prod)."""
     
     # Current schema version - increment when making breaking schema changes
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -167,6 +167,7 @@ class OpsStore:
             (2, self._migration_v2_add_columns),
             (3, self._migration_v3_auth_tables),
             (4, self._migration_v4_actions_idempotency_index),
+            (5, self._migration_v5_alert_dedup),
         ]
         for version, fn in migrations:
             if version > current:
@@ -524,6 +525,44 @@ class OpsStore:
         """
         self._execute(sql)
 
+    def _migration_v5_alert_dedup(self) -> None:
+        """Schema v5: full UUID alert IDs + deduplication on (source_ip, rule_id, window).
+
+        D-06: Adds dedup_key column to alerts and a unique index on it.
+        dedup_key = "{source_ip}|{attack_type}|{5-minute timestamp bucket}"
+        INSERT OR IGNORE / ON CONFLICT DO NOTHING prevents duplicate alerts
+        from the same source_ip + attack_type within the same 5-minute window.
+
+        Index creation may lock the alerts table briefly (SQLite) — schedule
+        during a maintenance window on production databases with large alert history.
+
+        Rollback: additive — old rows without dedup_key remain (dedup_key IS NULL,
+        excluded from the partial index).
+        """
+        if self._is_postgres:
+            self._execute(
+                "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS dedup_key TEXT"
+            )
+            self._execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_dedup
+                ON alerts(dedup_key)
+                WHERE dedup_key IS NOT NULL
+                """
+            )
+        else:
+            with self._connect() as conn:
+                existing = {row["name"] for row in conn.execute("PRAGMA table_info(alerts)").fetchall()}
+                if "dedup_key" not in existing:
+                    conn.execute("ALTER TABLE alerts ADD COLUMN dedup_key TEXT")
+                conn.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_dedup
+                    ON alerts(dedup_key)
+                    WHERE dedup_key IS NOT NULL
+                    """
+                )
+
     def _verify_schema_version(self) -> None:
         """Confirm schema_version matches SCHEMA_VERSION; re-raise on any failure."""
         import logging
@@ -554,33 +593,60 @@ class OpsStore:
             return 1 if int(value) != 0 else 0
         return 1 if str(value).strip().lower() in {"1", "true", "yes", "y"} else 0
 
+    @staticmethod
+    def _alert_dedup_key(source_ip: str, attack_type: str, timestamp: str) -> str | None:
+        """Compute a dedup key for (source_ip, attack_type, 5-minute window).
+
+        D-06: Same source + attack_type within the same 5-min window resolves to
+        the same key, triggering ON CONFLICT DO NOTHING on the second insert.
+        Returns None (no dedup) when source_ip is empty — avoids over-suppression
+        of alerts with unknown sources.
+        """
+        if not source_ip:
+            return None
+        try:
+            # Parse ISO timestamp and round down to the nearest 5-minute bucket
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            bucket_min = (dt.minute // 5) * 5
+            bucket = dt.replace(minute=bucket_min, second=0, microsecond=0)
+            bucket_str = bucket.strftime("%Y%m%dT%H%M")
+        except Exception:
+            bucket_str = timestamp[:13]  # fallback: hour-level bucket
+        return f"{source_ip}|{attack_type}|{bucket_str}"
+
     def save_alert(self, payload: dict[str, Any]) -> None:
+        source_ip = str(payload.get("source_ip") or payload.get("src_ip") or "")
+        attack_type = str(payload.get("attack_type") or "")
+        timestamp = str(payload.get("timestamp") or self._utc_now_iso())
+        dedup_key = self._alert_dedup_key(source_ip, attack_type, timestamp)
         insert_payload = {
             "id": payload["id"],
-            "timestamp": payload["timestamp"],
+            "timestamp": timestamp,
             "severity": str(payload["severity"]),
             "prediction": str(payload["prediction"]),
             "confidence": float(payload["confidence"]),
             "profile": str(payload["profile"]),
             "reason": str(payload["reason"]),
-            "source_ip": str(payload.get("source_ip") or payload.get("src_ip") or ""),
-            "attack_type": str(payload.get("attack_type") or ""),
+            "source_ip": source_ip,
+            "attack_type": attack_type,
             "risk_score": float(payload.get("risk_score") or 0.0),
+            "dedup_key": dedup_key,
         }
         if self._is_postgres:
             self._execute(
                 """
-                INSERT INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score)
-                VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
-                ON CONFLICT (id) DO NOTHING
+                INSERT INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score, dedup_key)
+                VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score, :dedup_key)
+                ON CONFLICT DO NOTHING
                 """,
                 insert_payload,
             )
             return
         self._execute(
             """
-            INSERT OR IGNORE INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score)
-            VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score)
+            INSERT OR IGNORE INTO alerts (id, timestamp, severity, prediction, confidence, profile, reason, source_ip, attack_type, risk_score, dedup_key)
+            VALUES (:id, :timestamp, :severity, :prediction, :confidence, :profile, :reason, :source_ip, :attack_type, :risk_score, :dedup_key)
             """,
             insert_payload,
         )
@@ -588,6 +654,7 @@ class OpsStore:
     def list_alerts(
         self,
         limit: int = 50,
+        offset: int = 0,
         severity: str | None = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -597,7 +664,7 @@ class OpsStore:
             "COALESCE(source_ip, '') AS source_ip, COALESCE(attack_type, '') AS attack_type, COALESCE(risk_score, 0.0) AS risk_score "
             "FROM alerts"
         )
-        params: dict[str, Any] = {"limit": int(limit)}
+        params: dict[str, Any] = {"limit": int(limit), "offset": max(0, int(offset))}
         conditions: list[str] = []
         if severity:
             conditions.append("lower(severity) = lower(:severity)")
@@ -607,8 +674,21 @@ class OpsStore:
             params["status"] = status
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY timestamp DESC LIMIT :limit"
+        query += " ORDER BY timestamp DESC LIMIT :limit OFFSET :offset"
         return self._fetchall(query, params)
+
+    def delete_alerts_older_than(self, before_iso: str) -> int:
+        """Delete alerts with timestamp < before_iso. Returns count deleted.
+
+        D-08: Retention job. WARNING: destructive — run on staging with
+        production-scale data before enabling in production.
+        Disabled when INIDS_ALERT_RETENTION_DAYS=0 (or unset).
+        """
+        cursor = self._execute(
+            "DELETE FROM alerts WHERE timestamp < :before_iso",
+            {"before_iso": before_iso},
+        )
+        return int(getattr(cursor, "rowcount", 0))
 
     def update_alert(
         self,
@@ -783,6 +863,14 @@ class OpsStore:
                     {"target": target},
                 )
             raise
+
+    def list_pending_actions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return actions awaiting approval (status = 'pending_approval')."""
+        return self._fetchall(
+            "SELECT * FROM actions WHERE lower(COALESCE(status, '')) = 'pending_approval' "
+            "ORDER BY id DESC LIMIT :limit",
+            {"limit": max(1, min(int(limit), 200))},
+        )
 
     def list_actions(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._fetchall(

@@ -284,25 +284,33 @@ class TestLoadTiFeeds:
 # Flask API: /api/threat-intel/stats and /api/threat-intel/lookup
 # ---------------------------------------------------------------------------
 
+_TI_ADMIN_KEY = "ti-test-admin-key"
+_TI_ANALYST_KEY = "ti-test-analyst-key"
+
+
 @pytest.fixture(scope="module")
 def ti_app_client(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("appc")
-    os.environ["INIDS_OPS_DB_PATH"] = str(tmp_path / "test_ops.db")
+    db_path = str(tmp_path / "test_ops.db")
+    os.environ["INIDS_OPS_DB_PATH"] = db_path
     os.environ["INIDS_PIPELINE_ENABLED"] = "true"
+    os.environ["INIDS_ADMIN_API_KEY"] = _TI_ADMIN_KEY
+    os.environ["INIDS_ANALYST_API_KEY"] = _TI_ANALYST_KEY
     from web_app.app import app as flask_app
+    from src.ops_store import OpsStore
+    store = OpsStore(db_path)
+    flask_app.ops_store = store
     flask_app.config["TESTING"] = True
     with flask_app.test_client() as client:
         yield client
 
 
 def _analyst_hdr():
-    import base64
-    return {"Authorization": f"Basic {base64.b64encode(b'analyst:secret').decode()}"}
+    return {"X-API-Key": _TI_ANALYST_KEY}
 
 
 def _admin_hdr():
-    import base64
-    return {"Authorization": f"Basic {base64.b64encode(b'admin:secret').decode()}"}
+    return {"X-API-Key": _TI_ADMIN_KEY}
 
 
 class TestTIStatsAPI:

@@ -2,11 +2,12 @@
 
 Inspiration from WatchAD's honeypot account detection pattern.
 Any flow to/from a honeypot IP or port is immediately flagged as CRITICAL
-with 100% confidence — honeypots should have zero legitimate traffic.
+with configurable confidence — honeypots should have zero legitimate traffic.
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from src.detection.engine_base import DetectionEngine, EngineResult
@@ -68,6 +69,20 @@ class HoneypotDetectionEngine(DetectionEngine):
     def is_ready(self) -> bool:
         return self._enabled
 
+    @staticmethod
+    def _get_confidence() -> float:
+        """Read INIDS_HONEYPOT_CONFIDENCE env var at call time; default 100.0."""
+        raw = os.environ.get("INIDS_HONEYPOT_CONFIDENCE", "").strip()
+        if not raw:
+            return 100.0
+        try:
+            val = float(raw)
+            if 0.0 <= val <= 100.0:
+                return val
+        except ValueError:
+            pass
+        return 100.0
+
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
         """Detect if flow involves honeypot IP or port."""
         if not self._enabled:
@@ -91,7 +106,7 @@ class HoneypotDetectionEngine(DetectionEngine):
                 engine_id=self.engine_id,
                 engine_type=self.engine_type,
                 verdict="attack",
-                confidence=100.0,
+                confidence=self._get_confidence(),
                 severity="critical",
                 attack_type="honeypot_access",
                 metadata={
@@ -107,7 +122,7 @@ class HoneypotDetectionEngine(DetectionEngine):
                 engine_id=self.engine_id,
                 engine_type=self.engine_type,
                 verdict="attack",
-                confidence=100.0,
+                confidence=self._get_confidence(),
                 severity="critical",
                 attack_type="honeypot_outbound",
                 metadata={
@@ -123,7 +138,7 @@ class HoneypotDetectionEngine(DetectionEngine):
                 engine_id=self.engine_id,
                 engine_type=self.engine_type,
                 verdict="attack",
-                confidence=100.0,
+                confidence=self._get_confidence(),
                 severity="critical",
                 attack_type="honeypot_port_accessed",
                 metadata={
@@ -140,7 +155,7 @@ class HoneypotDetectionEngine(DetectionEngine):
                 engine_id=self.engine_id,
                 engine_type=self.engine_type,
                 verdict="attack",
-                confidence=100.0,
+                confidence=self._get_confidence(),
                 severity="critical",
                 attack_type="honeypot_port_source",
                 metadata={

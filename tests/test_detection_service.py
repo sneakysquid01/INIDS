@@ -22,14 +22,15 @@ def test_attack_prediction_creates_alert():
     assert result.alert.severity == "critical"
 
 
-def test_low_confidence_normal_marked_suspicious():
+def test_low_confidence_normal_not_suspicious():
+    # Step 43: Normal prediction with low confidence must NOT be suspicious.
+    # suspicious is only true for Attack predictions below the threshold.
     service = DetectionService(FakeModel(pred=0, proba=[0.58, 0.42]))
     result = service.predict_from_features({"duration": 1.0}, profile="strict")
 
     assert result.prediction == "Normal"
-    assert result.suspicious is True
-    assert result.alert is not None
-    assert result.alert.reason == "below_confidence_threshold"
+    assert result.suspicious is False
+    assert result.alert is None
 
 
 def test_explain_features_returns_top_contributors():

@@ -2,11 +2,26 @@ import json
 
 import web_app.app as app_module
 from src.model_registry import ModelRegistry
+from src.ops_store import OpsStore
+
+_VIEWER_KEY = "frontend-test-viewer-key"
+_ANALYST_KEY = "frontend-test-analyst-key"
+_VIEWER_HEADERS = {"X-API-Key": _VIEWER_KEY}
+_ANALYST_HEADERS = {"X-API-Key": _ANALYST_KEY}
 
 
-def test_home_page_renders_runtime_strip():
-    client = app_module.app.test_client()
-    response = client.get("/")
+def _setup_client(monkeypatch, tmp_path):
+    monkeypatch.setenv("INIDS_VIEWER_API_KEY", _VIEWER_KEY)
+    monkeypatch.setenv("INIDS_ANALYST_API_KEY", _ANALYST_KEY)
+    store = OpsStore(str(tmp_path / "ops_test.db"))
+    monkeypatch.setattr(app_module, "ops_store", store)
+    app_module.app.ops_store = store
+    return app_module.app.test_client()
+
+
+def test_home_page_renders_runtime_strip(monkeypatch, tmp_path):
+    client = _setup_client(monkeypatch, tmp_path)
+    response = client.get("/", headers=_VIEWER_HEADERS)
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "View Full Ops Dashboard" in body
@@ -23,8 +38,8 @@ def test_models_page_renders_registry_without_model_results(monkeypatch, tmp_pat
     monkeypatch.setattr(app_module, "RESULTS_DIR", str(results_dir))
     monkeypatch.setattr(app_module, "model_registry", registry)
 
-    client = app_module.app.test_client()
-    response = client.get("/models")
+    client = _setup_client(monkeypatch, tmp_path)
+    response = client.get("/models", headers=_ANALYST_HEADERS)
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Recent Registry Entries" in body
@@ -53,8 +68,8 @@ def test_models_page_handles_partial_model_results(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "RESULTS_DIR", str(results_dir))
     monkeypatch.setattr(app_module, "model_registry", registry)
 
-    client = app_module.app.test_client()
-    response = client.get("/models")
+    client = _setup_client(monkeypatch, tmp_path)
+    response = client.get("/models", headers=_ANALYST_HEADERS)
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Rf Partial" in body

@@ -142,7 +142,11 @@ def test_pipeline_startup_and_ingest_stream_path(monkeypatch, tmp_path):
             pipeline_batch_size=10,
         ),
     )
-    monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops_pipeline.db")))
+    _analyst_key = "pipeline-test-analyst-key"
+    monkeypatch.setenv("INIDS_ANALYST_API_KEY", _analyst_key)
+    store = OpsStore(str(tmp_path / "ops_pipeline.db"))
+    monkeypatch.setattr(app_module, "ops_store", store)
+    app_module.app.ops_store = store
     monkeypatch.setattr(app_module, "load_models", lambda: None)
     monkeypatch.setattr(app_module, "StreamProcessor", FakeStreamProcessor)
     monkeypatch.setattr(app_module, "PipelineWorker", FakePipelineWorker)
@@ -162,6 +166,7 @@ def test_pipeline_startup_and_ingest_stream_path(monkeypatch, tmp_path):
                 "source_ip": "1.1.1.1",
             },
         },
+        headers={"X-API-Key": _analyst_key},
     )
 
     assert response.status_code == 200

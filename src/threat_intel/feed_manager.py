@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import io
+import ipaddress
 import json
 import logging
 import time
@@ -15,6 +16,41 @@ from threading import Lock
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# D-04: RFC-1918 private ranges that must never appear as TI indicators.
+# Blocking internal addresses based on TI feeds would cause network outages.
+_RFC1918_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),    # loopback
+    ipaddress.ip_network("169.254.0.0/16"), # link-local
+    ipaddress.ip_network("::1/128"),         # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),        # IPv6 ULA
+    ipaddress.ip_network("fe80::/10"),       # IPv6 link-local
+)
+
+
+def _is_rfc1918(address: str) -> bool:
+    """Return True if address falls in any RFC-1918 / internal range."""
+    try:
+        ip = ipaddress.ip_address(address.strip())
+        return any(ip in net for net in _RFC1918_NETWORKS)
+    except ValueError:
+        return False
+
+
+def _reject_rfc1918(value: str, source: str) -> bool:
+    """Log and return True if value should be rejected (it is an internal IP)."""
+    if _is_rfc1918(value):
+        logger.error(
+            "TI feed '%s': rejected RFC-1918/internal indicator '%s'. "
+            "Internal IPs must not appear in TI feeds — they would cause "
+            "internal network disruptions if used for blocking.",
+            source, value,
+        )
+        return True
+    return False
 
 
 @dataclass
@@ -125,6 +161,9 @@ class ThreatIntelManager:
             value = row.get(value_column, "").strip()
             if not value:
                 continue
+            # D-04: reject RFC-1918/internal IP indicators
+            if indicator_type == "ip" and _reject_rfc1918(value, source):
+                continue
             ind = TIIndicator(
                 indicator_type=indicator_type,
                 value=value,
@@ -160,8 +199,12 @@ class ThreatIntelManager:
             value = item.get("value", item.get("indicator", item.get("ip", ""))).strip()
             if not value:
                 continue
+            item_type = item.get("type", indicator_type)
+            # D-04: reject RFC-1918/internal IP indicators
+            if item_type == "ip" and _reject_rfc1918(value, source):
+                continue
             ind = TIIndicator(
-                indicator_type=item.get("type", indicator_type),
+                indicator_type=item_type,
                 value=value,
                 source=source,
                 severity=item.get("severity", "medium"),

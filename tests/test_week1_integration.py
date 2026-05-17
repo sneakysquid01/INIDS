@@ -21,8 +21,8 @@ from src.middleware import (
     RequestValidationMiddleware, ContentSecurityMiddleware, AuditLogEntry
 )
 
-# Import auth components
-from src.auth_jwt import JWTAuthManager, RunAsManager, JWTClaims
+# Import auth components (F-AUTH-REMOVE: RS256JWTManager replaces JWTAuthManager/RunAsManager)
+from src.auth.jwt_manager import RS256JWTManager, reset_jwt_manager
 from src.validation_schemas import (
     ConfigValidator, validate_rule, validate_predict_request, validate_detect_request
 )
@@ -86,122 +86,77 @@ class TestIPBlockingMiddleware:
 
 
 class TestJWTAuthManager:
-    """Test JWT authentication manager."""
-    
-    def test_initialization(self):
-        """Test JWT manager initialization."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
-        assert manager.algorithm == 'HS256'
-        assert manager.audience == 'INIDS-API'
-    
+    """Test RS256 JWT manager (F-AUTH-REMOVE: replaces legacy JWTAuthManager)."""
+
+    def setup_method(self):
+        reset_jwt_manager()
+
+    def teardown_method(self):
+        reset_jwt_manager()
+
     def test_create_token(self):
-        """Test token creation."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
+        """RS256JWTManager.create_token() returns a non-empty JWT string."""
+        manager = RS256JWTManager()
         token = manager.create_token(
             user_id='user123',
             username='admin',
             roles=['admin', 'analyst'],
-            expires_in=3600
         )
-        
         assert token is not None
         assert isinstance(token, str)
         assert len(token) > 0
-    
+
     def test_verify_valid_token(self):
-        """Test token verification with valid token."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
-        token = manager.create_token(
-            user_id='user123',
-            username='admin',
-            roles=['admin'],
-            expires_in=3600
-        )
-        
-        is_valid, claims, error = manager.verify_token(token)
-        
-        assert is_valid is True
-        assert claims is not None
-        assert claims.sub == 'admin'
-        assert 'admin' in claims.roles
+        """verify_token() returns (True, dict, None) for a freshly-issued token."""
+        manager = RS256JWTManager()
+        token = manager.create_token(user_id='user123', username='admin', roles=['admin'])
+        ok, payload, error = manager.verify_token(token)
+        assert ok is True
+        assert payload is not None
+        assert payload['sub'] == 'admin'
+        assert 'admin' in payload['roles']
         assert error is None
-    
+
     def test_verify_invalid_token(self):
-        """Test token verification with invalid token."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
-        is_valid, claims, error = manager.verify_token('invalid-token')
-        
-        assert is_valid is False
-        assert claims is None
+        """verify_token() returns (False, None, reason) for a garbage token."""
+        manager = RS256JWTManager()
+        ok, payload, error = manager.verify_token('invalid-token')
+        assert ok is False
+        assert payload is None
         assert error is not None
-    
-    def test_expired_token(self):
-        """Test expired token detection."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
-        # Create token that expires immediately
-        token = manager.create_token(
-            user_id='user123',
-            username='admin',
-            roles=['admin'],
-            expires_in=1  # 1 second
-        )
-        
-        time.sleep(2)
-        
-        is_valid, claims, error = manager.verify_token(token)
-        
-        assert is_valid is False
-        assert 'expired' in error.lower()
+
+    def test_verify_wrong_key_rejected(self):
+        """Token signed by a different keypair must be rejected."""
+        mgr_a = RS256JWTManager()
+        mgr_b = RS256JWTManager()  # independent ephemeral keypair
+        token = mgr_a.create_token(user_id='u', username='u', roles=['viewer'])
+        ok, _, _ = mgr_b.verify_token(token)
+        assert ok is False
 
 
 class TestRunAsManager:
-    """Test run-as impersonation."""
-    
-    def test_create_runas_token(self):
-        """Test run-as token creation."""
-        jwt_manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        runas_manager = RunAsManager(jwt_manager, audit_store=None)
-        
-        success, token, context_hash = runas_manager.create_runas_token(
-            admin_user='admin',
-            target_user='analyst',
-            admin_roles=['admin'],
-            target_roles=['analyst'],
-            reason='Test investigation'
-        )
-        
-        assert success is True
-        assert token is not None
-        assert context_hash is not None
-        
-        # Verify token contains run-as info
-        is_valid, claims, _ = jwt_manager.verify_token(token)
-        assert is_valid is True
-        assert claims.run_as_admin == 'admin'
-        assert claims.context_hash == context_hash
-    
-    def test_runas_token_audit_logging(self):
-        """Test that run-as actions are audited."""
-        jwt_manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        mock_store = MagicMock()
-        
-        runas_manager = RunAsManager(jwt_manager, audit_store=mock_store)
-        
-        runas_manager.audit_runas_action(
-            admin_user='admin',
-            target_user='analyst',
-            context_hash='abc123',
-            action='view_alerts',
-            result='success'
-        )
-        
-        # Verify audit log was called
-        assert mock_store.add_audit.called
+    """F-AUTH-REMOVE: RunAsManager removed — delegated tokens issued via api_auth_runas.
+
+    Basic smoke test: the /api/auth/runas endpoint is wired to require_roles("admin")
+    and issues a new RS256 token for the target user. Tested at integration level.
+    """
+
+    def test_delegated_token_can_be_issued_directly(self):
+        """RS256JWTManager can create a token for the target user directly."""
+        reset_jwt_manager()
+        try:
+            manager = RS256JWTManager()
+            token = manager.create_token(
+                user_id='analyst',
+                username='analyst',
+                roles=['analyst'],
+            )
+            ok, payload, _ = manager.verify_token(token)
+            assert ok is True
+            assert payload['sub'] == 'analyst'
+            assert 'analyst' in payload['roles']
+        finally:
+            reset_jwt_manager()
 
 
 class TestConfigValidator:
@@ -378,34 +333,32 @@ class TestWeek1Integration:
         assert 'audit_log' in middleware
     
     def test_jwt_token_lifecycle(self):
-        """Test complete JWT token lifecycle."""
-        manager = JWTAuthManager(secret_key='test-secret-key-at-least-32-bytes-long')
-        
-        # Create token
-        token = manager.create_token(
-            user_id='user1',
-            username='admin',
-            roles=['admin', 'analyst'],
-            expires_in=3600
-        )
-        
-        # Verify token
-        is_valid, claims, error = manager.verify_token(token)
-        assert is_valid is True
-        assert claims.sub == 'admin'
-        
-        # Refresh token
-        new_token = manager.create_token(
-            user_id=claims.user_id,
-            username=claims.sub,
-            roles=claims.roles,
-            expires_in=3600
-        )
-        
-        # Verify new token
-        is_valid2, claims2, _ = manager.verify_token(new_token)
-        assert is_valid2 is True
-        assert claims2.sub == claims.sub
+        """Test complete RS256 JWT token lifecycle (F-AUTH-REMOVE)."""
+        reset_jwt_manager()
+        try:
+            manager = RS256JWTManager()
+
+            token = manager.create_token(
+                user_id='user1',
+                username='admin',
+                roles=['admin', 'analyst'],
+            )
+
+            ok, payload, error = manager.verify_token(token)
+            assert ok is True
+            assert payload['sub'] == 'admin'
+
+            new_token = manager.create_token(
+                user_id=payload['user_id'],
+                username=payload['sub'],
+                roles=payload['roles'],
+            )
+
+            ok2, payload2, _ = manager.verify_token(new_token)
+            assert ok2 is True
+            assert payload2['sub'] == payload['sub']
+        finally:
+            reset_jwt_manager()
 
 
 if __name__ == '__main__':

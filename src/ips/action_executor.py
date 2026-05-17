@@ -255,6 +255,9 @@ class ActionExecutor:
     def reconcile(self, limit: int = 5000) -> dict[str, Any]:
         if self.ops_store is None:
             return {"db_active": 0, "firewall_rules": 0, "missing_in_firewall": 0, "orphan_firewall_rules": 0}
+        if not getattr(self.adapter, "supports_rule_query", True):
+            self.logger.debug("reconcile_skipped adapter=%s reason=stateless", self.adapter_name)
+            return {"db_active": 0, "firewall_rules": 0, "missing_in_firewall": 0, "orphan_firewall_rules": 0, "skipped": True}
         active = self.ops_store.list_active_blocks(limit=limit)
         db_targets = {
             row["target"]

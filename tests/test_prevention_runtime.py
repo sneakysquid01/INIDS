@@ -328,30 +328,35 @@ class TestActionExecutorIdempotency:
 # Flask API: allowlist endpoints
 # ---------------------------------------------------------------------------
 
+_ADMIN_KEY = "prevention-test-admin-key"
+_ANALYST_KEY = "prevention-test-analyst-key"
+
+
 @pytest.fixture(scope="module")
 def app_client(tmp_path_factory):
-    """Create a throwaway Flask test client with fresh DB."""
+    """Create a throwaway Flask test client with fresh DB and seeded API keys."""
     tmp_path = tmp_path_factory.mktemp("appb")
     db_path = str(tmp_path / "test_ops.db")
     os.environ["INIDS_OPS_DB_PATH"] = db_path
     os.environ["INIDS_PIPELINE_ENABLED"] = "false"
+    os.environ["INIDS_ADMIN_API_KEY"] = _ADMIN_KEY
+    os.environ["INIDS_ANALYST_API_KEY"] = _ANALYST_KEY
 
     from web_app.app import app as flask_app
+    from src.ops_store import OpsStore
+    store = OpsStore(db_path)
+    flask_app.ops_store = store
     flask_app.config["TESTING"] = True
     with flask_app.test_client() as client:
         yield client
 
 
 def _auth_headers():
-    import base64
-    creds = base64.b64encode(b"admin:secret").decode()
-    return {"Authorization": f"Basic {creds}"}
+    return {"X-API-Key": _ADMIN_KEY}
 
 
 def _analyst_headers():
-    import base64
-    creds = base64.b64encode(b"analyst:secret").decode()
-    return {"Authorization": f"Basic {creds}"}
+    return {"X-API-Key": _ANALYST_KEY}
 
 
 class TestAllowlistAPI:

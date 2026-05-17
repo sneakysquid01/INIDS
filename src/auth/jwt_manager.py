@@ -27,8 +27,8 @@ class RS256JWTManager:
     """RS256 JWT sign/verify. Uses INIDS_JWT_PRIVATE_KEY / INIDS_JWT_PUBLIC_KEY.
 
     If INIDS_JWT_PRIVATE_KEY is absent, an ephemeral keypair is generated and
-    a WARNING is logged. Ephemeral keys are invalidated on restart — only
-    acceptable during the INIDS_AUTH_COMPAT transition window.
+    a WARNING is logged. Ephemeral keys are invalidated on restart — set
+    INIDS_JWT_PRIVATE_KEY and INIDS_JWT_PUBLIC_KEY for production.
     """
 
     def __init__(self) -> None:
@@ -63,7 +63,7 @@ class RS256JWTManager:
             # Derive public key from the private key (acceptable during compat window)
             logger.warning(
                 "INIDS_JWT_PUBLIC_KEY not set — deriving public key from private key. "
-                "Set INIDS_JWT_PUBLIC_KEY before setting INIDS_AUTH_COMPAT=false."
+                "Set INIDS_JWT_PUBLIC_KEY for production."
             )
             public_key = private_key.public_key()
 

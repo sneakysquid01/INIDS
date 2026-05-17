@@ -131,7 +131,7 @@ class DetectionService:
         proba = self.model.predict_proba(df)[0]
         confidence = round(float(max(proba) * 100), 2)
 
-        suspicious = confidence < threshold
+        suspicious = pred == 1 and confidence < threshold
         prediction = "Attack" if pred == 1 else "Normal"
         reason = "below_confidence_threshold" if suspicious else "model_prediction"
         severity = self._severity(prediction, confidence, threshold)
@@ -139,7 +139,7 @@ class DetectionService:
         alert = None
         if suspicious or prediction == "Attack":
             alert = Alert(
-                id=f"al_{uuid.uuid4().hex[:10]}",
+                id=str(uuid.uuid4()),
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 severity=severity,
                 prediction=prediction,

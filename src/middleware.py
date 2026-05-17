@@ -12,7 +12,7 @@ import time
 import logging
 import json
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 from typing import Dict, Set, Tuple, Optional, Callable, Any
 from dataclasses import dataclass, asdict
@@ -188,7 +188,7 @@ class SecurityHeadersMiddleware:
         'X-Frame-Options': 'DENY',
         'X-Content-Type-Options': 'nosniff',
         'X-XSS-Protection': '1; mode=block',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com",
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com",
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     }
@@ -238,7 +238,7 @@ class AuditLogMiddleware:
                 error = None
         
         entry = AuditLogEntry(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             user=user,
             method=request.method,
             path=request.path,
@@ -266,7 +266,7 @@ class AuditLogMiddleware:
     
     def get_user_activity(self, user: str, hours: int = 24) -> list:
         """Get activity for specific user."""
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         cutoff_iso = cutoff.isoformat()
         
         with self.lock:

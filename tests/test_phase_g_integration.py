@@ -115,30 +115,37 @@ def test_detection_and_action_event_counters_increment(monkeypatch):
     assert after_action >= before_action + 1
 
 
+def _make_admin_client(monkeypatch, tmp_path, app_module, db_name):
+    from src.ops_store import OpsStore
+    _admin_key = "phase-g-test-admin-key"
+    monkeypatch.setenv("INIDS_ADMIN_API_KEY", _admin_key)
+    store = OpsStore(str(tmp_path / db_name))
+    monkeypatch.setattr(app_module, "ops_store", store)
+    app_module.app.ops_store = store
+    return app_module.app.test_client(), {"X-API-Key": _admin_key}
+
+
 def test_api_policy_rollback_version_not_found(monkeypatch, tmp_path):
     import web_app.app as app_module
-    from src.ops_store import OpsStore
     from src.policy.policy_store import PolicyStore
 
-    monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops_g.db")))
+    client, admin_h = _make_admin_client(monkeypatch, tmp_path, app_module, "ops_g.db")
     monkeypatch.setattr(
         app_module,
         "policy_store",
         PolicyStore(initial_config=app_module.prevention_service.policy.to_dict()),
     )
 
-    client = app_module.app.test_client()
-    resp = client.post("/api/policy/rollback", json={"to_version": 9999})
+    resp = client.post("/api/policy/rollback", json={"to_version": 9999}, headers=admin_h)
     assert resp.status_code == 404
     assert resp.get_json()["error"] == "version_not_found"
 
 
 def test_api_policy_history_limit(monkeypatch, tmp_path):
     import web_app.app as app_module
-    from src.ops_store import OpsStore
     from src.policy.policy_store import PolicyStore
 
-    monkeypatch.setattr(app_module, "ops_store", OpsStore(str(tmp_path / "ops_hist.db")))
+    client, admin_h = _make_admin_client(monkeypatch, tmp_path, app_module, "ops_hist.db")
     store = PolicyStore(initial_config=app_module.prevention_service.policy.to_dict())
     monkeypatch.setattr(app_module, "policy_store", store)
 
@@ -155,8 +162,7 @@ def test_api_policy_history_limit(monkeypatch, tmp_path):
             reason=f"u{idx}",
         )
 
-    client = app_module.app.test_client()
-    resp = client.get("/api/policy/history?limit=2")
+    resp = client.get("/api/policy/history?limit=2", headers=admin_h)
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["count"] == 2

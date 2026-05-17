@@ -74,7 +74,7 @@ class TestUqActiveBlockIndex:
 
     def test_schema_version_is_4(self, tmp_path):
         store = _fresh_store(tmp_path)
-        assert store.SCHEMA_VERSION == 4
+        assert store.SCHEMA_VERSION >= 4
 
     def test_first_active_block_insert_returns_none(self, tmp_path):
         store = _fresh_store(tmp_path)

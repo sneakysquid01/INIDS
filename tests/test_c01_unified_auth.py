@@ -430,14 +430,13 @@ class TestValidateConfigAtStartup:
                 "INIDS_AUTH_COMPAT": "true",
             })
 
-    def test_rs256_mode_requires_jwt_public_key(self):
-        """G-AUTH-3: INIDS_JWT_PUBLIC_KEY required when INIDS_AUTH_COMPAT=false."""
-        with pytest.raises(RuntimeError, match="INIDS_JWT_PUBLIC_KEY"):
-            self._validate({
-                "SECRET_KEY": "real-secret",
-                "INIDS_ADMIN_API_KEY": "real-key",
-                "INIDS_AUTH_COMPAT": "false",
-            })
+    def test_missing_jwt_public_key_only_warns(self):
+        """F-AUTH-REMOVE: JWT public key absence is a WARNING only, never a hard error."""
+        # Should not raise — ephemeral key is used and a warning is logged
+        self._validate({
+            "SECRET_KEY": "real-secret",
+            "INIDS_ADMIN_API_KEY": "real-key",
+        })
 
     def test_compat_mode_allows_missing_jwt_key(self):
         """During compat window, missing JWT public key is only a warning."""
@@ -519,7 +518,8 @@ class TestRequireRolesDecorator:
                 resp = client.get("/admin-only")
             assert resp.status_code == 401
 
-    def test_insufficient_role_returns_403(self, tmp_path):
+    def test_insufficient_role_returns_401(self, tmp_path):
+        """Authenticated user with wrong role gets 401 (security-by-obscurity — F-AUTH-REMOVE design)."""
         store = _make_store(tmp_path)
         _seed_user(store, "uid-viewer", "viewer_user", "viewer", "viewer-key")
         priv_pem, pub_pem, _ = _make_rsa_keypair()
@@ -534,7 +534,7 @@ class TestRequireRolesDecorator:
                 resp = client.get(
                     "/admin-only", headers={"Authorization": f"Bearer {token}"}
                 )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_hs256_token_returns_401(self, tmp_path):
         """Checkpoint 3: forged HS256 JWT on require_roles endpoint → 401."""
@@ -592,33 +592,15 @@ class TestRequireRolesDecorator:
                 )
         assert resp.status_code == 401
 
-    def test_compat_mode_legacy_api_key_accepted(self, tmp_path):
-        """Checkpoint 5: INIDS_AUTH_COMPAT=true — old env-var API key accepted."""
+    def test_opsstore_seeded_key_grants_access(self, tmp_path):
+        """F-AUTH-REMOVE: OpsStore-seeded API key (no compat mode) grants access."""
         store = _make_store(tmp_path)
+        _seed_user(store, "uid-admin2", "svc-admin", "admin", "seeded-admin-key")
         priv_pem, pub_pem, _ = _make_rsa_keypair()
         app = self._make_app(store, priv_pem, pub_pem)
 
-        legacy_key = "legacy-admin-api-key"
-        mock_principal = MagicMock()
-        mock_principal.role = "admin"
-
-        mock_auth_svc = MagicMock()
-        mock_auth_svc.principals = {legacy_key: mock_principal}
-
-        with patch.dict(os.environ, {"INIDS_AUTH_COMPAT": "true"}, clear=False):
-            with patch("src.auth.decorators._auth_service", mock_auth_svc, create=True):
-                with patch(
-                    "src.auth.decorators._try_legacy_auth",
-                    return_value=__import__("src.auth.models", fromlist=["AuthContext"]).AuthContext(
-                        user_id="legacy:admin",
-                        username="admin",
-                        roles=frozenset({"admin"}),
-                    ),
-                ):
-                    with app.test_client() as client:
-                        resp = client.get(
-                            "/admin-only", headers={"X-API-Key": legacy_key}
-                        )
+        with app.test_client() as client:
+            resp = client.get("/admin-only", headers={"X-API-Key": "seeded-admin-key"})
         assert resp.status_code == 200
 
     def test_api_key_in_db_grants_access(self, tmp_path):
