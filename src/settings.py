@@ -57,6 +57,7 @@ class Settings:
     adapter_call_timeout_s: float = 3.0
     adapter_cb_failure_threshold: int = 3
     adapter_cb_open_duration_s: float = 60.0
+    cors_origins: str = "http://localhost:5000,http://127.0.0.1:5000"
 
 
 def _safe_int(env_key: str, default: int) -> int:
@@ -78,6 +79,12 @@ def _safe_bool(env_key: str, default: bool) -> bool:
 
 def load_settings() -> Settings:
     _load_dotenv()
+    # PLAN.md Phase A Step 1 (A-01): fail-closed on any truthy auth bypass flag
+    if os.environ.get("ALLOW_UNAUTHENTICATED", "").lower() in {"true", "1", "yes", "on"}:
+        raise RuntimeError(
+            "ALLOW_UNAUTHENTICATED is enabled. Auth bypass must not be active in any deployed environment. "
+            "Set ALLOW_UNAUTHENTICATED=false and restart."
+        )
     port = _safe_int("PORT", 5000)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
@@ -111,6 +118,9 @@ def load_settings() -> Settings:
     adapter_call_timeout_s = float(os.getenv("ADAPTER_CALL_TIMEOUT_S", "3.0"))
     adapter_cb_failure_threshold = _safe_int("ADAPTER_CB_FAILURE_THRESHOLD", 3)
     adapter_cb_open_duration_s = float(os.getenv("ADAPTER_CB_OPEN_DURATION_S", "60.0"))
+    cors_origins = os.getenv(
+        "INIDS_CORS_ORIGINS", "http://localhost:5000,http://127.0.0.1:5000"
+    ).strip()
     return Settings(
         host=host,
         port=port,
@@ -143,4 +153,5 @@ def load_settings() -> Settings:
         adapter_call_timeout_s=adapter_call_timeout_s,
         adapter_cb_failure_threshold=adapter_cb_failure_threshold,
         adapter_cb_open_duration_s=adapter_cb_open_duration_s,
+        cors_origins=cors_origins,
     )

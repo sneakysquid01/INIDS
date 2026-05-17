@@ -1,13 +1,67 @@
 version: "3.9"
+
+# PLAN.md Phase A Step 5 (A-05): Hardened deployment configuration.
+# Removed: ../../:/app volume mount, env_file .env.example, root execution.
+# Added: non-root user, named volumes, read-only filesystem, resource limits, secrets.
+
+secrets:
+  inids_secret_key:
+    file: ./secrets/inids_secret_key.txt
+  inids_admin_api_key:
+    file: ./secrets/inids_admin_api_key.txt
+  inids_sensor_api_key:
+    file: ./secrets/inids_sensor_api_key.txt
+  inids_viewer_api_key:
+    file: ./secrets/inids_viewer_api_key.txt
+
 services:
   inids-web:
-    image: python:3.10-slim
-    working_dir: /app
-    command: >
-      bash -lc "pip install --no-cache-dir -r requirements.txt && python web_app/app.py"
+    build:
+      context: ../..
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      - ../../:/app
-    env_file:
-      - ../../.env.example
+      - inids-data:/data
+      - inids-models:/models
+      - /tmp
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "inids:inids"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5000
+      - FLASK_DEBUG=0
+      - OPS_DB_PATH=/data/inids_ops.db
+      - ALLOW_UNAUTHENTICATED=false
+      # B-05: INIDS_REDIS_REQUIRED=false for single-instance deployments without Redis.
+      # Default (unset / true): Redis failure causes prevention scheduler to pause (fail-closed).
+      # - INIDS_REDIS_REQUIRED=false
+      # Secrets injected from Docker secrets (not env file)
+      - SECRET_KEY_FILE=/run/secrets/inids_secret_key
+      - INIDS_ADMIN_API_KEY_FILE=/run/secrets/inids_admin_api_key
+      - INIDS_SENSOR_API_KEY_FILE=/run/secrets/inids_sensor_api_key
+      - INIDS_VIEWER_API_KEY_FILE=/run/secrets/inids_viewer_api_key
+    secrets:
+      - inids_secret_key
+      - inids_admin_api_key
+      - inids_sensor_api_key
+      - inids_viewer_api_key
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  inids-data:
+  inids-models:

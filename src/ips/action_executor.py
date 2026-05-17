@@ -187,11 +187,9 @@ class ActionExecutor:
             )
             return action
 
-        # Idempotency: skip if this target already has an active enforcement record.
-        if self.ops_store is not None and decision in {"BLOCK", "TEMP_BLOCK", "RATE_LIMIT"}:
-            if self.ops_store.has_active_block(target):
-                self.logger.debug("Idempotency: %s already has active block, skipping duplicate enforcement", target)
-                return None
+        # Idempotency is now enforced at the DB level via the uq_active_block
+        # partial unique index (migration v4). save_action() catches IntegrityError
+        # on duplicate inserts and returns the existing record — no pre-check needed.
 
         dry_run = bool(getattr(policy, "dry_run", True))
         executed = False

@@ -24,7 +24,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from src.settings import load_settings
-from src.rate_limiter import InMemoryRateLimiter, RateLimitConfig
+from src.rate_limiter import UnifiedRateLimiter, get_unified_rate_limiter, set_unified_rate_limiter
 from src.firewall_adapters import MockFirewallAdapter, UfwFirewallAdapter, NftablesFirewallAdapter, WebhookFirewallAdapter
 from src.core.event_bus import ActionEvent, DetectionEvent, EventBus, PolicyDecisionEvent, RiskScoreEvent
 from src.logging_config import configure_logging
@@ -64,11 +64,10 @@ TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
 
-from src.detection_service import DetectionService
-from src.storage import InMemoryAlertStore
+from src.detection_service import DetectionService, drain_to_ops_store
 from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
-from src.auth_service import require_role, auth_status
+from src.auth_service import require_role, auth_status, _auth_service
 from src.metrics_service import MetricsService
 from src.ingestion_service import InMemoryIngestionQueue, RedisStreamIngestionQueue, IngestionService
 from src.prevention.allowlist import Allowlist
@@ -135,7 +134,8 @@ middleware_config = RateLimitConfig(
     max_requests=SETTINGS.rate_limit_requests,
     window_seconds=SETTINGS.rate_limit_window_seconds
 )
-middleware_instances = register_middleware(app, middleware_config)
+_cors_origins = [o.strip() for o in SETTINGS.cors_origins.split(",") if o.strip()]
+middleware_instances = register_middleware(app, middleware_config, cors_origins=_cors_origins)
 
 # Store middleware instances on app (JWT auth will be initialized after ops_store)
 app.rate_limiter = middleware_instances['rate_limiter']
@@ -168,7 +168,6 @@ _models_lock = threading.Lock()
 model = None
 all_models = {}
 event_bus = EventBus()
-alert_store = InMemoryAlertStore(max_items=1000)
 detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
@@ -223,9 +222,9 @@ siem_exporter = SiemExporter()
 ingestion_queue = InMemoryIngestionQueue(max_items=10000, persistent=True)
 ingestion_service = IngestionService(queue=ingestion_queue)
 model_registry = ModelRegistry(os.path.join(RESULTS_DIR, "model_registry.json"))
-rate_limiter = InMemoryRateLimiter(
-    RateLimitConfig(requests=SETTINGS.rate_limit_requests, window_seconds=SETTINGS.rate_limit_window_seconds)
-)
+# C-05 (Step 19): unified two-tier rate limiter (replaces InMemoryRateLimiter + RateLimitMiddleware).
+unified_rate_limiter = UnifiedRateLimiter()
+set_unified_rate_limiter(unified_rate_limiter)
 
 # --- Multi-engine detection framework ---
 engine_registry = EngineRegistry()
@@ -1180,6 +1179,77 @@ def _validate_runtime_security() -> None:
         raise RuntimeError("SECRET_KEY environment variable is required")
     if SETTINGS.require_api_keys and not auth_status().get("enabled", False):
         raise RuntimeError("API keys are required for protected endpoints")
+    _validate_all_routes_have_auth_decorator()
+
+
+# PLAN.md Phase A Step 3 (A-03): PUBLIC_ROUTES are exempt from auth decorator requirement.
+# All other routes must have @require_role, @require_auth, or a JWT auth decorator.
+PUBLIC_ROUTES = frozenset({
+    "/health",
+    "/api/health",
+    "/api/health/live",
+    "/api/health/ready",
+    "/api/auth/login",
+    "/api/auth/refresh",
+    "/api/auth/validate",
+    "/api/auth/status",
+    "/api/auth/revoke",
+    "/static/<path:filename>",
+})
+
+_AUTH_DECORATOR_NAMES = frozenset({
+    "require_role",
+    "require_auth",
+    "jwt_require_role",
+    "wrapper",          # functools.wraps preserves wrapper name — checked by closure inspection
+})
+
+
+def _validate_all_routes_have_auth_decorator() -> None:
+    """Fail-closed startup check: every non-public route must have an auth decorator.
+
+    PLAN.md Phase A Step 3 (A-03) / G-RBAC-1: accepts @require_role and @require_auth
+    during the Phase A-B transition. Fails on first uncovered route.
+    """
+    from src.auth_service import require_role as _require_role_fn
+    require_role_code = getattr(_require_role_fn, "__code__", None)
+
+    uncovered = []
+    for rule in app.url_map.iter_rules():
+        if rule.rule in PUBLIC_ROUTES:
+            continue
+        if rule.rule.startswith("/static/"):
+            continue
+        view_func = app.view_functions.get(rule.endpoint)
+        if view_func is None:
+            continue
+        # Walk the decorator chain: check if require_role or require_auth wraps this view
+        func = view_func
+        covered = False
+        for _ in range(10):  # max decorator chain depth
+            fn_name = getattr(func, "__name__", "")
+            if fn_name in {"wrapper", "require_role", "require_auth", "jwt_require_role"}:
+                covered = True
+                break
+            # Check if this function's globals contain require_role (i.e., it IS require_role's wrapper)
+            wrapped = getattr(func, "__wrapped__", None)
+            if wrapped is not None:
+                func = wrapped
+            else:
+                break
+        if not covered:
+            uncovered.append(f"{rule.endpoint} ({rule.rule})")
+
+    if uncovered:
+        logger.error(
+            "SECURITY: routes_without_auth_decorator count=%d routes=%s",
+            len(uncovered),
+            uncovered,
+        )
+        raise RuntimeError(
+            f"PLAN.md A-03: {len(uncovered)} route(s) have no auth decorator. "
+            f"Add @require_role() or mark as public: {uncovered}"
+        )
 
 
 def _log_runtime_configuration() -> None:
@@ -1213,7 +1283,7 @@ def ensure_detection_service() -> bool:
     if model is None:
         return False
     if detection_service is None:
-        detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
+        detection_service = DetectionService(model=model, ops_store=ops_store, event_bus=event_bus)
     return True
 
 
@@ -1224,21 +1294,57 @@ def _normalize_label(value) -> str:
 
 
 def load_models():
-    """Load all available models into memory for live or selectable prediction."""
+    """Load all available models into memory with SHA-256 integrity verification.
+
+    PLAN.md Phase A Step 6 (A-06): joblib.load() replaced by
+    load_model_with_verification() at all call sites. Checksum verification mode
+    controlled by INIDS_MODEL_VERIFY env var (strict|warn|disabled).
+    """
+    from src.detection.ml_utils import load_checksum_manifest, load_model_with_verification, SecurityError
     global model, all_models, detection_service
     if all_models:
         return
+
+    # Load checksum manifest — raises if absent and INIDS_MODEL_VERIFY=strict
+    try:
+        checksums = load_checksum_manifest(MODELS_DIR)
+    except FileNotFoundError:
+        verify_mode = os.environ.get("INIDS_MODEL_VERIFY", "strict").strip().lower()
+        if verify_mode == "strict":
+            logger.critical(
+                "load_models: checksums.sha256 not found in %s — cannot start in strict mode. "
+                "Run: python scripts/generate_model_checksums.py", MODELS_DIR
+            )
+            raise
+        else:
+            logger.warning("load_models: checksums.sha256 not found — skipping verification (mode=%s)", verify_mode)
+            checksums = {}
+
     model_files = ['rf_nsl_kdd.pkl', 'gb_nsl_kdd.pkl', 'dt_nsl_kdd.pkl',
                    'ab_nsl_kdd.pkl', 'mlp_nsl_kdd.pkl', 'rf_nsl_kdd_multi.pkl']
     for model_file in model_files:
         path = os.path.join(MODELS_DIR, model_file)
         if os.path.exists(path):
             model_name = model_file.replace('.pkl', '')
-            all_models[model_name] = joblib.load(path)
+            expected = checksums.get(model_file)
+            if expected:
+                try:
+                    all_models[model_name] = load_model_with_verification(path, expected)
+                except SecurityError:
+                    logger.critical("load_models: integrity check failed for %s — model NOT loaded", model_file)
+                    continue
+            else:
+                verify_mode = os.environ.get("INIDS_MODEL_VERIFY", "strict").strip().lower()
+                if verify_mode == "strict":
+                    logger.critical(
+                        "load_models: no checksum for %s in manifest — skipping in strict mode", model_file
+                    )
+                    continue
+                all_models[model_name] = joblib.load(path)
             logger.info("Loaded model %s", model_name)
     if 'rf_nsl_kdd' in all_models:
         model = all_models['rf_nsl_kdd']
-        detection_service = DetectionService(model=model, alert_store=alert_store, event_bus=event_bus)
+        detection_service = DetectionService(model=model, ops_store=ops_store, event_bus=event_bus)
         # Register the primary ML model as a detection engine.
         ml_engine = MLEngine(model, engine_id="ml_primary", fp_manager=fp_manager)
         engine_registry.register(ml_engine)
@@ -1277,66 +1383,27 @@ def _load_threat_intel_feeds() -> None:
 
 
 def load_threat_intel():
-    """Load mock threat intelligence indicators to enable TI engine."""
+    """Load threat intelligence indicators from a configured external feed.
+
+    PLAN.md Phase A Step 2 (A-02): Mock RFC-1918 indicators removed.
+    TI engine starts with zero indicators until INIDS_TI_FEED_PATH is set.
+    False negatives from TI are preferable to self-DoS via internal IP blocks.
+    """
     global ti_manager
-    
-    if ti_manager.cache.size() > 0:
-        logger.info("TI cache already populated (%d indicators)", ti_manager.cache.size())
+
+    feed_path = os.environ.get("INIDS_TI_FEED_PATH", "").strip()
+    if not feed_path:
+        logger.warning(
+            "No threat intel feed configured (INIDS_TI_FEED_PATH not set). "
+            "TI engine will produce no matches until a real feed is provided."
+        )
         return
-    
-    import time
-    from src.threat_intel.feed_manager import TIIndicator
-    
-    # Add mock threat intelligence indicators for testing
-    now = time.time()
-    mock_indicators = [
-        TIIndicator(
-            indicator_type="ip",
-            value="192.168.1.50",
-            source="mock_feed",
-            severity="critical",
-            tags=["scanner", "recon"],
-            first_seen=now,
-            last_seen=now,
-            ttl_seconds=86400.0
-        ),
-        TIIndicator(
-            indicator_type="ip",
-            value="10.0.0.100",
-            source="mock_feed",
-            severity="high",
-            tags=["botnet", "c2"],
-            first_seen=now,
-            last_seen=now,
-            ttl_seconds=86400.0
-        ),
-        TIIndicator(
-            indicator_type="ip",
-            value="203.0.113.45",
-            source="mock_feed",
-            severity="medium",
-            tags=["exploit", "malware"],
-            first_seen=now,
-            last_seen=now,
-            ttl_seconds=86400.0
-        ),
-        TIIndicator(
-            indicator_type="domain",
-            value="malicious.example.com",
-            source="mock_feed",
-            severity="high",
-            tags=["c2", "phishing"],
-            first_seen=now,
-            last_seen=now,
-            ttl_seconds=86400.0
-        ),
-    ]
-    
-    for indicator in mock_indicators:
-        ti_manager.add_indicator(indicator)
-    
-    logger.info("Loaded %d mock threat intelligence indicators", len(mock_indicators))
-    logger.info("TI cache size after loading: %d", ti_manager.cache.size())
+
+    try:
+        ti_manager.load_feed(feed_path)
+        logger.info("threat_intel_feed_loaded path=%s indicators=%d", feed_path, ti_manager.cache.size())
+    except Exception:
+        logger.exception("threat_intel_feed_load_failed path=%s — TI engine running with no indicators", feed_path)
 
 
 def load_anomaly_baseline():
@@ -1485,14 +1552,17 @@ def _before_request_metrics():
         metrics_service.inc('requests_total')
 
         if request.path not in {'/api/health', '/api/health/live', '/api/health/ready'}:
-            client_key = f"{request.remote_addr or 'unknown'}:{request.path}"
-            allowed, retry_after = rate_limiter.allow(client_key)
-            if not allowed:
-                metrics_service.inc('rate_limited_total')
-                return jsonify({
-                    "error": "rate_limited",
-                    "retry_after_seconds": retry_after,
-                }), 429
+            # Tier 1: global IP rate limit (1000 req/min) via UnifiedRateLimiter.
+            _client_ip = request.remote_addr or 'unknown'
+            _rl = get_unified_rate_limiter()
+            if _rl is not None:
+                _allowed, _retry = _rl.check_ip(_client_ip)
+                if not _allowed:
+                    metrics_service.inc('rate_limited_total')
+                    return jsonify({
+                        "error": "rate_limited",
+                        "retry_after_seconds": _retry,
+                    }), 429
 
 
 @app.after_request
@@ -1503,6 +1573,7 @@ def _after_request_metrics(response):
 
 
 @app.route("/")
+@require_role("viewer")
 def home():
     """Landing page with runtime status and navigation into the SOC console."""
     metrics_snapshot = {
@@ -1524,6 +1595,7 @@ def home():
 
 
 @app.route("/predict", methods=["GET", "POST"])
+@require_role("viewer")
 def predict():
     """Live prediction page with suspicious activity logic."""
     prediction = None
@@ -1573,42 +1645,49 @@ def predict():
 
 
 @app.route("/alerts")
+@require_role("viewer")
 def alerts_page():
     """Security alerts monitoring page."""
     return render_template("alerts.html")
 
 
 @app.route("/actions")
+@require_role("viewer")
 def actions_page():
     """Prevention actions and approval workflow page."""
     return render_template("actions.html")
 
 
 @app.route("/detection")
+@require_role("viewer")
 def detection_page():
     """Detection console for running multi-engine detection."""
     return render_template("detection.html")
 
 
 @app.route("/engines")
+@require_role("viewer")
 def engines_page():
     """Detection engines management page."""
     return render_template("engines.html")
 
 
 @app.route("/policy")
+@require_role("viewer")
 def policy_page():
     """Policy editor and configuration page."""
     return render_template("policy.html")
 
 
 @app.route("/allowlist")
+@require_role("viewer")
 def allowlist_page():
     """Allowlist manager page for trusted IPs and domains."""
     return render_template("allowlist.html")
 
 
 @app.route("/threat-intel")
+@require_role("viewer")
 def threat_intel_page():
     """Threat intelligence lookup page."""
     return render_template("threat_intel.html")
@@ -1621,6 +1700,7 @@ def health_page():
 
 
 @app.route("/dashboard")
+@require_role("viewer")
 def dashboard():
     """Visual dashboard of system predictions and accuracy."""
     try:
@@ -1731,6 +1811,7 @@ def dashboard():
 
 
 @app.route("/monitor")
+@require_role("viewer")
 def monitor():
     """INIDS 2.0 Monitor - Real-time threat dashboard."""
     try:
@@ -1741,6 +1822,7 @@ def monitor():
 
 
 @app.route("/investigate")
+@require_role("analyst")
 def investigate():
     """INIDS 2.0 Investigate - Alert analysis and deep-dive."""
     try:
@@ -1751,6 +1833,7 @@ def investigate():
 
 
 @app.route("/respond")
+@require_role("analyst")
 def respond():
     """INIDS 2.0 Respond - Action management and approvals."""
     try:
@@ -1761,6 +1844,7 @@ def respond():
 
 
 @app.route("/learn")
+@require_role("viewer")
 def learn():
     """INIDS 2.0 Learn - ML model management and training."""
     try:
@@ -1771,6 +1855,7 @@ def learn():
 
 
 @app.route("/dashboard/main")
+@require_role("viewer")
 def dashboard_main():
     """New demo platform dashboard with 15 capability modules."""
     try:
@@ -1781,6 +1866,7 @@ def dashboard_main():
 
 
 @app.route("/api/dashboard/metrics", methods=["GET"])
+@require_role("viewer")
 def api_dashboard_metrics():
     """Get current dashboard metrics."""
     try:
@@ -1793,6 +1879,7 @@ def api_dashboard_metrics():
 
 
 @app.route("/api/dashboard/refresh", methods=["POST"])
+@require_role("analyst")
 def api_dashboard_refresh():
     """Refresh dashboard data."""
     try:
@@ -1806,6 +1893,7 @@ def api_dashboard_refresh():
 
 
 @app.route("/api/demo/start", methods=["POST"])
+@require_role("admin")
 def api_demo_start():
     """Start demo traffic simulation."""
     try:
@@ -1821,6 +1909,7 @@ def api_demo_start():
 
 
 @app.route("/api/demo/stop", methods=["POST"])
+@require_role("admin")
 def api_demo_stop():
     """Stop demo traffic simulation."""
     try:
@@ -1835,6 +1924,7 @@ def api_demo_stop():
 
 
 @app.route("/models")
+@require_role("analyst")
 def models_page():
     """Comparison page of all trained models and their metrics."""
     chart_files = {
@@ -1870,6 +1960,7 @@ def models_page():
         registry_entries=registry_entries,
     )
 @app.route("/batch", methods=["GET", "POST"])
+@require_role("analyst")
 def batch_predict():
     """Batch prediction from CSV upload."""
     ensure_model_loaded()
@@ -1929,7 +2020,7 @@ def api_health():
         "status": "ok",
         "model_loaded": model_ready,
         "readiness": readiness,
-        "alerts_buffered": len(alert_store.list_alerts(limit=1000)),
+        "alerts_buffered": len(ops_store.list_alerts(limit=1000)),
         "ops_db": OPS_DB_PATH,
         "auth": auth_status(),
         "metrics": {
@@ -1963,6 +2054,7 @@ def api_health_ready():
 # ========== PERCEPTION LAYER ENDPOINTS ==========
 
 @app.route("/api/perception/pulse", methods=["GET"])
+@require_role("analyst")
 def api_perception_pulse():
     """Get current system pulse status (real-time metrics)."""
     try:
@@ -1974,6 +2066,7 @@ def api_perception_pulse():
 
 
 @app.route("/api/perception/pulse/timeseries/<metric>", methods=["GET"])
+@require_role("analyst")
 def api_perception_pulse_timeseries(metric):
     """Get time-series data for a specific metric."""
     try:
@@ -1989,6 +2082,7 @@ def api_perception_pulse_timeseries(metric):
 
 
 @app.route("/api/perception/confidence/<detection_id>", methods=["GET"])
+@require_role("analyst")
 def api_perception_confidence(detection_id):
     """Get confidence breakdown for a specific detection."""
     try:
@@ -2002,6 +2096,7 @@ def api_perception_confidence(detection_id):
 
 
 @app.route("/api/perception/attack-story/<attack_id>", methods=["GET"])
+@require_role("analyst")
 def api_perception_attack_story(attack_id):
     """Get the narrative story for an attack."""
     try:
@@ -2013,6 +2108,7 @@ def api_perception_attack_story(attack_id):
 
 
 @app.route("/api/perception/attack-stories", methods=["GET"])
+@require_role("analyst")
 def api_perception_attack_stories():
     """Get recent attack stories."""
     try:
@@ -2028,6 +2124,7 @@ def api_perception_attack_stories():
 
 
 @app.route("/api/perception/feature-importance", methods=["GET"])
+@require_role("analyst")
 def api_perception_feature_importance():
     """Get feature importance ranking across all detections."""
     try:
@@ -2049,6 +2146,7 @@ def api_perception_feature_importance():
 
 
 @app.route("/api/perception/integration-status", methods=["GET"])
+@require_role("analyst")
 def api_perception_integration_status():
     """Get real-time integration status including latency metrics and throughput."""
     try:
@@ -2063,99 +2161,112 @@ def api_perception_integration_status():
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
-    """Generate JWT token for user.
-    
-    Request JSON:
-        {
-            "username": "admin",
-            "password": "secret"  # In production, use proper auth backend
-        }
-    
+    """Issue a JWT token after validating the caller's API key.
+
+    PLAN.md Phase A Step 4 (A-04): Login now requires a valid X-API-Key header.
+    Role is derived from the key's assigned principal — callers cannot self-assign roles.
+    This is a bridge until Step 16 (UnifiedAuthService) replaces this handler.
+
+    Request Header:
+        X-API-Key: <api-key>
+    Request JSON (optional, for audit):
+        { "username": "my-service-account" }
+
     Response:
-        {
-            "token": "eyJ0eXAiOiJKV1Q...",
-            "expires_in": 86400,
-            "user": "admin",
-            "roles": ["analyst"]  # Server-assigned
-        }
+        { "token": "...", "expires_in": 3600, "user": "...", "roles": ["..."] }
     """
+    api_key = request.headers.get("X-API-Key", "").strip()
+    if not api_key:
+        logger.warning("api_auth_login: rejected — no X-API-Key provided")
+        return jsonify({"error": "X-API-Key header is required"}), 401
+
+    # Validate key against the configured principals
+    principal = _auth_service.principals.get(api_key)
+    if principal is None:
+        logger.warning("api_auth_login: rejected — invalid API key")
+        return jsonify({"error": "Invalid API key"}), 401
+
+    # Role derived from key — caller cannot override
+    roles = [principal.role]
     payload = request.get_json(silent=True) or {}
-    username = payload.get("username", "")
-    
-    if not username:
-        return jsonify({"error": "username is required"}), 400
-    
+    username = payload.get("username", f"api-key-{principal.role}")
+
     try:
-        # Server-side role assignment: always assign analyst by default
-        # In production, fetch from user database
-        roles = ["analyst"]
-        
         token = jwt_manager.create_token(
             user_id=username,
             username=username,
             roles=roles,
-            expires_in=86400  # 24 hours
+            expires_in=3600,  # PLAN.md: 1-hour token expiry is non-negotiable
         )
-        
-        logger.info(f"JWT token issued for user: {username} with roles: {roles}")
-        
+        logger.info("api_auth_login: JWT issued user=%s roles=%s", username, roles)
         return jsonify({
             "token": token,
-            "expires_in": 86400,
+            "expires_in": 3600,
             "user": username,
-            "roles": roles
+            "roles": roles,
         }), 200
-    
-    except Exception as e:
-        logger.error(f"Login failed: {str(e)}")
+    except Exception:
+        logger.exception("api_auth_login: token creation failed")
         return jsonify({"error": "Authentication failed"}), 401
 
 
 @app.route("/api/auth/refresh", methods=["POST"])
 def api_auth_refresh():
-    """Refresh JWT token.
-    
+    """Refresh a JWT token that is still valid or within the 5-minute grace window.
+
+    PLAN.md Phase A Step 4 (A-04): allow_expired=True is removed.
+    Tokens expired by more than REFRESH_GRACE_SECONDS are rejected outright.
+    This closes the infinite-lifetime token vulnerability.
+
     Request Header:
-        Authorization: Bearer <expired_token>
-    
+        Authorization: Bearer <token>
     Response:
-        {
-            "token": "eyJ0eXAiOiJKV1Q...",
-            "expires_in": 86400
-        }
+        { "token": "...", "expires_in": 3600 }
     """
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    
+    REFRESH_GRACE_SECONDS = 300  # 5-minute window before/after expiry
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
     if not token:
         return jsonify({"error": "Missing token"}), 401
-    
+
     try:
-        is_valid, claims, error = jwt_manager.verify_token(token, allow_expired=True)
+        # First: try normal validation (token still valid)
+        is_valid, claims, error = jwt_manager.verify_token(token)
 
         if not is_valid:
-            return jsonify({"error": f"Invalid token: {error}"}), 401
-        
+            # Token is invalid — check if it's within the grace window
+            import time as _time
+            try:
+                # Decode without verification to inspect expiry
+                _, expired_claims, _ = jwt_manager.verify_token(token, allow_expired=True)
+                if expired_claims is None:
+                    return jsonify({"error": "Cannot parse token"}), 401
+                now = _time.time()
+                seconds_overdue = now - expired_claims.exp
+                if seconds_overdue > REFRESH_GRACE_SECONDS:
+                    logger.warning(
+                        "api_auth_refresh: rejected — token expired %ds ago (grace=%ds) user=%s",
+                        int(seconds_overdue), REFRESH_GRACE_SECONDS, expired_claims.sub,
+                    )
+                    return jsonify({"error": "Token expired — please re-authenticate"}), 401
+                claims = expired_claims
+            except Exception:
+                return jsonify({"error": f"Invalid token: {error}"}), 401
+
         if not claims:
             return jsonify({"error": "Could not parse token"}), 401
-        
-        # Create new token
+
         new_token = jwt_manager.create_token(
             user_id=claims.user_id,
             username=claims.sub,
             roles=claims.roles,
-            expires_in=86400
+            expires_in=3600,  # PLAN.md: 1-hour token expiry is non-negotiable
         )
-        
-        logger.info(f"Token refreshed for user: {claims.sub}")
-        
-        return jsonify({
-            "token": new_token,
-            "expires_in": 86400,
-            "user": claims.sub
-        }), 200
-    
-    except Exception as e:
-        logger.error(f"Token refresh failed: {str(e)}")
+        logger.info("api_auth_refresh: token refreshed user=%s", claims.sub)
+        return jsonify({"token": new_token, "expires_in": 3600, "user": claims.sub}), 200
+
+    except Exception:
+        logger.exception("api_auth_refresh: failed")
         return jsonify({"error": "Token refresh failed"}), 401
 
 
@@ -2333,7 +2444,7 @@ def api_audit_user_activity():
 @app.route("/api/auth/status", methods=["GET"])
 def api_auth_status():
     """Get authentication system status.
-    
+
     Response:
         {
             "auth_enabled": true,
@@ -2358,7 +2469,76 @@ def api_auth_status():
     }), 200
 
 
+@app.route("/api/auth/revoke", methods=["POST"])
+def api_auth_revoke():
+    """Revoke a JWT by adding its jti to the revocation list (C-04 Step 18).
+
+    The RS256 signature is verified even if the token has expired — this allows
+    clients to revoke tokens from a compromised session after the 1-hour window.
+    Forged or HS256 tokens are rejected with 401.
+
+    Request Header:
+        Authorization: Bearer <token>
+    Response (200):
+        {"revoked": true, "jti": "<jti>"}
+    """
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    if not token:
+        return jsonify({"error": "Authorization: Bearer <token> header required"}), 400
+
+    try:
+        from src.auth.jwt_manager import get_jwt_manager as _get_rs256_mgr
+        _rs256 = _get_rs256_mgr()
+        ok, payload, error = _rs256.decode_ignoring_expiry(token)
+        if not ok or payload is None:
+            return jsonify({"error": "Invalid token", "reason": error}), 401
+
+        jti = payload.get("jti", "")
+        if not jti:
+            return jsonify({"error": "Token has no jti claim — cannot revoke"}), 400
+
+        user_id = str(payload.get("user_id", payload.get("sub", "")))
+        exp = payload.get("exp", 0)
+        expires_at = (
+            datetime.fromtimestamp(exp, tz=timezone.utc).isoformat() if exp else ""
+        )
+        revoked_at = datetime.now(timezone.utc).isoformat()
+
+        ops_store.add_revoked_token(
+            jti=jti,
+            user_id=user_id,
+            expires_at=expires_at,
+            revoked_at=revoked_at,
+        )
+        logger.info("api_auth_revoke: jti=%s user_id=%s", jti, user_id)
+        return jsonify({"revoked": True, "jti": jti}), 200
+    except Exception:
+        logger.exception("api_auth_revoke: failed")
+        return jsonify({"error": "Revocation failed"}), 500
+
+
+@app.route("/api/admin/cleanup-tokens", methods=["POST"])
+@require_role("admin")
+def api_admin_cleanup_tokens():
+    """Delete expired JWT revocation records (C-04 daily cleanup).
+
+    Removes revoked_tokens rows whose expires_at is in the past. These tokens
+    would be rejected by expiry anyway — the revocation record is no longer needed.
+
+    Response:
+        {"deleted": <count>}
+    """
+    try:
+        deleted = ops_store.cleanup_revoked_tokens()
+        logger.info("api_admin_cleanup_tokens: deleted=%d expired revocation records", deleted)
+        return jsonify({"deleted": deleted}), 200
+    except Exception:
+        logger.exception("api_admin_cleanup_tokens: failed")
+        return jsonify({"error": "Cleanup failed"}), 500
+
+
 @app.route("/api/predict", methods=["POST"])
+@require_role("analyst")
 def api_predict():
     if not ensure_detection_service():
         return jsonify({"error": "No trained model found"}), 503
@@ -3459,6 +3639,7 @@ def api_ingest_process():
 
 
 @app.route("/about")
+@require_role("viewer")
 def about():
     return render_template("about.html")
 
@@ -3636,16 +3817,19 @@ def api_honeypot_toggle(honeypot_id: str):
 
 
 @app.route("/realtime")
+@require_role("viewer")
 def realtime():
     return render_template("realtime.html")
 
 
 @app.route("/capture")
+@require_role("analyst")
 def capture():
     return render_template("capture.html")
 
 
 @app.route("/honeypot")
+@require_role("analyst")
 def honeypot():
     return render_template("honeypot.html")
 
@@ -3655,6 +3839,7 @@ def honeypot():
 # ============================================================================
 
 @app.route("/modules/<module_id>")
+@require_role("viewer")
 def module_view(module_id):
     """Render module template by ID."""
     modules = {
@@ -3689,6 +3874,7 @@ def module_view(module_id):
 # MODULE DATA APIs - Compose existing endpoints for module consumption
 
 @app.route("/api/modules/real-time-detection", methods=["GET"])
+@require_role("viewer")
 def api_module_real_time_detection():
     """Real-time detection events."""
     try:
@@ -3707,6 +3893,7 @@ def api_module_real_time_detection():
 
 
 @app.route("/api/modules/multi-engine", methods=["GET"])
+@require_role("viewer")
 def api_module_multi_engine():
     """Multi-engine voting consensus."""
     try:
@@ -3756,6 +3943,7 @@ def api_module_risk_score():
 
 
 @app.route("/api/modules/auto-blocking", methods=["GET"])
+@require_role("analyst")
 def api_module_auto_blocking():
     """Auto-blocking module state."""
     try:
@@ -3776,6 +3964,7 @@ def api_module_auto_blocking():
 
 
 @app.route("/api/modules/approval-workflow", methods=["GET"])
+@require_role("analyst")
 def api_module_approval_workflow():
     """Approval workflow HITL."""
     try:
@@ -3800,6 +3989,7 @@ def api_module_approval_workflow():
 
 
 @app.route("/api/modules/false-positive", methods=["GET"])
+@require_role("analyst")
 def api_module_false_positive():
     """False positive learning feedback."""
     try:
@@ -3822,6 +4012,7 @@ def api_module_false_positive():
 
 
 @app.route("/api/modules/threat-intel", methods=["GET"])
+@require_role("analyst")
 def api_module_threat_intel():
     """Threat intelligence enrichment."""
     try:
@@ -3840,6 +4031,7 @@ def api_module_threat_intel():
 
 
 @app.route("/api/modules/analytics", methods=["GET"])
+@require_role("analyst")
 def api_module_analytics():
     """Analytics dashboard."""
     try:
@@ -3863,6 +4055,7 @@ def api_module_analytics():
 
 
 @app.route("/api/modules/escalation", methods=["GET"])
+@require_role("analyst")
 def api_module_escalation():
     """Escalation state machine."""
     try:
@@ -3881,6 +4074,7 @@ def api_module_escalation():
 
 
 @app.route("/api/modules/pipeline-monitor", methods=["GET"])
+@require_role("viewer")
 def api_module_pipeline_monitor():
     """Pipeline monitoring metrics."""
     try:
@@ -3900,6 +4094,7 @@ def api_module_pipeline_monitor():
 
 
 @app.route("/api/modules/policy-tuning", methods=["GET", "POST"])
+@require_role("admin")
 def api_module_policy_tuning():
     """Policy tuning simulator."""
     try:
@@ -3930,6 +4125,7 @@ def api_module_policy_tuning():
 
 
 @app.route("/api/modules/alert-lifecycle", methods=["GET"])
+@require_role("analyst")
 def api_module_alert_lifecycle():
     """Alert lifecycle manager (Kanban board)."""
     try:
@@ -4016,6 +4212,7 @@ def api_module_engine_playground():
 
 
 @app.route("/api/modules/pattern-detector", methods=["GET"])
+@require_role("analyst")
 def api_module_pattern_detector():
     """Behavioral pattern detector (network graph)."""
     try:
@@ -4050,6 +4247,7 @@ def api_module_pattern_detector():
 # NEW MODULE API ENDPOINTS - Task 2: Modules 2-15
 
 @app.route("/api/modules/multi-engine-voting", methods=["GET"])
+@require_role("analyst")
 def api_module_multi_engine_voting():
     """Multi-engine voting consensus."""
     try:
@@ -4081,6 +4279,7 @@ def api_module_multi_engine_voting():
 
 
 @app.route("/api/modules/risk-score-visualizer", methods=["GET"])
+@require_role("analyst")
 def api_module_risk_score_visualizer():
     """Risk score visualization."""
     try:
@@ -4153,6 +4352,7 @@ def _module_update_broadcaster():
 
 
 @app.route("/api/modules/evasion-detection", methods=["GET"])
+@require_role("analyst")
 def api_module_evasion_detection():
     """Evasion technique detection."""
     try:
@@ -4173,6 +4373,7 @@ def api_module_evasion_detection():
 
 
 @app.route("/api/modules/packet-inspection", methods=["GET"])
+@require_role("analyst")
 def api_module_packet_inspection():
     """Deep packet inspection results."""
     try:
@@ -4193,6 +4394,7 @@ def api_module_packet_inspection():
 
 
 @app.route("/api/modules/behavioral-profiling", methods=["GET"])
+@require_role("analyst")
 def api_module_behavioral_profiling():
     """User and entity behavioral profiling."""
     try:
@@ -4232,6 +4434,7 @@ def api_module_threat_intelligence():
 
 
 @app.route("/api/modules/drift-monitor", methods=["GET"])
+@require_role("analyst")
 def api_module_drift_monitor():
     """Model drift monitoring."""
     try:
@@ -4248,6 +4451,7 @@ def api_module_drift_monitor():
 
 
 @app.route("/api/modules/anomaly-learning", methods=["GET"])
+@require_role("analyst")
 def api_module_anomaly_learning():
     """Auto-learning anomaly patterns."""
     try:
@@ -4267,6 +4471,7 @@ def api_module_anomaly_learning():
 
 
 @app.route("/api/modules/fp-suppression", methods=["GET"])
+@require_role("analyst")
 def api_module_fp_suppression():
     """False positive suppression rules."""
     try:
@@ -4287,6 +4492,7 @@ def api_module_fp_suppression():
 
 
 @app.route("/api/modules/escalation-tracker", methods=["GET"])
+@require_role("analyst")
 def api_module_escalation_tracker():
     """Incident escalation tracking."""
     try:
@@ -4305,6 +4511,7 @@ def api_module_escalation_tracker():
 
 
 @app.route("/api/modules/network-topology", methods=["GET"])
+@require_role("analyst")
 def api_module_network_topology():
     """Network topology visualization."""
     try:
@@ -4320,6 +4527,7 @@ def api_module_network_topology():
 
 
 @app.route("/api/modules/policy-enforcement", methods=["GET"])
+@require_role("admin")
 def api_module_policy_enforcement():
     """Security policy enforcement."""
     try:
@@ -4340,6 +4548,7 @@ def api_module_policy_enforcement():
 
 
 @app.route("/api/modules/forensic-timeline", methods=["GET"])
+@require_role("analyst")
 def api_module_forensic_timeline():
     """Forensic event timeline."""
     try:

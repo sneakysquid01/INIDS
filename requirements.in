@@ -1,0 +1,34 @@
+# Direct runtime dependencies.
+# Compile with: pip-compile --generate-hashes requirements.in -o requirements.txt
+pandas
+scikit-learn
+Flask
+matplotlib
+seaborn
+joblib
+numpy
+Werkzeug
+Jinja2
+scapy
+requests
+PyYAML
+redis
+flask-socketio
+python-socketio
+PyJWT
+cryptography
+jsonschema
+connexion[swagger-ui]
+uvicorn
+opensearch-py
+elasticsearch
+aiohttp
+aiofiles
+sqlalchemy
+gunicorn
+eventlet
+
+# Development / test dependencies
+pytest
+pytest-benchmark
+pip-audit

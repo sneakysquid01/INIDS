@@ -277,23 +277,54 @@ class AuditLogMiddleware:
 
 class CORSMiddleware:
     """CORS middleware with security controls."""
-    
-    def __init__(self, allowed_origins: list = None, allowed_methods: list = None):
-        self.allowed_origins = allowed_origins or ['http://localhost:5000', 'http://127.0.0.1:5000']
-        self.allowed_methods = allowed_methods or ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-    
-    def after_request(self, response: Response) -> Response:
-        """Add CORS headers."""
+
+    _DEFAULT_ORIGINS = ['http://localhost:5000', 'http://127.0.0.1:5000']
+    _DEFAULT_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+    _DEFAULT_HEADERS = ['Authorization', 'Content-Type', 'X-API-Key', 'X-Correlation-ID']
+
+    def __init__(
+        self,
+        allowed_origins: list = None,
+        allowed_methods: list = None,
+        allowed_headers: list = None,
+        allow_credentials: bool = True,
+    ):
+        self.allowed_origins = allowed_origins or self._DEFAULT_ORIGINS
+        self.allowed_methods = allowed_methods or self._DEFAULT_METHODS
+        self.allowed_headers = allowed_headers or self._DEFAULT_HEADERS
+        self.allow_credentials = allow_credentials
+
+    def handle_preflight(self) -> Optional[Response]:
+        """Return a CORS preflight response for OPTIONS requests from allowed origins."""
+        if request.method != 'OPTIONS':
+            return None
         origin = request.headers.get('Origin')
-        
+        if origin not in self.allowed_origins:
+            return None
+        resp = Response(status=200)
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Methods'] = ', '.join(self.allowed_methods)
+        resp.headers['Access-Control-Allow-Headers'] = ', '.join(self.allowed_headers)
+        if self.allow_credentials:
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Max-Age'] = '3600'
+        return resp
+
+    def add_headers(self, response: Response) -> Response:
+        """Add CORS headers to actual (non-preflight) responses."""
+        origin = request.headers.get('Origin')
         if origin in self.allowed_origins:
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Methods'] = ', '.join(self.allowed_methods)
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, X-User-ID'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = ', '.join(self.allowed_headers)
+            if self.allow_credentials:
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '3600'
-        
         return response
+
+    def after_request(self, response: Response) -> Response:
+        """Alias for add_headers — backward compatibility."""
+        return self.add_headers(response)
 
 
 class RequestValidationMiddleware:
@@ -332,60 +363,72 @@ class ContentSecurityMiddleware:
         return response
 
 
-def register_middleware(app, rate_limit_config: RateLimitConfig = None):
+def register_middleware(
+    app,
+    rate_limit_config: RateLimitConfig = None,
+    cors_origins: list = None,
+):
     """Register all middleware with Flask app.
-    
+
     Args:
         app: Flask application
         rate_limit_config: Rate limit configuration
+        cors_origins: Allowed CORS origins (reads INIDS_CORS_ORIGINS env var as fallback)
     """
-    # Initialize middleware instances
+    import os as _os
+    if cors_origins is None:
+        raw = _os.getenv("INIDS_CORS_ORIGINS", "").strip()
+        cors_origins = [o.strip() for o in raw.split(",") if o.strip()] if raw else CORSMiddleware._DEFAULT_ORIGINS
+
     rate_limiter = RateLimitMiddleware(rate_limit_config or RateLimitConfig())
     ip_blocker = IPBlockingMiddleware()
     security_headers = SecurityHeadersMiddleware()
     audit_log = AuditLogMiddleware()
-    cors = CORSMiddleware()
+    cors = CORSMiddleware(
+        allowed_origins=cors_origins,
+        allowed_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowed_headers=['Authorization', 'Content-Type', 'X-API-Key', 'X-Correlation-ID'],
+        allow_credentials=True,
+    )
     request_validator = RequestValidationMiddleware()
     content_security = ContentSecurityMiddleware()
-    
-    # Register before_request hooks (order matters - security first)
+
     @app.before_request
     def before_request():
-        # Check IP block first
+        # CORS preflight first — must bypass auth/rate-limit
+        result = cors.handle_preflight()
+        if result:
+            return result
+
         result = ip_blocker.before_request()
         if result:
             return result
-        
-        # Rate limiting
-        result = rate_limiter.before_request()
-        if result:
-            return result
-        
-        # Request validation
+
+        # C-05 (Step 19): RateLimitMiddleware removed from chain.
+        # Rate limiting is now handled by UnifiedRateLimiter in before_request
+        # (Tier 1 global IP) and require_roles() (Tier 2 per-user).
+
         result = request_validator.before_request()
         if result:
             return result
-        
-        # Audit logging
+
         audit_log.before_request()
-    
-    # Register after_request hooks
+
     @app.after_request
     def after_request(response):
         response = ip_blocker.after_request(response)
         response = security_headers.after_request(response)
-        response = cors.after_request(response)
+        response = cors.add_headers(response)
         response = content_security.after_request(response)
         response = audit_log.after_request(response)
         return response
-    
-    # Store middleware references on app for API access
+
     app.rate_limiter = rate_limiter
     app.ip_blocker = ip_blocker
     app.audit_log = audit_log
-    
+
     logger.info("Security middleware stack registered")
-    
+
     return {
         'rate_limiter': rate_limiter,
         'ip_blocker': ip_blocker,

@@ -1,0 +1,33 @@
+# PLAN.md Phase A Step 5 (A-05): prevent secrets and repo artifacts from entering the image
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+
+# Dev artifacts
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+
+# Data files — these are mounted as volumes at runtime
+data/
+models/
+
+# Test files — not needed in production image
+tests/
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+
+# Scripts — not needed at runtime (wheels are already installed)
+scripts/

@@ -1,0 +1,47 @@
+name: Security Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run daily at 02:00 UTC to catch newly published CVEs
+    - cron: "0 2 * * *"
+
+jobs:
+  pip-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit dependencies (A-07)
+        # Fail the build if any known CVE is found in pinned dependencies.
+        # Use --no-deps to only check what is explicitly listed in requirements.txt.
+        run: pip-audit --require-hashes --no-deps -r requirements.txt
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies with hash verification (A-07)
+        run: pip install --require-hashes --no-deps -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest --tb=short -q

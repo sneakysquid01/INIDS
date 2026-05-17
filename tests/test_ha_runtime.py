@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
+from unittest.mock import patch
+
 
 def test_leader_election_without_redis_is_leader():
+    # B-05: single-instance (no Redis) mode requires INIDS_REDIS_REQUIRED=false
     from src.ha.leader_election import LeaderElection
 
-    le = LeaderElection(redis_client=None, instance_id="unit-test")
-    le.start()
+    with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "false"}):
+        le = LeaderElection(redis_client=None, instance_id="unit-test")
+        le.start()
     assert le.is_leader is True
     status = le.status()
     assert status["is_leader"] is True

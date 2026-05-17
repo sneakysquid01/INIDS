@@ -9,6 +9,7 @@ Covers:
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -25,33 +26,48 @@ from src.detection.aggregator import EngineAggregator, AggregationStrategy
 
 # ---------------------------------------------------------------------------
 # LeaderElection — Redis absent
+# B-05: No Redis + INIDS_REDIS_REQUIRED=false → single-instance always-leader.
+#       No Redis + INIDS_REDIS_REQUIRED unset/true → fail-closed (not leader).
 # ---------------------------------------------------------------------------
 
 
 class TestLeaderElectionRedisAbsent:
     def test_becomes_leader_immediately_without_redis(self):
-        le = LeaderElection(redis_client=None, instance_id="solo")
-        le.start()
+        # B-05: single-instance mode requires INIDS_REDIS_REQUIRED=false
+        with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "false"}):
+            le = LeaderElection(redis_client=None, instance_id="solo")
+            le.start()
         assert le.is_leader is True
 
     def test_start_without_redis_is_idempotent(self):
-        le = LeaderElection(redis_client=None, instance_id="solo")
-        le.start()
-        le.start()
+        # B-05: single-instance mode requires INIDS_REDIS_REQUIRED=false
+        with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "false"}):
+            le = LeaderElection(redis_client=None, instance_id="solo")
+            le.start()
+            le.start()
         assert le.is_leader is True
 
     def test_stop_without_redis_sets_not_leader(self):
-        le = LeaderElection(redis_client=None, instance_id="solo")
-        le.start()
-        le.stop()
+        with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "false"}):
+            le = LeaderElection(redis_client=None, instance_id="solo")
+            le.start()
+            le.stop()
         assert le.is_leader is False
 
     def test_status_reflects_no_redis(self):
-        le = LeaderElection(redis_client=None, instance_id="test-inst")
-        le.start()
+        with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "false"}):
+            le = LeaderElection(redis_client=None, instance_id="test-inst")
+            le.start()
         s = le.status()
         assert s["redis_connected"] is False
         assert s["instance_id"] == "test-inst"
+
+    def test_no_redis_without_flag_is_fail_closed(self):
+        """B-05: No Redis, INIDS_REDIS_REQUIRED not false → not leader."""
+        with patch.dict(os.environ, {"INIDS_REDIS_REQUIRED": "true"}):
+            le = LeaderElection(redis_client=None, instance_id="solo")
+            le.start()
+        assert le.is_leader is False
 
 
 # ---------------------------------------------------------------------------

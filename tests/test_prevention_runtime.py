@@ -281,10 +281,11 @@ class TestActionExecutorIdempotency:
         result = executor.execute(event, policy)
         assert result is not None
 
-    def test_duplicate_execution_returns_none(self, tmp_path):
+    def test_duplicate_execution_db_enforces_idempotency(self, tmp_path):
+        # C-02: idempotency is now DB-level (uq_active_block partial index), not
+        # application-level. execute() proceeds through to save_action(), which
+        # catches the IntegrityError. The DB has exactly ONE active block record.
         executor, store = self._make_executor(tmp_path)
-        # Use dry_run=True so status stays active/DRY_RUN;
-        # We need to record a real 'active' block first.
         from datetime import datetime, timezone, timedelta
         store.save_action({
             "action": "block", "action_type": "block",
@@ -295,10 +296,15 @@ class TestActionExecutorIdempotency:
         })
         policy = self._make_policy(dry_run=False)
         event = self._make_decision_event(ip="10.5.5.5")
-        result = executor.execute(event, policy)
-        assert result is None
+        executor.execute(event, policy)  # must not raise
+        active_blocks = store._fetchall(
+            "SELECT * FROM actions WHERE target = :t AND lower(status) IN ('active','enforced','executed')",
+            {"t": "10.5.5.5"},
+        )
+        assert len(active_blocks) == 1  # DB constraint ensures exactly one row
 
     def test_rate_limit_idempotency(self, tmp_path):
+        # C-02: same pattern — DB-level idempotency via uq_active_block index.
         executor, store = self._make_executor(tmp_path)
         from datetime import datetime, timezone, timedelta
         store.save_action({
@@ -310,8 +316,12 @@ class TestActionExecutorIdempotency:
         })
         policy = self._make_policy(dry_run=False)
         event = self._make_decision_event(ip="10.6.6.6", decision="RATE_LIMIT")
-        result = executor.execute(event, policy)
-        assert result is None
+        executor.execute(event, policy)  # must not raise
+        active_blocks = store._fetchall(
+            "SELECT * FROM actions WHERE target = :t AND lower(status) IN ('active','enforced','executed')",
+            {"t": "10.6.6.6"},
+        )
+        assert len(active_blocks) == 1  # DB constraint ensures exactly one row
 
 
 # ---------------------------------------------------------------------------

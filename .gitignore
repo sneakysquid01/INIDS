@@ -2,10 +2,21 @@ venv/
 __pycache__/
 *.pyc
 
+# Secrets and credentials — NEVER commit these
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Local model artifacts
 models/*.pkl
 results/*.json
 web_app/static/*.png
+
+# Database files
+data/*.db
 
 # Local captures
 captured_data/

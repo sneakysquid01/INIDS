@@ -18,7 +18,10 @@ ROLE_RANK = {
     "viewer": 1,
     "analyst": 2,
     "admin": 3,
+    "sensor": 0,  # endpoint-gated, not hierarchical — see SENSOR_ALLOWED_ENDPOINTS
 }
+
+SENSOR_ALLOWED_ENDPOINTS: frozenset[str] = frozenset({"/api/detect", "/api/stream"})
 
 
 def _env_bool(*keys: str, default: str = "0") -> bool:
@@ -32,11 +35,8 @@ def _env_bool(*keys: str, default: str = "0") -> bool:
 class AuthService:
     def __init__(self):
         self.principals: dict[str, Principal] = {}
-        # Default: OFF for local/demo operation; any configured keys still enable auth.
         self.require_api_keys = _env_bool("INIDS_REQUIRE_API_KEYS")
-        self.allow_unauthenticated = _env_bool("INIDS_ALLOW_UNAUTHENTICATED", "ALLOW_UNAUTHENTICATED")
         self._load_from_env()
-        self._env_principal_tokens = frozenset(self.principals)
 
     def _load_from_env(self) -> None:
         admin = os.getenv("INIDS_ADMIN_API_KEY", "").strip()
@@ -49,29 +49,21 @@ class AuthService:
         if analyst:
             self.principals[analyst] = Principal(role="analyst", token=analyst)
         if sensor:
-            self.principals[sensor] = Principal(role="analyst", token=sensor)
+            self.principals[sensor] = Principal(role="sensor", token=sensor)
         if viewer:
             self.principals[viewer] = Principal(role="viewer", token=viewer)
 
     @property
     def enabled(self) -> bool:
-        if self._bypass_enabled():
-            return False
         return self.require_api_keys or len(self.principals) > 0
-
-    def _bypass_enabled(self) -> bool:
-        return self.allow_unauthenticated and frozenset(self.principals) == self._env_principal_tokens
 
     def authorize(self, required_role: str) -> tuple[bool, str]:
         if required_role not in ROLE_RANK:
             return False, "unknown_role"
-        
-        if self._bypass_enabled():
-            return True, "auth_bypassed"
-        
+
         if not self.enabled:
             return True, "auth_disabled"
-        
+
         if self.require_api_keys and not self.principals:
             return False, "auth_not_configured"
 
@@ -82,6 +74,11 @@ class AuthService:
         principal = self.principals.get(token)
         if principal is None:
             return False, "invalid_api_key"
+
+        if principal.role == "sensor":
+            if request.path in SENSOR_ALLOWED_ENDPOINTS:
+                return True, "sensor"
+            return False, "insufficient_role"
 
         if ROLE_RANK[principal.role] < ROLE_RANK[required_role]:
             return False, "insufficient_role"

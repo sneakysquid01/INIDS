@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 import pandas as pd
@@ -10,6 +11,23 @@ from src.detection.engine_base import DetectionEngine, EngineResult
 from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS, NUMERIC_FEATURES
 
 logger = logging.getLogger(__name__)
+
+# B-02: module-level fallback counter; incremented whenever inference fails.
+# CPython GIL makes int += 1 effectively atomic for simple reads/writes.
+_ml_unknown_verdict_total: int = 0
+_ml_unknown_verdict_lock = threading.Lock()
+
+
+def _increment_unknown_verdict_counter() -> None:
+    global _ml_unknown_verdict_total
+    with _ml_unknown_verdict_lock:
+        _ml_unknown_verdict_total += 1
+
+
+def get_unknown_verdict_total() -> int:
+    """Return the cumulative count of inference fallbacks (for metrics endpoints)."""
+    with _ml_unknown_verdict_lock:
+        return _ml_unknown_verdict_total
 
 
 class MLEngine(DetectionEngine):
@@ -101,25 +119,45 @@ class MLEngine(DetectionEngine):
                     logger.debug("Type conversion failed for %s=%s, using default", key, value)
 
         df = pd.DataFrame([row], columns=FEATURE_COLUMNS)
-        logger.debug(f"Created DataFrame shape: {df.shape}, columns: {len(df.columns)}")
-        
+        logger.debug("MLEngine DataFrame shape=%s columns=%d", df.shape, len(df.columns))
+
         try:
             pred = int(self._model.predict(df)[0])
-            logger.debug(f"Model prediction: {pred}")
-        except Exception as e:
-            logger.exception(f"Model.predict() failed: {e}")
-            raise
-        
+        except Exception as exc:
+            logger.error(
+                "MLEngine[%s] predict() failed: %s — returning unknown verdict",
+                self._engine_id, exc,
+            )
+            _increment_unknown_verdict_counter()
+            return EngineResult(
+                engine_id=self._engine_id,
+                engine_type=self.engine_type,
+                verdict="unknown",
+                confidence=0.0,
+                severity="low",
+                attack_type="unknown",
+                metadata={"error": str(exc), "fallback": True},
+            )
+
         try:
             proba = self._model.predict_proba(df)[0]
-            logger.debug(f"Model predict_proba: {proba}")
-        except Exception as e:
-            logger.exception(f"Model.predict_proba() failed: {e}")
-            raise
-            
-        confidence = round(float(max(proba)) * 100, 2)
-        logger.debug(f"Confidence: {confidence}%")
+        except Exception as exc:
+            logger.error(
+                "MLEngine[%s] predict_proba() failed: %s — returning unknown verdict",
+                self._engine_id, exc,
+            )
+            _increment_unknown_verdict_counter()
+            return EngineResult(
+                engine_id=self._engine_id,
+                engine_type=self.engine_type,
+                verdict="unknown",
+                confidence=0.0,
+                severity="low",
+                attack_type="unknown",
+                metadata={"error": str(exc), "fallback": True},
+            )
 
+        confidence = round(float(max(proba)) * 100, 2)
         verdict = "attack" if pred == 1 else "normal"
         attack_type = features.get("attack_type", "unknown") if pred == 1 else "normal"
         severity = self._compute_severity(verdict, confidence)

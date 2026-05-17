@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -7,7 +9,7 @@ from typing import Any
 from src.firewall_adapters import FirewallAdapter, MockFirewallAdapter
 
 
-@dataclass
+@dataclass(frozen=True)
 class PolicyConfig:
     mode: str = "monitor"  # monitor | auto_block
     block_ttl_seconds: int = 300
@@ -24,6 +26,28 @@ class PolicyConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+class PolicyConfigManager:
+    """Thread-safe manager for a frozen PolicyConfig snapshot.
+
+    B-03: readers always get a consistent frozen config; writers atomically
+    replace the whole snapshot via dataclasses.replace() under a lock.
+    """
+
+    def __init__(self, initial: PolicyConfig | None = None) -> None:
+        self._config: PolicyConfig = initial or PolicyConfig()
+        self._lock = threading.RLock()
+
+    def get(self) -> PolicyConfig:
+        """Return the current config snapshot (lock-free read)."""
+        return self._config
+
+    def update(self, **kwargs: Any) -> PolicyConfig:
+        """Replace the config with a new frozen snapshot containing updated fields."""
+        with self._lock:
+            self._config = dataclasses.replace(self._config, **kwargs)
+            return self._config
 
 
 @dataclass
@@ -55,12 +79,15 @@ class PreventionService:
     def __init__(
         self,
         policy: PolicyConfig | None = None,
-        store: InMemoryPreventionStore | None = None,
         adapter: FirewallAdapter | None = None,
     ):
-        self.policy = policy or PolicyConfig()
-        self.store = store or InMemoryPreventionStore()
+        self.config_manager = PolicyConfigManager(policy)
         self.adapter = adapter or MockFirewallAdapter()
+
+    @property
+    def policy(self) -> PolicyConfig:
+        """Read-only snapshot of the current policy (B-03 compat shim)."""
+        return self.config_manager.get()
 
     def set_policy(
         self,
@@ -77,19 +104,20 @@ class PreventionService:
         risk_weight_severity: float | None = None,
         risk_weight_frequency: float | None = None,
     ) -> PolicyConfig:
+        updates: dict[str, Any] = {}
         if mode is not None:
             normalized_mode = mode.strip().lower()
             if normalized_mode not in {"monitor", "auto_block"}:
                 raise ValueError("mode must be either 'monitor' or 'auto_block'")
-            self.policy.mode = normalized_mode
+            updates["mode"] = normalized_mode
         if block_ttl_seconds is not None:
             if block_ttl_seconds <= 0:
                 raise ValueError("block_ttl_seconds must be > 0")
-            self.policy.block_ttl_seconds = int(block_ttl_seconds)
+            updates["block_ttl_seconds"] = int(block_ttl_seconds)
         if confidence_block_threshold is not None:
             if confidence_block_threshold < 0 or confidence_block_threshold > 100:
                 raise ValueError("confidence_block_threshold must be between 0 and 100")
-            self.policy.confidence_block_threshold = float(confidence_block_threshold)
+            updates["confidence_block_threshold"] = float(confidence_block_threshold)
         for attr, val in (
             ("risk_alert_threshold", risk_alert_threshold),
             ("risk_rate_limit_threshold", risk_rate_limit_threshold),
@@ -100,11 +128,11 @@ class PreventionService:
                 fval = float(val)
                 if fval < 0 or fval > 1:
                     raise ValueError(f"{attr} must be between 0 and 1")
-                setattr(self.policy, attr, fval)
+                updates[attr] = fval
         if dry_run is not None:
-            self.policy.dry_run = bool(dry_run)
+            updates["dry_run"] = bool(dry_run)
         if block_requires_approval is not None:
-            self.policy.block_requires_approval = bool(block_requires_approval)
+            updates["block_requires_approval"] = bool(block_requires_approval)
         for attr, val in (
             ("risk_weight_confidence", risk_weight_confidence),
             ("risk_weight_severity", risk_weight_severity),
@@ -114,23 +142,24 @@ class PreventionService:
                 fval = float(val)
                 if fval < 0 or fval > 1:
                     raise ValueError(f"{attr} must be between 0 and 1")
-                setattr(self.policy, attr, fval)
-        return self.policy
+                updates[attr] = fval
+        return self.config_manager.update(**updates) if updates else self.config_manager.get()
 
     def evaluate(self, prediction: str, confidence: float, source: str = "unknown") -> PreventionAction | None:
-        if self.policy.mode != "auto_block":
+        cfg = self.config_manager.get()
+        if cfg.mode != "auto_block":
             return None
         if prediction != "Attack":
             return None
-        if confidence < self.policy.confidence_block_threshold:
+        if confidence < cfg.confidence_block_threshold:
             return None
 
         now = datetime.now(timezone.utc)
-        expires = now + timedelta(seconds=self.policy.block_ttl_seconds)
+        expires = now + timedelta(seconds=cfg.block_ttl_seconds)
 
         executed = False
-        if not self.policy.dry_run:
-            executed = self.adapter.block(source, self.policy.block_ttl_seconds)
+        if not cfg.dry_run:
+            executed = self.adapter.block(source, cfg.block_ttl_seconds)
 
         action = PreventionAction(
             action="block",
@@ -138,8 +167,7 @@ class PreventionService:
             reason=f"attack_confidence_{confidence}",
             expires_at=expires.isoformat(),
             created_at=now.isoformat(),
-            dry_run=self.policy.dry_run,
+            dry_run=cfg.dry_run,
             executed=executed,
         )
-        self.store.add_action(action)
         return action

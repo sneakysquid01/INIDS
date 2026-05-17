@@ -45,7 +45,10 @@ class AnomalyEngine(DetectionEngine):
         self._contamination = contamination
         self._n_estimators = n_estimators
         self._random_state = random_state
-        self._model: Any = None
+        # B-04: atomic model reference — replaced via _set_model(), read via _get_model().
+        # CPython GIL makes single ref assignment atomic. Non-CPython: wrap in RLock.
+        self._model_ref: Any = None
+        self._model_lock = threading.Lock()
         self._fp_manager = fp_manager
         self._feature_names: list[str] = list(NUMERIC_FEATURES)
         self._buffer_size = int(buffer_size)
@@ -58,10 +61,22 @@ class AnomalyEngine(DetectionEngine):
         # Try to load a previously persisted model.
         if self._model_path and self._model_path.exists():
             try:
-                import joblib
-                self._model = joblib.load(self._model_path)
+                from src.detection.ml_utils import (
+                    load_checksum_manifest,
+                    load_model_with_verification,
+                    SecurityError,
+                )
+                manifest = load_checksum_manifest(self._model_path.parent)
+                expected = manifest.get(self._model_path.name)
+                if expected is None:
+                    raise FileNotFoundError(
+                        f"No checksum entry for {self._model_path.name} in manifest"
+                    )
+                self._set_model(load_model_with_verification(self._model_path, expected))
                 self._fitted = True
                 logger.info("AnomalyEngine loaded persisted model from %s", self._model_path)
+            except SecurityError:
+                raise
             except Exception:
                 logger.warning("Failed to load anomaly model from %s; starting fresh", self._model_path, exc_info=True)
 
@@ -80,8 +95,8 @@ class AnomalyEngine(DetectionEngine):
             n_jobs=-1,
         )
         model.fit(X)
+        self._set_model(model)
         with self._buffer_lock:
-            self._model = model
             self._fitted = True
         logger.info("AnomalyEngine fitted on %d samples", X.shape[0])
         if self._model_path is not None:
@@ -90,8 +105,11 @@ class AnomalyEngine(DetectionEngine):
     def _persist_model(self) -> None:
         try:
             import joblib
+            from src.detection.ml_utils import _compute_sha256, update_checksum_manifest
             self._model_path.parent.mkdir(parents=True, exist_ok=True)
-            joblib.dump(self._model, self._model_path)
+            joblib.dump(self._get_model(), self._model_path)
+            digest = _compute_sha256(self._model_path)
+            update_checksum_manifest(self._model_path.parent, self._model_path.name, digest)
             logger.info("AnomalyEngine model persisted to %s", self._model_path)
         except Exception:
             logger.warning("Failed to persist anomaly model to %s", self._model_path, exc_info=True)
@@ -128,12 +146,22 @@ class AnomalyEngine(DetectionEngine):
 
     def set_model(self, model: Any) -> None:
         """Inject a pre-trained IsolationForest/LOF model."""
-        self._model = model
+        self._set_model(model)
         self._fitted = True
 
-    def _vector_from_features(self, features: dict[str, Any]) -> np.ndarray:
+    # B-04: thread-safe model accessors
+    def _set_model(self, model: Any) -> None:
+        with self._model_lock:
+            self._model_ref = model
+
+    def _get_model(self) -> Any:
+        return self._model_ref  # single read — GIL-safe in CPython
+
+    def _vector_from_features(self, features: dict[str, Any], model: Any | None = None) -> np.ndarray:
+        if model is None:
+            model = self._get_model()
         values = [float(features.get(f, 0.0)) for f in self._feature_names]
-        expected = getattr(self._model, "n_features_in_", len(values))
+        expected = getattr(model, "n_features_in_", len(values))
         if expected != len(values):
             if not self._feature_count_warning_logged:
                 logger.warning(
@@ -161,11 +189,12 @@ class AnomalyEngine(DetectionEngine):
         return "anomaly"
 
     def is_ready(self) -> bool:
-        return self._model is not None and hasattr(self._model, "predict")
+        model = self._get_model()
+        return model is not None and hasattr(model, "predict")
 
     def evaluate(self, features: dict[str, Any]) -> EngineResult:
         source_ip = features.get("source_ip")
-        
+
         # Check if source is a known false positive (suppressed)
         if self._fp_manager is not None and source_ip:
             try:
@@ -182,11 +211,42 @@ class AnomalyEngine(DetectionEngine):
                     )
             except Exception:
                 logger.exception("FP manager suppression check failed for %s", source_ip)
-        
-        vector = self._vector_from_features(features)
 
-        pred = int(self._model.predict(vector)[0])  # -1 = anomaly, 1 = normal
-        score = float(self._model.decision_function(vector)[0])
+        # B-02 / B-04: capture model snapshot; return unknown if not yet fitted.
+        model = self._get_model()
+        if model is None:
+            from src.detection.engines.ml_engine import _increment_unknown_verdict_counter
+            _increment_unknown_verdict_counter()
+            return EngineResult(
+                engine_id=self._engine_id,
+                engine_type=self.engine_type,
+                verdict="unknown",
+                confidence=0.0,
+                severity="low",
+                attack_type="unknown",
+                metadata={"error": "model_not_fitted", "fallback": True},
+            )
+
+        try:
+            vector = self._vector_from_features(features, model)
+            pred = int(model.predict(vector)[0])  # -1 = anomaly, 1 = normal
+            score = float(model.decision_function(vector)[0])
+        except Exception as exc:
+            logger.error(
+                "AnomalyEngine[%s] inference failed: %s — returning unknown verdict",
+                self._engine_id, exc,
+            )
+            from src.detection.engines.ml_engine import _increment_unknown_verdict_counter
+            _increment_unknown_verdict_counter()
+            return EngineResult(
+                engine_id=self._engine_id,
+                engine_type=self.engine_type,
+                verdict="unknown",
+                confidence=0.0,
+                severity="low",
+                attack_type="unknown",
+                metadata={"error": str(exc), "fallback": True},
+            )
 
         # Convert IsolationForest output to our taxonomy.
         is_anomaly = pred == -1
@@ -194,7 +254,6 @@ class AnomalyEngine(DetectionEngine):
         # Map decision_function score to a 0-100 confidence.
         # Scores near 0 or negative → high anomaly confidence.
         confidence = round(max(0.0, min(100.0, (1.0 - score) * 50 + 50)), 2) if is_anomaly else round(max(0.0, min(100.0, score * 50 + 50)), 2)
-
         severity = "medium" if is_anomaly else "low"
 
         return EngineResult(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -11,6 +12,8 @@ import pandas as pd
 
 from src.core.event_bus import DetectionEvent, EventBus
 from src.schema import DEFAULT_FEATURE_ROW, FEATURE_COLUMNS
+
+logger = logging.getLogger(__name__)
 
 
 THRESHOLD_PROFILES = {
@@ -96,10 +99,17 @@ class InMemoryAlertStore:
 
 
 class DetectionService:
-    def __init__(self, model, alert_store: InMemoryAlertStore, event_bus: EventBus | None = None):
+    def __init__(
+        self,
+        model,
+        alert_store: InMemoryAlertStore | None = None,
+        event_bus: EventBus | None = None,
+        ops_store=None,
+    ):
         self.model = model
-        self.alert_store = alert_store
+        self.alert_store = alert_store  # B-06 sub-deploy 1: dual-write shim; None after sub-deploy 3
         self.event_bus = event_bus
+        self.ops_store = ops_store  # B-06: primary persistent store for alerts
 
     def predict_from_features(
         self,
@@ -137,7 +147,17 @@ class DetectionService:
                 profile=normalized_profile,
                 reason=reason,
             )
-            self.alert_store.add(alert)
+            if self.alert_store is not None:
+                self.alert_store.add(alert)
+            if self.ops_store is not None:
+                try:
+                    self.ops_store.save_alert({
+                        **alert.to_dict(),
+                        "source_ip": source_ip,
+                        "attack_type": attack_type or ("attack" if prediction == "Attack" else "normal"),
+                    })
+                except Exception as exc:
+                    logger.warning("B-06 ops_store.save_alert failed (dual-write): %s", exc)
 
         result = PredictionResult(
             prediction=prediction,
@@ -229,3 +249,26 @@ class DetectionService:
 
         contributions.sort(key=lambda x: x["contribution"], reverse=True)
         return contributions[:max(1, top_k)]
+
+
+def drain_to_ops_store(source_alert_store: InMemoryAlertStore, ops_store) -> int:
+    """B-06 sub-deploy 3: drain all alerts from source_alert_store into ops_store.
+
+    Returns the count of successfully drained records.
+    Raises RuntimeError if any drain failures occur (per PLAN.md requirement).
+    """
+    alerts = source_alert_store.list_alerts(limit=10000)
+    drained = 0
+    failures = 0
+    for alert in alerts:
+        payload = alert.to_dict() if hasattr(alert, "to_dict") else dict(alert)
+        try:
+            ops_store.save_alert(payload)
+            drained += 1
+        except Exception as exc:
+            logger.error("drain_to_ops_store: failed for alert %s: %s", payload.get("id"), exc)
+            failures += 1
+    logger.info("drain_to_ops_store: drained=%d failures=%d", drained, failures)
+    if failures > 0:
+        raise RuntimeError(f"drain_to_ops_store: {failures} drain failures — aborting store removal")
+    return drained

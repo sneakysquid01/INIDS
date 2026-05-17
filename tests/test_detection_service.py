@@ -1,4 +1,4 @@
-from src.detection_service import DetectionService, InMemoryAlertStore
+from src.detection_service import DetectionService
 
 
 class FakeModel:
@@ -14,7 +14,7 @@ class FakeModel:
 
 
 def test_attack_prediction_creates_alert():
-    service = DetectionService(FakeModel(pred=1, proba=[0.01, 0.99]), InMemoryAlertStore())
+    service = DetectionService(FakeModel(pred=1, proba=[0.01, 0.99]))
     result = service.predict_from_features({"duration": 1.0}, profile="balanced")
 
     assert result.prediction == "Attack"
@@ -23,7 +23,7 @@ def test_attack_prediction_creates_alert():
 
 
 def test_low_confidence_normal_marked_suspicious():
-    service = DetectionService(FakeModel(pred=0, proba=[0.58, 0.42]), InMemoryAlertStore())
+    service = DetectionService(FakeModel(pred=0, proba=[0.58, 0.42]))
     result = service.predict_from_features({"duration": 1.0}, profile="strict")
 
     assert result.prediction == "Normal"
