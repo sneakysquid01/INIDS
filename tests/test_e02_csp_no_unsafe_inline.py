@@ -52,12 +52,14 @@ class TestCSPNoUnsafeInline:
         assert "cdn.socket.io" in directive
         assert "cdn.tailwindcss.com" in directive
 
-    def test_style_src_unchanged(self):
-        """style-src keeps 'unsafe-inline' (needed for Tailwind JIT)."""
+    def test_style_src_no_unsafe_inline(self):
+        """FIX-008: 'unsafe-inline' must NOT appear in style-src."""
         csp = _csp_header_value()
         m = re.search(r"style-src\s+([^;]+)", csp)
         assert m, "No style-src directive found"
-        assert "'unsafe-inline'" in m.group(1)
+        assert "'unsafe-inline'" not in m.group(1), (
+            "FIX-008: 'unsafe-inline' must be removed from style-src"
+        )
 
     def test_no_inline_scripts_in_base_html(self):
         src = Path("web_app/templates/base.html").read_text(encoding="utf-8")

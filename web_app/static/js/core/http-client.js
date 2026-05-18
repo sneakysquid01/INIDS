@@ -12,6 +12,11 @@
 
 import { GlobalState } from "./global-state.js";
 
+// In-memory token store — never written to localStorage (FIX-022).
+let _token = null;
+let _refreshTimer = null;
+let _refreshInFlight = null; // single-flight promise
+
 class HttpClient {
     constructor() {
         this.baseUrl = "";
@@ -27,6 +32,81 @@ class HttpClient {
         if (options.baseUrl) this.baseUrl = options.baseUrl;
         if (options.timeout) this.timeout = options.timeout;
         if (options.retryAttempts) this.retryAttempts = options.retryAttempts;
+    }
+
+    /**
+     * Store JWT after login and schedule proactive refresh at 80 % of TTL.
+     * @param {string} token
+     * @param {number} expiresIn  - seconds until expiry (default 3600)
+     */
+    setToken(token, expiresIn = 3600) {
+        _token = token;
+        GlobalState.set("auth.token", token);
+
+        if (_refreshTimer) clearTimeout(_refreshTimer);
+        const refreshDelay = Math.floor(expiresIn * 0.8) * 1000; // 80 % → ms
+        _refreshTimer = setTimeout(() => this._proactiveRefresh(), refreshDelay);
+        console.log(`[HttpClient] Token stored; refresh scheduled in ${Math.round(refreshDelay / 1000)}s`);
+
+        // Trigger socket reconnect now that a token is available.
+        if (window.Socket && typeof window.Socket.reconnectWithToken === "function") {
+            window.Socket.reconnectWithToken();
+        }
+    }
+
+    /** Return the current in-memory token (null if not logged in). */
+    getToken() { return _token; }
+
+    /** Clear the stored token (logout). */
+    clearToken() {
+        _token = null;
+        GlobalState.set("auth.token", null);
+        if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
+        _refreshInFlight = null;
+    }
+
+    /**
+     * Proactive refresh — called by the scheduled timer.
+     * @private
+     */
+    async _proactiveRefresh() {
+        try {
+            await this._doRefresh();
+        } catch (err) {
+            console.warn("[HttpClient] Proactive refresh failed — redirecting to login:", err.message);
+            this.clearToken();
+            window.location.href = "/login";
+        }
+    }
+
+    /**
+     * Perform the refresh call; single-flight so concurrent 401s share one request.
+     * @private
+     */
+    _doRefresh() {
+        if (_refreshInFlight) return _refreshInFlight;
+
+        _refreshInFlight = (async () => {
+            if (!_token) throw new Error("No token to refresh");
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 5000);
+            try {
+                const res = await fetch("/api/auth/refresh", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${_token}` },
+                    signal: controller.signal,
+                });
+                if (!res.ok) throw new Error(`Refresh returned ${res.status}`);
+                const data = await res.json();
+                this.setToken(data.token, data.expires_in || 3600);
+                console.log("[HttpClient] Token refreshed successfully");
+            } finally {
+                clearTimeout(tid);
+                _refreshInFlight = null;
+            }
+        })();
+
+        return _refreshInFlight;
     }
 
     /**
@@ -107,11 +187,29 @@ class HttpClient {
     }
 
     /**
-     * Core request method with retry logic
+     * Build headers, injecting Bearer token when stored.
      * @private
      */
-    async _request(url, fetchOptions = {}, attempt = 1) {
+    _buildHeaders(extra = {}) {
+        const headers = { ...extra };
+        if (_token && !headers["Authorization"]) {
+            headers["Authorization"] = `Bearer ${_token}`;
+        }
+        return headers;
+    }
+
+    /**
+     * Core request method with retry logic and 401 JWT-refresh intercept (FIX-022).
+     * @private
+     */
+    async _request(url, fetchOptions = {}, attempt = 1, _afterRefresh = false) {
         const fullUrl = this._buildUrl(url);
+
+        // Inject auth header for every request
+        fetchOptions = {
+            ...fetchOptions,
+            headers: this._buildHeaders(fetchOptions.headers || {}),
+        };
 
         try {
             // Fetch with timeout
@@ -123,6 +221,26 @@ class HttpClient {
             // Handle HTTP error status
             if (!response.ok) {
                 const errorBody = await this._parseResponse(response);
+
+                // On 401 token_expired: refresh once then retry (FIX-022)
+                if (
+                    response.status === 401 &&
+                    !_afterRefresh &&
+                    _token &&
+                    errorBody &&
+                    typeof errorBody === "object" &&
+                    errorBody.error === "token_expired"
+                ) {
+                    try {
+                        await this._doRefresh();
+                        return this._request(url, { ...fetchOptions, headers: {} }, attempt, true);
+                    } catch {
+                        this.clearToken();
+                        window.location.href = "/login";
+                        throw new HttpError("Session expired — redirecting to login", 401, errorBody);
+                    }
+                }
+
                 const error = new HttpError(
                     `HTTP ${response.status}: ${response.statusText}`,
                     response.status,
@@ -133,7 +251,7 @@ class HttpClient {
                 if ([503, 504, 429].includes(response.status) && attempt < this.retryAttempts) {
                     console.warn(`[HttpClient] Retrying after ${this.retryDelay}ms (attempt ${attempt}/${this.retryAttempts})`);
                     await this._delay(this.retryDelay);
-                    return this._request(url, fetchOptions, attempt + 1);
+                    return this._request(url, fetchOptions, attempt + 1, _afterRefresh);
                 }
 
                 throw error;
@@ -242,7 +360,8 @@ export const HttpClient_Instance = new HttpClient();
 // Also export class for testing
 export { HttpClient, HttpError, TimeoutError };
 
-// Make available globally for debugging
+// Make available globally; Socket reads window.HttpClient._token (FIX-005/FIX-022)
 window.HttpClient = HttpClient_Instance;
+Object.defineProperty(window.HttpClient, "_token", { get: () => _token });
 
 console.log("[HttpClient] Initialized");

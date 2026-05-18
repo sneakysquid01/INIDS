@@ -122,9 +122,9 @@ class TestDedupIndexExists:
             os.unlink(path)
 
     def test_schema_version_is_5(self):
-        """OpsStore.SCHEMA_VERSION must be 5 after D-06 migration."""
+        """OpsStore.SCHEMA_VERSION must be >= 5 after D-06 migration (FIX-006 bumped to 6)."""
         from src.ops_store import OpsStore
-        assert OpsStore.SCHEMA_VERSION == 5
+        assert OpsStore.SCHEMA_VERSION >= 5
 
 
 # ---------------------------------------------------------------------------

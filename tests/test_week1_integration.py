@@ -327,10 +327,10 @@ class TestWeek1Integration:
         
         middleware = register_middleware(app, config)
         
-        assert 'rate_limiter' in middleware
         assert 'ip_blocker' in middleware
         assert 'security_headers' in middleware
         assert 'audit_log' in middleware
+        assert 'rate_limiter' not in middleware  # removed by FIX-016
     
     def test_jwt_token_lifecycle(self):
         """Test complete RS256 JWT token lifecycle (F-AUTH-REMOVE)."""

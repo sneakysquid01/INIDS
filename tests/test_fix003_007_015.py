@@ -137,10 +137,13 @@ class TestFix015AuthStoreUnbound:
 
     def test_get_ops_store_returns_store_when_present(self):
         import web_app.app as _app_mod
+        from flask import current_app
         from src.auth.decorators import _get_ops_store
         with _app_mod.app.app_context():
             store = _get_ops_store()
-            assert store is _app_mod.ops_store
+            # Must return the store that is currently attached to the app (not None).
+            assert store is not None
+            assert store is current_app.ops_store
 
     def test_unbound_returns_503(self):
         from flask import Flask

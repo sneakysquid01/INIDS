@@ -424,14 +424,12 @@ def register_middleware(
         response = audit_log.after_request(response)
         return response
 
-    app.rate_limiter = rate_limiter
     app.ip_blocker = ip_blocker
     app.audit_log = audit_log
 
     logger.info("Security middleware stack registered")
 
     return {
-        'rate_limiter': rate_limiter,
         'ip_blocker': ip_blocker,
         'security_headers': security_headers,
         'audit_log': audit_log,

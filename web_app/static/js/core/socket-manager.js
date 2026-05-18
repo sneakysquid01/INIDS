@@ -31,6 +31,14 @@ class SocketManager {
     }
 
     /**
+     * Read the current in-memory JWT (set by HttpClient after login/refresh).
+     * @private
+     */
+    _getToken() {
+        return GlobalState.data["auth.token"] || null;
+    }
+
+    /**
      * Establish WebSocket connection to /events namespace
      */
     connect() {
@@ -40,11 +48,18 @@ class SocketManager {
             return;
         }
 
+        const token = this._getToken();
+        if (!token) {
+            console.warn("[SocketManager] No JWT available — deferring connection until login");
+            return;
+        }
+
         this.socket = window.io("/events", {
             transports: ["websocket", "polling"],
             reconnection: true,
             reconnectionDelayMax: 8000,
             reconnectionAttempts: 10,
+            auth: { token },
         });
 
         // Connection established
@@ -334,6 +349,18 @@ class SocketManager {
             pollDelay: this.pollDelay,
             socketReady: !!this.socket
         };
+    }
+
+    /**
+     * Public API: (Re)connect after a token becomes available (called by HttpClient post-login).
+     */
+    reconnectWithToken() {
+        if (this.isConnected) return;
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+        }
+        this.connect();
     }
 }
 

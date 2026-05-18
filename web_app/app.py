@@ -124,6 +124,14 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = SETTINGS.flask_secret_key
 # Prevent DOS attacks from large uploads (16 MB limit)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+# FIX-019: gzip responses for JSON/HTML/JS/CSS payloads ≥ 1 KB
+app.config["COMPRESS_MIMETYPES"] = [
+    "application/json", "text/html", "text/css", "application/javascript"
+]
+app.config["COMPRESS_MIN_SIZE"] = 1024
+if _FlaskCompress is not None:
+    _FlaskCompress(app)
+    logger.info("flask-compress enabled (gzip responses ≥ 1 KB)")
 
 # Register security middleware
 correlation_id_middleware(app)
@@ -145,7 +153,6 @@ _cors_origins = [o.strip() for o in SETTINGS.cors_origins.split(",") if o.strip(
 middleware_instances = register_middleware(app, middleware_config, cors_origins=_cors_origins)
 
 # Store middleware instances on app (JWT auth will be initialized after ops_store)
-app.rate_limiter = middleware_instances['rate_limiter']
 app.ip_blocker = middleware_instances['ip_blocker']
 app.audit_log = middleware_instances['audit_log']
 
@@ -1765,9 +1772,26 @@ def broadcast_module_update(module_id, data):
 # --- WebSocket Event Namespace Handlers (INIDS 2.0 Real-Time Events) ---
 
 @socketio.on('connect', namespace='/events')
-def handle_events_connect():
-    """Client connected to /events namespace for real-time events."""
-    logger.info(f"Real-time events client connected: {request.sid}")
+def handle_events_connect(auth=None):
+    """Client connected to /events namespace — JWT required (FIX-005)."""
+    token = (auth or {}).get('token') if isinstance(auth, dict) else None
+    if not token:
+        hdr = request.headers.get('Authorization', '')
+        if hdr.startswith('Bearer '):
+            token = hdr[7:]
+    if not token:
+        logger.warning("ws.connect_rejected reason=no_token sid=%s", getattr(request, 'sid', '-'))
+        return False
+    try:
+        ctx = UnifiedAuthService(ops_store).authenticate_jwt(token)
+    except Exception:
+        logger.warning("ws.connect_rejected reason=auth_error sid=%s", getattr(request, 'sid', '-'), exc_info=True)
+        return False
+    if ctx is None:
+        logger.warning("ws.connect_rejected reason=invalid_token sid=%s", getattr(request, 'sid', '-'))
+        return False
+    request.environ['inids_auth_ctx'] = ctx
+    logger.info("ws.connect_accepted user=%s sid=%s", ctx.username, getattr(request, 'sid', '-'))
     _start_module_update_broadcaster()
     emit('connection_response', {
         'status': 'connected',
