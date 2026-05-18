@@ -28,3 +28,19 @@ packages = ["src", "web_app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/auth", "src/detection", "src/ips"]
+omit = ["*/tests/*", "*/__pycache__/*", "*/migrations/*"]
+
+[tool.coverage.report]
+# Gate: auth ≥ 80% (currently 91%), detection ≥ 70%, ips ≥ 70% (F-Step-40 baseline).
+# Raise to 80 once threshold_engine, signature_engine, action_executor coverage improves.
+fail_under = 70
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "def __repr__",
+]

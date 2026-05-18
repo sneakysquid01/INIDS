@@ -69,20 +69,26 @@ class TestOpsStorePublicAPI:
         assert params["limit"].default == 50
 
     def test_api_actions_pending_does_not_call_fetchall_directly(self):
-        """api_actions_pending in app.py must call list_pending_actions, not _fetchall."""
-        import ast, textwrap
-        with open("web_app/app.py") as f:
-            source = f.read()
+        """api_actions_pending must call list_pending_actions, not _fetchall (searches app.py and blueprints)."""
+        import ast
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        search_files = [root / "web_app" / "app.py"]
+        bp_dir = root / "web_app" / "blueprints"
+        if bp_dir.is_dir():
+            search_files.extend(bp_dir.glob("*.py"))
 
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "api_actions_pending":
-                func_source = ast.get_source_segment(source, node) or ""
-                assert "_fetchall" not in func_source, (
-                    "api_actions_pending still calls ops_store._fetchall directly"
-                )
-                assert "list_pending_actions" in func_source, (
-                    "api_actions_pending must call ops_store.list_pending_actions()"
-                )
-                return
-        pytest.fail("api_actions_pending function not found in app.py")
+        for src_path in search_files:
+            source = src_path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) and node.name == "api_actions_pending":
+                    func_source = ast.get_source_segment(source, node) or ""
+                    assert "_fetchall" not in func_source, (
+                        "api_actions_pending still calls ops_store._fetchall directly"
+                    )
+                    assert "list_pending_actions" in func_source, (
+                        "api_actions_pending must call ops_store.list_pending_actions()"
+                    )
+                    return
+        pytest.fail("api_actions_pending function not found in app.py or any blueprint")

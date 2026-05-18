@@ -101,19 +101,25 @@ def test_public_routes_not_decorated_with_require_roles():
 
 
 def test_dashboard_route_requires_auth_in_source():
-    """/dashboard must have require_roles decorator."""
-    app_py = os.path.join(ROOT, "web_app", "app.py")
-    with open(app_py, encoding="utf-8") as f:
-        lines = f.readlines()
+    """/dashboard must have require_roles decorator (searches app.py and blueprints)."""
+    blueprints_dir = os.path.join(ROOT, "web_app", "blueprints")
+    source_files = [os.path.join(ROOT, "web_app", "app.py")]
+    if os.path.isdir(blueprints_dir):
+        for fn in os.listdir(blueprints_dir):
+            if fn.endswith(".py"):
+                source_files.append(os.path.join(blueprints_dir, fn))
 
-    for i, line in enumerate(lines):
-        if '"/dashboard"' in line and "@app.route" in line and "main" not in line:
-            surrounding = "".join(lines[i:i+4])
-            assert "@require_roles" in surrounding, (
-                f"/dashboard must have @require_roles. Found: {surrounding!r}"
-            )
-            return
-    pytest.fail("/dashboard route not found in app.py")
+    for source_file in source_files:
+        with open(source_file, encoding="utf-8") as f:
+            lines = f.readlines()
+        for i, line in enumerate(lines):
+            if '"/dashboard"' in line and ".route(" in line and "main" not in line:
+                surrounding = "".join(lines[i:i+4])
+                assert "@require_roles" in surrounding, (
+                    f"/dashboard must have @require_roles. Found: {surrounding!r}"
+                )
+                return
+    pytest.fail("/dashboard route not found in app.py or any blueprint")
 
 
 def test_api_predict_requires_auth_in_source():
