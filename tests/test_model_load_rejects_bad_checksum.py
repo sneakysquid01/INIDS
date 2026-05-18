@@ -78,12 +78,13 @@ class TestStrictMode:
 
 
 # ---------------------------------------------------------------------------
-# load_model_with_verification — warn mode
+# Phase F: warn mode removed — now treated as strict
 # ---------------------------------------------------------------------------
 
-class TestWarnMode:
-    def test_warn_mode_continues_on_bad_checksum(self, tmp_path):
-        from src.detection.ml_utils import load_model_with_verification
+class TestWarnModeRemoved:
+    def test_warn_mode_raises_security_error(self, tmp_path):
+        """Phase F: warn mode removed; unknown modes default to strict behaviour."""
+        from src.detection.ml_utils import load_model_with_verification, SecurityError
 
         pkl = _write_temp_pkl(tmp_path)
         wrong_hash = "b" * 64
@@ -91,25 +92,21 @@ class TestWarnMode:
         with mock.patch.dict(os.environ, {"INIDS_MODEL_VERIFY": "warn"}):
             import src.detection.ml_utils as ml_utils
             ml_utils._VERIFY_MODE = None
-            # Must NOT raise — warn mode continues after logging
-            result = load_model_with_verification(pkl, wrong_hash)
+            with pytest.raises(SecurityError):
+                load_model_with_verification(pkl, wrong_hash)
 
-        assert result == {"dummy": True}
-
-    def test_warn_mode_logs_critical(self, tmp_path, caplog):
-        import logging
-        from src.detection.ml_utils import load_model_with_verification
+    def test_unknown_mode_raises_security_error(self, tmp_path):
+        """Any unrecognised INIDS_MODEL_VERIFY value falls through to strict."""
+        from src.detection.ml_utils import load_model_with_verification, SecurityError
 
         pkl = _write_temp_pkl(tmp_path)
         wrong_hash = "c" * 64
 
-        with mock.patch.dict(os.environ, {"INIDS_MODEL_VERIFY": "warn"}):
+        with mock.patch.dict(os.environ, {"INIDS_MODEL_VERIFY": "banana"}):
             import src.detection.ml_utils as ml_utils
             ml_utils._VERIFY_MODE = None
-            with caplog.at_level(logging.CRITICAL, logger="src.detection.ml_utils"):
+            with pytest.raises(SecurityError):
                 load_model_with_verification(pkl, wrong_hash)
-
-        assert any("WARN MODE" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

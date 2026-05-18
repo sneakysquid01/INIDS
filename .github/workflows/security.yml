@@ -43,5 +43,11 @@ jobs:
       - name: Install dependencies with hash verification (A-07)
         run: pip install --require-hashes --no-deps -r requirements.txt
 
-      - name: Run tests
-        run: python -m pytest --tb=short -q
+      - name: Install pytest-cov
+        run: pip install pytest-cov
+
+      - name: Run tests with coverage gate (F-Step-40)
+        run: |
+          python -m pytest --tb=short -q \
+            --cov=src/auth --cov=src/detection --cov=src/ips \
+            --cov-report=term-missing --cov-fail-under=80

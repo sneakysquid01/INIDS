@@ -22,8 +22,7 @@ def _get_verify_mode() -> str:
     """Return the configured model verification mode.
 
     Modes:
-        strict  — raise SecurityError on bad checksum (default)
-        warn    — log CRITICAL and continue (rollback mode only)
+        strict   — raise SecurityError on bad checksum (default; any unknown value)
         disabled — skip checksum check entirely
     """
     global _VERIFY_MODE
@@ -92,9 +91,8 @@ class SecurityError(RuntimeError):
 def load_model_with_verification(path: str | Path, expected_sha256: str) -> Any:
     """Load a joblib model after verifying its SHA-256 checksum.
 
-    PLAN.md Phase A Step 6 (A-06):
-      - strict (default): raise SecurityError on mismatch
-      - warn: log CRITICAL and continue (for rollback only — not for production use)
+    PLAN.md Phase A Step 6 (A-06) / Phase F:
+      - strict (default, and any unrecognised value): raise SecurityError on mismatch
       - disabled: skip check (do not use in production)
     """
     path = Path(path)
@@ -106,17 +104,11 @@ def load_model_with_verification(path: str | Path, expected_sha256: str) -> Any:
             f"Model integrity check FAILED for {path.name}: "
             f"expected={expected_sha256[:12]}... actual={actual[:12]}..."
         )
-        if mode == "strict":
+        if mode == "disabled":
+            logger.debug("model_integrity_check_disabled path=%s", path)
+        else:
             logger.critical("model_integrity_check_failed path=%s mode=strict", path)
             raise SecurityError(msg)
-        elif mode == "warn":
-            # SHIM: Remove warn option in Phase F after full observation window.
-            logger.critical(
-                "WARN MODE ACTIVE — model integrity check failed but continuing. "
-                "This mode is for rollback ONLY. path=%s", path
-            )
-        else:
-            logger.debug("model_integrity_check_disabled path=%s", path)
     else:
         logger.debug("model_integrity_check_passed path=%s", path.name)
 

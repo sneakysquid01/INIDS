@@ -78,17 +78,6 @@ class PreventionAction:
         return asdict(self)
 
 
-class InMemoryPreventionStore:
-    def __init__(self):
-        self.actions: list[PreventionAction] = []
-
-    def add_action(self, action: PreventionAction) -> None:
-        self.actions.insert(0, action)
-
-    def list_actions(self, limit: int = 50) -> list[PreventionAction]:
-        return self.actions[:limit]
-
-
 class PreventionService:
     def __init__(
         self,

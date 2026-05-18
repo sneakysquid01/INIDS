@@ -284,6 +284,395 @@ class TestSignatureEngine:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# RuleConditionEvaluator — advanced operators
+# ---------------------------------------------------------------------------
+
+
+class TestRuleConditionEvaluator:
+    def _make_evaluator(self):
+        from src.detection.rule_compiler import RuleConditionEvaluator
+        return RuleConditionEvaluator()
+
+    def _cond(self, field, op, value, **kwargs):
+        return {"field": field, "operator": op, "value": value, **kwargs}
+
+    # Numeric operators
+    def test_numeric_gt_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("x", ">", 5), {"x": 10}) is True
+
+    def test_numeric_gt_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("x", ">", 5), {"x": 2}) is False
+
+    def test_numeric_type_error_returns_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("x", ">", "nope"), {"x": "also_nope"}) is False
+
+    def test_missing_field_returns_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("missing", ">", 1), {}) is False
+
+    def test_missing_field_not_in_returns_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("missing", "not_in", ["a"]), {}) is True
+
+    def test_missing_field_is_empty_returns_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition({"field": "x", "operator": "is_empty", "value": None}, {}) is True
+
+    # Regex operator
+    def test_regex_match(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "regex", r"tc[p]"), {"proto": "tcp"}) is True
+
+    def test_regex_no_match(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "regex", r"udp"), {"proto": "tcp"}) is False
+
+    def test_regex_invalid_pattern_returns_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("x", "regex", r"[invalid"), {"x": "tcp"}) is False
+
+    def test_regex_cache_hit(self):
+        e = self._make_evaluator()
+        cond = self._cond("proto", "regex", r"tcp")
+        e.evaluate_condition(cond, {"proto": "tcp"})
+        # second call should use cache — no exception
+        assert e.evaluate_condition(cond, {"proto": "udp"}) is False
+
+    # Contains/not_contains
+    def test_contains_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "contains", "error"), {"msg": "error found"}) is True
+
+    def test_contains_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "contains", "error"), {"msg": "all good"}) is False
+
+    def test_not_contains_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "not_contains", "error"), {"msg": "all good"}) is True
+
+    def test_not_contains_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "not_contains", "error"), {"msg": "error found"}) is False
+
+    def test_contains_case_sensitive(self):
+        e = self._make_evaluator()
+        cond = {"field": "msg", "operator": "contains", "value": "Error", "case_sensitive": True}
+        assert e.evaluate_condition(cond, {"msg": "error found"}) is False
+
+    # starts_with / ends_with
+    def test_starts_with_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "starts_with", "http"), {"msg": "https://example.com"}) is True
+
+    def test_starts_with_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("msg", "starts_with", "ftp"), {"msg": "https://example.com"}) is False
+
+    def test_ends_with_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("path", "ends_with", ".exe"), {"path": "malware.exe"}) is True
+
+    def test_ends_with_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("path", "ends_with", ".pdf"), {"path": "malware.exe"}) is False
+
+    # in / not_in
+    def test_in_list_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "in", ["tcp", "udp"]), {"proto": "tcp"}) is True
+
+    def test_in_list_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "in", ["tcp", "udp"]), {"proto": "icmp"}) is False
+
+    def test_in_scalar_coerced_to_list(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "in", "tcp"), {"proto": "tcp"}) is True
+
+    def test_not_in_list_true(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "not_in", ["tcp", "udp"]), {"proto": "icmp"}) is True
+
+    def test_not_in_list_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("proto", "not_in", ["tcp", "udp"]), {"proto": "tcp"}) is False
+
+    # Range operator
+    def test_range_within(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("port", "range", [1024, 65535]), {"port": 8080}) is True
+
+    def test_range_outside(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("port", "range", [1024, 65535]), {"port": 80}) is False
+
+    def test_range_invalid_value_list(self):
+        e = self._make_evaluator()
+        # value is not [min, max] — missing second element
+        assert e.evaluate_condition(self._cond("port", "range", [1024]), {"port": 80}) is False
+
+    def test_range_non_numeric_value(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("port", "range", [1024, 65535]), {"port": "bad"}) is False
+
+    # is_empty / is_not_empty
+    def test_is_empty_empty_string(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition({"field": "x", "operator": "is_empty", "value": None}, {"x": ""}) is True
+
+    def test_is_empty_non_empty(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition({"field": "x", "operator": "is_empty", "value": None}, {"x": "hello"}) is False
+
+    def test_is_not_empty_non_empty(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition({"field": "x", "operator": "is_not_empty", "value": None}, {"x": "hello"}) is True
+
+    def test_is_not_empty_zero(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition({"field": "x", "operator": "is_not_empty", "value": None}, {"x": 0}) is False
+
+    # Unknown operator
+    def test_unknown_operator_returns_false(self):
+        e = self._make_evaluator()
+        assert e.evaluate_condition(self._cond("x", "xyzzy", 1), {"x": 1}) is False
+
+
+# ---------------------------------------------------------------------------
+# RuleCompiler — compile_rule, compile_conditions, and/or logic
+# ---------------------------------------------------------------------------
+
+
+class TestRuleCompiler:
+    def _make_compiler(self):
+        from src.detection.rule_compiler import RuleCompiler
+        return RuleCompiler()
+
+    def test_compile_and_evaluate_simple(self):
+        c = self._make_compiler()
+        rule = {"id": "R1", "conditions": [{"field": "count", "operator": ">", "value": 5}]}
+        assert c.evaluate_rule(rule, {"count": 10}) is True
+        assert c.evaluate_rule(rule, {"count": 1}) is False
+
+    def test_compile_rule_cache_hit(self):
+        c = self._make_compiler()
+        rule = {"id": "R2", "conditions": [{"field": "count", "operator": ">", "value": 5}]}
+        p1 = c.compile_rule(rule)
+        p2 = c.compile_rule(rule)
+        assert p1 is p2
+
+    def test_compile_empty_conditions_returns_true(self):
+        c = self._make_compiler()
+        rule = {"id": "R3", "conditions": []}
+        assert c.evaluate_rule(rule, {}) is True
+
+    def test_compile_rule_invalid_conditions_returns_false_predicate(self):
+        from src.detection.rule_compiler import RuleCompilationError
+        c = self._make_compiler()
+        # Passing a string as conditions triggers RuleCompilationError → predicate returns False
+        rule = {"id": "R4", "conditions": "not_valid"}
+        predicate = c.compile_rule(rule)
+        assert predicate({}) is False
+
+    def test_compile_conditions_and_group(self):
+        c = self._make_compiler()
+        rule = {
+            "id": "R5",
+            "conditions": {
+                "and": [
+                    {"field": "count", "operator": ">", "value": 5},
+                    {"field": "serror_rate", "operator": ">", "value": 0.5},
+                ]
+            },
+        }
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.8}) is True
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.1}) is False
+
+    def test_compile_conditions_or_group(self):
+        c = self._make_compiler()
+        rule = {
+            "id": "R6",
+            "conditions": {
+                "or": [
+                    {"field": "count", "operator": ">", "value": 100},
+                    {"field": "serror_rate", "operator": ">", "value": 0.9},
+                ]
+            },
+        }
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.95}) is True
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.1}) is False
+
+    def test_compile_conditions_or_empty_returns_false(self):
+        c = self._make_compiler()
+        rule = {"id": "R7", "conditions": {"or": []}}
+        assert c.evaluate_rule(rule, {"count": 999}) is False
+
+    def test_compile_conditions_and_empty_returns_true(self):
+        c = self._make_compiler()
+        rule = {"id": "R8", "conditions": {"and": []}}
+        assert c.evaluate_rule(rule, {}) is True
+
+    def test_compile_conditions_invalid_dict_group(self):
+        from src.detection.rule_compiler import RuleCompilationError
+        c = self._make_compiler()
+        # Dict without "and"/"or" key → RuleCompilationError → predicate returns False
+        rule = {"id": "R9", "conditions": {"nope": []}}
+        predicate = c.compile_rule(rule)
+        assert predicate({}) is False
+
+    def test_compile_and_with_nested_or(self):
+        c = self._make_compiler()
+        rule = {
+            "id": "R10",
+            "conditions": [
+                {"field": "count", "operator": ">", "value": 5},
+                {"or": [
+                    {"field": "serror_rate", "operator": ">", "value": 0.9},
+                    {"field": "rerror_rate", "operator": ">", "value": 0.9},
+                ]},
+            ],
+        }
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.0, "rerror_rate": 0.95}) is True
+        assert c.evaluate_rule(rule, {"count": 10, "serror_rate": 0.0, "rerror_rate": 0.0}) is False
+
+    def test_compile_or_with_nested_and(self):
+        c = self._make_compiler()
+        rule = {
+            "id": "R11",
+            "conditions": {
+                "or": [
+                    {"and": [
+                        {"field": "count", "operator": ">", "value": 100},
+                        {"field": "serror_rate", "operator": ">", "value": 0.8},
+                    ]},
+                    {"field": "rerror_rate", "operator": ">", "value": 0.9},
+                ]
+            },
+        }
+        # First branch: count=200 and serror=0.9 → True
+        assert c.evaluate_rule(rule, {"count": 200, "serror_rate": 0.9, "rerror_rate": 0.1}) is True
+        # Second branch: rerror=0.95 → True
+        assert c.evaluate_rule(rule, {"count": 1, "serror_rate": 0.0, "rerror_rate": 0.95}) is True
+        # Neither → False
+        assert c.evaluate_rule(rule, {"count": 1, "serror_rate": 0.0, "rerror_rate": 0.1}) is False
+
+    def test_compile_and_non_dict_condition(self):
+        c = self._make_compiler()
+        # A non-dict item in conditions list → logs warning and returns False
+        rule = {"id": "R12", "conditions": ["not_a_dict"]}
+        predicate = c.compile_rule(rule)
+        assert predicate({}) is False
+
+    def test_compile_or_non_dict_condition(self):
+        c = self._make_compiler()
+        rule = {"id": "R13", "conditions": {"or": ["not_a_dict"]}}
+        predicate = c.compile_rule(rule)
+        assert predicate({}) is False
+
+
+# ---------------------------------------------------------------------------
+# ActionExecutor — basic paths (no real firewall)
+# ---------------------------------------------------------------------------
+
+
+class TestActionExecutorBasic:
+    def _make_executor(self, **kwargs):
+        from src.ips.action_executor import ActionExecutor
+        from src.firewall_adapters import MockFirewallAdapter
+        adapter = MockFirewallAdapter()
+        return ActionExecutor(adapter=adapter, adapter_name="mock", **kwargs)
+
+    def test_block_ip_invalid_ip(self):
+        ex = self._make_executor()
+        ok, status = ex.block_ip("not_an_ip", 60)
+        assert ok is False
+        assert status == "invalid_ip"
+
+    def test_unblock_ip_invalid_ip(self):
+        ex = self._make_executor()
+        ok, status = ex.unblock_ip("not_an_ip")
+        assert ok is False
+        assert status == "invalid_ip"
+
+    def test_block_ip_success(self):
+        ex = self._make_executor()
+        ok, status = ex.block_ip("1.2.3.4", 60)
+        assert ok is True
+        assert status == "blocked"
+
+    def test_unblock_ip_success(self):
+        ex = self._make_executor()
+        # Block first so there's something to unblock
+        ex.block_ip("1.2.3.5", 60)
+        ok, status = ex.unblock_ip("1.2.3.5")
+        assert ok is True
+        assert status == "unblocked"
+
+    def test_rate_limit_delegates_to_block(self):
+        ex = self._make_executor()
+        ok, status = ex.rate_limit("10.0.0.1", 60)
+        assert ok is True
+        assert status == "rate_limited"
+
+    def test_cleanup_expired_actions_no_store(self):
+        ex = self._make_executor()
+        # No ops_store → returns 0 immediately
+        assert ex.cleanup_expired_actions() == 0
+
+    def test_reconcile_stateless_adapter(self):
+        from src.ips.action_executor import ActionExecutor
+        from src.firewall_adapters import WebhookFirewallAdapter
+
+        class _FakeStore:
+            def list_active_blocks(self, limit=5000):
+                return []
+
+        adapter = WebhookFirewallAdapter(webhook_url="https://example.com/hook")
+        ex = ActionExecutor(adapter=adapter, adapter_name="webhook", ops_store=_FakeStore())
+        result = ex.reconcile()
+        assert result.get("skipped") is True
+
+    def test_reconcile_no_store(self):
+        ex = self._make_executor()
+        result = ex.reconcile()
+        assert result["db_active"] == 0
+        assert result["firewall_rules"] == 0
+
+    def test_approve_pending_block_no_store(self):
+        ex = self._make_executor()
+        result = ex.approve_pending_block("act_abc", policy=None)
+        assert result["ok"] is False
+        assert result["error"] == "no_ops_store"
+
+    def test_circuit_breaker_opens_after_failures(self):
+        ex = self._make_executor(cb_failure_threshold=2, cb_open_duration_s=5.0)
+        assert ex._circuit_open() is False
+        ex._record_adapter_result(False)
+        assert ex._circuit_open() is False  # not yet at threshold
+        ex._record_adapter_result(False)
+        assert ex._circuit_open() is True   # now open
+
+    def test_circuit_breaker_resets_on_success(self):
+        ex = self._make_executor(cb_failure_threshold=2)
+        ex._record_adapter_result(False)
+        ex._record_adapter_result(False)
+        assert ex._circuit_open() is True
+        # Success after threshold doesn't reset open_until mid-window;
+        # but failure_count resets
+        ex._record_adapter_result(True)
+        assert ex._cb_failure_count == 0
+
+    def test_emit_audit_no_store_no_bus(self):
+        ex = self._make_executor()
+        # Should not raise when both ops_store and event_bus are None
+        ex._emit_audit("test_event", "test message")
+
+
 def test_pyproject_toml_has_coverage_config():
     """pyproject.toml must contain [tool.coverage] or pytest addopts for coverage."""
     content = (ROOT / "pyproject.toml").read_text()

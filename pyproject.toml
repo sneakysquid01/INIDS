@@ -34,9 +34,8 @@ source = ["src/auth", "src/detection", "src/ips"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/migrations/*"]
 
 [tool.coverage.report]
-# Gate: auth ≥ 80% (currently 91%), detection ≥ 70%, ips ≥ 70% (F-Step-40 baseline).
-# Raise to 80 once threshold_engine, signature_engine, action_executor coverage improves.
-fail_under = 70
+# Gate: ≥ 80% across src/auth, src/detection, src/ips (F-Step-40 — achieved 2026-05-18).
+fail_under = 80
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

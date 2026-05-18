@@ -9,10 +9,7 @@ Validation checkpoints per PLAN.md:
 """
 from __future__ import annotations
 
-import sqlite3
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -61,17 +58,10 @@ class TestDetectionServiceDualWrite:
         result = svc.predict_from_features({"duration": 1.0})
         assert result.alert is not None  # PredictionResult still populated
 
-    def test_dual_write_to_both_alert_store_and_ops_store(self):
-        from src.detection_service import DetectionService, InMemoryAlertStore
-
-        ops_mock = MagicMock()
-        legacy_store = InMemoryAlertStore()
-        svc = DetectionService(model=FakeModel(), alert_store=legacy_store, ops_store=ops_mock)
-        result = svc.predict_from_features({"duration": 1.0})
-
-        assert result.alert is not None
-        ops_mock.save_alert.assert_called_once()
-        assert len(legacy_store.list_alerts()) == 1
+    def test_inmemory_alert_store_class_deleted(self):
+        """Phase F: InMemoryAlertStore must no longer exist in detection_service."""
+        with __import__("pytest").raises(ImportError):
+            from src.detection_service import InMemoryAlertStore  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -97,11 +87,11 @@ class TestPreventionServiceStoreRemoved:
             "'store' parameter must not exist in PreventionService after B-06 sub-deploy 3"
         )
 
-    def test_inmemory_prevention_store_class_still_importable(self):
-        from src.prevention_service import InMemoryPreventionStore
-
-        store = InMemoryPreventionStore()
-        assert hasattr(store, "add_action")
+    def test_inmemory_prevention_store_class_deleted(self):
+        """Phase F: InMemoryPreventionStore must no longer exist in prevention_service."""
+        import importlib
+        with __import__("pytest").raises(ImportError):
+            from src.prevention_service import InMemoryPreventionStore  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -132,59 +122,12 @@ class TestDetectionServiceNoAlertStore:
 
 
 # ---------------------------------------------------------------------------
-# drain_to_ops_store()
+# Phase F: drain_to_ops_store removed (migration complete)
 # ---------------------------------------------------------------------------
 
 
-class TestDrainToOpsStore:
-    def _make_source_store(self):
-        from src.detection_service import InMemoryAlertStore, Alert
-
-        store = InMemoryAlertStore(max_items=100)
-        for i in range(3):
-            store.add(Alert(
-                id=f"al_{i:05d}",
-                timestamp="2026-01-01T00:00:00+00:00",
-                severity="high",
-                prediction="Attack",
-                confidence=91.0,
-                profile="balanced",
-                reason="model_prediction",
-            ))
-        return store
-
-    def test_drain_returns_correct_count(self):
-        from src.detection_service import drain_to_ops_store
-
-        source = self._make_source_store()
-        ops_mock = MagicMock()
-        count = drain_to_ops_store(source, ops_mock)
-        assert count == 3
-
-    def test_drain_calls_save_alert_for_each_record(self):
-        from src.detection_service import drain_to_ops_store
-
-        source = self._make_source_store()
-        ops_mock = MagicMock()
-        drain_to_ops_store(source, ops_mock)
-        assert ops_mock.save_alert.call_count == 3
-
-    def test_drain_raises_on_any_failure(self):
-        import pytest
-        from src.detection_service import drain_to_ops_store
-
-        source = self._make_source_store()
-        ops_mock = MagicMock()
-        ops_mock.save_alert.side_effect = Exception("db error")
-
-        with pytest.raises(RuntimeError, match="drain failures"):
-            drain_to_ops_store(source, ops_mock)
-
-    def test_drain_empty_store_returns_zero(self):
-        from src.detection_service import drain_to_ops_store, InMemoryAlertStore
-
-        source = InMemoryAlertStore(max_items=100)
-        ops_mock = MagicMock()
-        count = drain_to_ops_store(source, ops_mock)
-        assert count == 0
-        ops_mock.save_alert.assert_not_called()
+class TestDrainRemoved:
+    def test_drain_to_ops_store_deleted(self):
+        """Phase F: drain_to_ops_store must no longer exist — migration is complete."""
+        with __import__("pytest").raises(ImportError):
+            from src.detection_service import drain_to_ops_store  # noqa: F401

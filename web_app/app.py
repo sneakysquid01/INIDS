@@ -63,7 +63,7 @@ TEST_FILE = os.path.join(DATA_DIR, "KDDTest+.txt")
 STATIC_DIR = os.path.join(BASE_DIR, "web_app", "static")
 OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else os.path.join(BASE_DIR, SETTINGS.ops_db_path)
 
-from src.detection_service import DetectionService, drain_to_ops_store
+from src.detection_service import DetectionService
 from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
 from src.auth.decorators import require_roles

@@ -267,18 +267,14 @@ def test_get_user_activity_uses_aware_cutoff():
 
 
 # ---------------------------------------------------------------------------
-# 16: rbac_manager AuditLog.id uses uuid (no user input in PK)
+# 16: rbac_manager deleted (Phase F)
 # ---------------------------------------------------------------------------
 
-def test_rbac_audit_log_id_is_uuid_hex():
-    """AuditLog.id must be uuid.uuid4().hex — no user-controlled data in PK."""
-    import inspect
-    from src.rbac_manager import RBACManager
-    source = inspect.getsource(RBACManager.check_permission)
-    assert "uuid.uuid4().hex" in source, \
-        "AuditLog.id must use uuid.uuid4().hex to avoid user-input in primary key"
-    assert "user_id" not in source.split("id=")[1].split("\n")[0], \
-        "AuditLog.id must not include user_id in primary key"
+def test_rbac_manager_module_deleted():
+    """Phase F: src/rbac_manager.py must be deleted — OpsStore is the sole RBAC store."""
+    import importlib.util
+    spec = importlib.util.find_spec("src.rbac_manager")
+    assert spec is None, "src/rbac_manager.py still exists — Phase F requires it deleted"
 
 
 # ---------------------------------------------------------------------------
