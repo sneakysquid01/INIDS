@@ -5,8 +5,11 @@ Subscribes to EventBus and emits events to WebSocket clients
 
 import logging
 import threading
+import time
 from typing import Callable, Dict, Any
 from datetime import datetime
+
+from src._telemetry import get_streamer_errors
 
 from src.core.event_bus import DetectionEvent, ActionEvent, RiskScoreEvent, PolicyDecisionEvent, AuditEvent
 
@@ -33,6 +36,23 @@ class RealTimeStreamer:
         self.namespace = namespace
         self._lock = threading.Lock()
         self._running = False
+        # Rate-limit error log to once per 10s per room
+        self._last_error_log: dict[str, float] = {}
+        self._error_log_lock = threading.Lock()
+
+    def _record_emit_error(self, room: str, exc: Exception) -> None:
+        """Increment counter and emit a rate-limited log (once per 10s per room)."""
+        get_streamer_errors(room).inc()
+        now = time.monotonic()
+        with self._error_log_lock:
+            last = self._last_error_log.get(room, 0.0)
+            if now - last >= 10.0:
+                self._last_error_log[room] = now
+                should_log = True
+            else:
+                should_log = False
+        if should_log:
+            logger.warning("streamer.emit_error room=%s err=%s", room, exc, exc_info=True)
 
     def start(self) -> None:
         """Start the RealTimeStreamer."""
@@ -94,7 +114,7 @@ class RealTimeStreamer:
             self.socketio.emit("alert.new", payload, namespace=self.namespace)
             logger.debug(f"Emitted detection event to WebSocket clients")
         except Exception as e:
-            logger.error(f"Failed to emit detection event: {e}", exc_info=True)
+            self._record_emit_error("detection", e)
 
     def _on_risk_event(self, event: RiskScoreEvent) -> None:
         """Handle risk score event."""
@@ -110,7 +130,7 @@ class RealTimeStreamer:
             self.socketio.emit("risk.update", payload, namespace=self.namespace)
             logger.debug(f"Emitted risk score event to WebSocket clients")
         except Exception as e:
-            logger.error(f"Failed to emit risk event: {e}", exc_info=True)
+            self._record_emit_error("risk", e)
 
     def _on_policy_decision(self, event: PolicyDecisionEvent) -> None:
         """Handle policy decision event."""
@@ -126,7 +146,7 @@ class RealTimeStreamer:
             self.socketio.emit("decision.made", payload, namespace=self.namespace)
             logger.debug(f"Emitted policy decision event to WebSocket clients")
         except Exception as e:
-            logger.error(f"Failed to emit policy decision event: {e}", exc_info=True)
+            self._record_emit_error("decision", e)
 
     def _on_action_event(self, event: ActionEvent) -> None:
         """Handle action event."""
@@ -145,7 +165,7 @@ class RealTimeStreamer:
             self.socketio.emit(event_name, payload, namespace=self.namespace)
             logger.debug(f"Emitted action event to WebSocket clients: {event_name}")
         except Exception as e:
-            logger.error(f"Failed to emit action event: {e}", exc_info=True)
+            self._record_emit_error("actions", e)
 
     def _on_audit_event(self, event: AuditEvent) -> None:
         """Handle audit event."""
@@ -161,7 +181,7 @@ class RealTimeStreamer:
             self.socketio.emit("audit", payload, namespace=self.namespace)
             logger.debug(f"Emitted audit event to WebSocket clients")
         except Exception as e:
-            logger.error(f"Failed to emit audit event: {e}", exc_info=True)
+            self._record_emit_error("audit", e)
 
     def emit_alert(self, alert_data: Dict[str, Any]) -> None:
         """
@@ -181,7 +201,7 @@ class RealTimeStreamer:
             }
             self.socketio.emit("alert.new", payload, namespace=self.namespace)
         except Exception as e:
-            logger.error(f"Failed to emit alert: {e}", exc_info=True)
+            self._record_emit_error("alerts", e)
 
     def emit_action_pending(self, action_data: Dict[str, Any]) -> None:
         """
@@ -201,7 +221,7 @@ class RealTimeStreamer:
             }
             self.socketio.emit("action.pending", payload, namespace=self.namespace)
         except Exception as e:
-            logger.error(f"Failed to emit pending action: {e}", exc_info=True)
+            self._record_emit_error("actions", e)
 
     def emit_metrics(self, metrics_data: Dict[str, Any]) -> None:
         """
@@ -221,4 +241,4 @@ class RealTimeStreamer:
             }
             self.socketio.emit("metrics.update", payload, namespace=self.namespace)
         except Exception as e:
-            logger.error(f"Failed to emit metrics: {e}", exc_info=True)
+            self._record_emit_error("metrics", e)

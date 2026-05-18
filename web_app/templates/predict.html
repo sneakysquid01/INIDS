@@ -89,7 +89,7 @@ body { background-color: #f8f9fa; }
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
 </div>
@@ -108,7 +108,7 @@ body { background-color: #f8f9fa; }
     </nav>
 
     <div class="container">
-        <div class="main-box mx-auto" style="max-width:760px;">
+        <div class="main-box mx-auto inids-max-w-760">
             <h2 class="text-center mb-4">Live Intrusion Detection</h2>
 
             <div class="status-bar d-flex flex-wrap justify-content-between align-items-center">

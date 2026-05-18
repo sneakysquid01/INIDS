@@ -7,10 +7,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"
+          integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq"
+          crossorigin="anonymous">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/inids-inline-replacements.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"
+            integrity="sha384-9MhbyIRcBVQiiC7FSd7T38oJNj2Zh+EfxS7/vjhBi4OOT78NlHSnzM31EZRWR1LZ"
+            crossorigin="anonymous"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"
+            integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI"
+            crossorigin="anonymous"></script>
+    <!-- Tailwind play CDN is a dynamic JIT — no stable hash; replace with bundled CSS for full SRI coverage -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="{{ url_for('static', filename='js/tailwind-config.js') }}"></script>
     <style>
@@ -809,7 +817,7 @@
             </div>
         </div>
 
-        <div style="overflow-y:auto; flex:1; padding-bottom:8px;">
+        <div class="inids-sidebar-list">
             <div class="nav-section-label">Monitor</div>
 
             <a href="/" title="Dashboard" class="nav-item {% if request.path == '/' %}active{% endif %}">
@@ -839,11 +847,11 @@
         </div>
 
         <div class="sidebar-footer">
-            <div style="display:flex; align-items:center; gap:10px; overflow:hidden;">
+            <div class="inids-status-row">
                 <div class="sys-status-dot"></div>
-                <div style="overflow:hidden;">
-                    <div style="font-size:11px; color:rgba(255,255,255,0.6); white-space:nowrap;">System Online</div>
-                    <div style="font-size:10px; color:rgba(255,255,255,0.25); white-space:nowrap; letter-spacing:0.5px;">All sensors active</div>
+                <div class="inids-overflow-hidden">
+                    <div class="inids-status-label">System Online</div>
+                    <div class="inids-status-sub">All sensors active</div>
                 </div>
             </div>
         </div>
@@ -861,7 +869,7 @@
             INIDS &rsaquo; <span>{% block page_title %}Overview{% endblock %}</span>
         </div>
 
-        <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+        <div class="inids-topbar-right">
             <div class="status-chip live">
                 <div class="sys-status-dot"></div>
                 IDS ACTIVE
@@ -890,7 +898,7 @@
 
         <footer id="page-footer">
             <span>&copy; 2026 INIDS &mdash; Intrusion Detection & Prevention System</span>
-            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:rgba(255,255,255,0.2); letter-spacing:2px;">v2.0.0 &nbsp;|&nbsp; ALL SYSTEMS NOMINAL</span>
+            <span class="inids-version-badge">v2.0.0 &nbsp;|&nbsp; ALL SYSTEMS NOMINAL</span>
         </footer>
     </div>
 
@@ -903,7 +911,7 @@
     {% block scripts %}{% endblock %}
     
     <!-- Global Component Containers -->
-    <div id="app-modal-root" style="display: contents;"></div>
-    <div id="app-toast-root" style="display: contents;"></div>
+    <div id="app-modal-root" class="inids-contents"></div>
+    <div id="app-toast-root" class="inids-contents"></div>
 </body>
 </html>

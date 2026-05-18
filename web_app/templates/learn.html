@@ -502,7 +502,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
 </div>
@@ -582,12 +582,12 @@
                     <div class="training-header">
                         <div>
                             <div class="training-title">Daily Scheduled Retraining</div>
-                            <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Next run: 2:00 AM UTC</div>
+                            <div class="inids-meta-label">Next run: 2:00 AM UTC</div>
                         </div>
                         <span class="training-badge scheduled">Scheduled</span>
                     </div>
                     <div class="progress-bar-container">
-                        <div class="progress-bar-fill" style="width: 0%"></div>
+                        <div class="progress-bar-fill inids-w-0"></div>
                     </div>
                     <div class="progress-text">
                         <span>Waiting for scheduled time</span>
@@ -599,12 +599,12 @@
                     <div class="training-header">
                         <div>
                             <div class="training-title">Training Run #247</div>
-                            <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Started 45 minutes ago</div>
+                            <div class="inids-meta-label">Started 45 minutes ago</div>
                         </div>
                         <span class="training-badge running">Running</span>
                     </div>
                     <div class="progress-bar-container">
-                        <div class="progress-bar-fill" style="width: 72%"></div>
+                        <div class="progress-bar-fill inids-w-72pc"></div>
                     </div>
                     <div class="progress-text">
                         <span>Processing 12,847 new labeled samples</span>
@@ -616,12 +616,12 @@
                     <div class="training-header">
                         <div>
                             <div class="training-title">Training Run #246</div>
-                            <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Completed 5 hours ago</div>
+                            <div class="inids-meta-label">Completed 5 hours ago</div>
                         </div>
                         <span class="training-badge completed">Completed</span>
                     </div>
                     <div class="progress-bar-container">
-                        <div class="progress-bar-fill" style="width: 100%"></div>
+                        <div class="progress-bar-fill inids-w-full"></div>
                     </div>
                     <div class="progress-text">
                         <span>Improvement: +0.8% accuracy (RTM triggered)</span>
@@ -632,7 +632,7 @@
 
             <div class="section">
                 <div class="section-title">Trigger Controls</div>
-                <div class="action-buttons" style="margin-top: 1rem;">
+                <div class="action-buttons inids-mt-1r">
                     <button class="btn-action btn-primary" onclick="triggerRetraining()">🚀 Trigger Immediate Retraining</button>
                     <button class="btn-action btn-secondary" onclick="viewSchedule()">📅 View Training Schedule</button>
                     <button class="btn-action btn-secondary" onclick="viewLogs()">📜 View Training Logs</button>
@@ -641,11 +641,11 @@
         </div>
 
         <!-- Performance Tab -->
-        <div id="performance-tab" class="tab-content" style="display: none;">
+        <div id="performance-tab" class="tab-content inids-hidden">
             <div class="section">
                 <div class="section-title">Model Performance Metrics</div>
                 
-                <div style="overflow-x: auto;">
+                <div class="inids-overflow-x-auto">
                     <table class="metrics-table ds-table">
                         <thead>
                             <tr>
@@ -694,7 +694,7 @@
                     </table>
                 </div>
 
-                <div style="margin-top: 2rem;">
+                <div class="inids-mt-2r">
                     <div class="action-buttons">
                         <button class="btn-action btn-secondary" onclick="viewChart()">📊 View Accuracy Trend</button>
                         <button class="btn-action btn-secondary" onclick="downloadReport()">⬇️ Download Report</button>
@@ -704,7 +704,7 @@
         </div>
 
         <!-- Training Data Tab -->
-        <div id="data-tab" class="tab-content" style="display: none;">
+        <div id="data-tab" class="tab-content inids-hidden">
             <div class="section">
                 <div class="section-title">Training Dataset Statistics</div>
                 
@@ -727,21 +727,21 @@
                     </div>
                 </div>
 
-                <div style="margin-top: 2rem;">
-                    <div class="section-title" style="margin-bottom: 1rem;">Recent Analyst Feedback</div>
-                    <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; font-size: 0.9rem;">
-                        <div style="margin-bottom: 0.8rem;">
-                            <strong style="color: var(--color-safe);">✓ 1,247</strong> detections marked TRUE POSITIVE this week
-                            <br><span style="color: #95a5a6; font-size: 0.85rem;">Model will learn these patterns</span>
+                <div class="inids-mt-2r">
+                    <div class="section-title inids-mb-1r">Recent Analyst Feedback</div>
+                    <div class="inids-feedback-box">
+                        <div class="inids-mb-0r8">
+                            <strong class="inids-color-safe">✓ 1,247</strong> detections marked TRUE POSITIVE this week
+                            <br><span class="inids-meta-text">Model will learn these patterns</span>
                         </div>
                         <div>
-                            <strong style="color: var(--color-attack);">✗ 892</strong> detections marked FALSE POSITIVE this week
-                            <br><span style="color: #95a5a6; font-size: 0.85rem;">Model will unlearn these patterns</span>
+                            <strong class="inids-color-attack">✗ 892</strong> detections marked FALSE POSITIVE this week
+                            <br><span class="inids-meta-text">Model will unlearn these patterns</span>
                         </div>
                     </div>
                 </div>
 
-                <div style="margin-top: 2rem;">
+                <div class="inids-mt-2r">
                     <div class="action-buttons">
                         <button class="btn-action btn-secondary" onclick="exportData()">⬇️ Export Training Data</button>
                         <button class="btn-action btn-secondary" onclick="viewDistribution()">📈 View Data Distribution</button>
@@ -751,7 +751,7 @@
         </div>
 
         <!-- Model Versions Tab -->
-        <div id="versions-tab" class="tab-content" style="display: none;">
+        <div id="versions-tab" class="tab-content inids-hidden">
             <div class="section">
                 <div class="section-title">Model Version History</div>
                 
@@ -759,10 +759,10 @@
                     <div class="training-item">
                         <div class="training-header">
                             <div>
-                                <div class="training-title">Model v4.2 <strong style="color: var(--color-safe);">●</strong> ACTIVE</div>
-                                <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Deployed 2 hours ago • 96.2% accuracy</div>
+                                <div class="training-title">Model v4.2 <strong class="inids-color-safe">●</strong> ACTIVE</div>
+                                <div class="inids-meta-label">Deployed 2 hours ago • 96.2% accuracy</div>
                             </div>
-                            <span style="font-size: 0.8rem; font-weight: 600; color: var(--color-safe);">Latest</span>
+                            <span class="inids-badge-safe">Latest</span>
                         </div>
                     </div>
 
@@ -770,7 +770,7 @@
                         <div class="training-header">
                             <div>
                                 <div class="training-title">Model v4.1</div>
-                                <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Deployed 1 day ago • 95.4% accuracy</div>
+                                <div class="inids-meta-label">Deployed 1 day ago • 95.4% accuracy</div>
                             </div>
                         </div>
                     </div>
@@ -779,13 +779,13 @@
                         <div class="training-header">
                             <div>
                                 <div class="training-title">Model v4.0</div>
-                                <div style="font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem;">Deployed 3 days ago • 94.2% accuracy</div>
+                                <div class="inids-meta-label">Deployed 3 days ago • 94.2% accuracy</div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div style="margin-top: 2rem;">
+                <div class="inids-mt-2r">
                     <div class="action-buttons">
                         <button class="btn-action btn-secondary" onclick="compareVersions()">🔄 Compare Versions</button>
                         <button class="btn-action btn-secondary" onclick="rollbackModel()">⏮️ Rollback Model</button>

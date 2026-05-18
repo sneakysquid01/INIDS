@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Select-String -Path 'C:\\\\Users\\\\diwan\\\\Desktop\\\\INIDS\\\\web_app\\\\templates\\\\modules\\\\multi_engine_voting.html' -Pattern 'style=' | Select-Object LineNumber, Line\")"
+    ]
+  }
+}

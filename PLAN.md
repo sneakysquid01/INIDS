@@ -2646,3 +2646,1480 @@ Criterion	Status	Evidence
 8. Every attack chain has regression test specification	SATISFIED	AC-1: test_login_requires_valid_credentials + test_expired_token_not_refreshable; AC-2: test_model_load_rejects_bad_checksum; AC-3: test_requirements_are_pinned_with_hashes + test_container_does_not_mount_source_tree; AC-4: test_fp_suppression_requires_auth + test_all_routes_require_auth; plus G-REG-4 resolution requiring per-step test writing
 9. No implementation step listed without rollback procedure	SATISFIED	Every Change ID includes ROLLBACK PROCEDURE field; every Phase rollback entry covers all steps in that phase
 10. Roadmap can be executed by a senior engineer without clarifying questions	SATISFIED	File paths, command examples, sub-deploy sequences, observation windows, metric names, env var names, and go/no-go criteria are all specified
+
+# SYSTEM_RECONSTRUCTION
+
+**Pass 1 — Static Architecture**
+
+| Subsystem | Type | Owner File | State |
+|---|---|---|---|
+| Flask app | HTTP/WS host | `web_app/app.py` (1917 ln) | Module-level globals |
+| 11 Blueprints | Route handlers | `web_app/blueprints/*` | Access globals via `import web_app.app as _m` |
+| OpsStore | Persistence | `src/ops_store.py` (1228 ln) | SQLite/PG, schema v5 |
+| EventBus | Pub/sub | in `app.py` | In-process |
+| EngineRegistry | Detection | `src/detection/` | 5 engines + TI |
+| EngineAggregator | Strategy | `src/detection/` | ANY_TRIGGER |
+| UnifiedAuthService | Auth | `src/auth/auth_service.py` | RS256 JWT + API key |
+| RS256JWTManager | JWT sign/verify | `src/auth/jwt_manager.py` | Process singleton |
+| Middleware stack | Request/response | `src/middleware.py` (439 ln) | CSRF, CORS, IPBlock, audit, security headers |
+| UnifiedRateLimiter | Throttling | `src/rate_limiter.py` | Redis + in-mem fallback |
+| LeaderElection | HA gate | `src/ha/leader_election.py` | Redis SETNX |
+| PreventionService | Policy + action | `src/prevention_service.py` | Frozen config + RLock |
+| ActionExecutor | Firewall I/O | `src/ips/action_executor.py` | Adapter + circuit breaker |
+| PreventionScheduler | Cron | `src/ips/` | 30s, leader-gated |
+| RealTimeStreamer | WS emit | in `app.py` | EventBus → SocketIO |
+| ThreatIntelManager | TI feeds | `src/threat_intel/` | CSV/JSON, leader-gated refresh |
+| Stream pipeline | Redis stream | `src/pipeline/` | Optional |
+
+**Persistent stores:** SQLite/PG tables `alerts`, `actions`, `audits`, `fp_suppressions`, `allowlist`, `users`, `api_keys`, `revoked_tokens`, `schema_version`. In-memory deques: `AuditLogMiddleware` (maxlen=10000), `InMemoryRateLimiter` (cap 50000).
+
+**External integrations:** Redis (optional), Firewall adapter (mock/ufw/nftables/webhook), Elasticsearch (disabled default), Browser HTTP+WS.
+
+**Contracts:** REST `/api/*` JSON; Socket.IO `/events` namespace (rooms: alerts, actions, metrics, perception); subprocess `ufw`/`nftables`; HTTPS POST webhook.
+
+**Entry points:** Flask routes (133+), Socket.IO connect handlers, PreventionScheduler (30s thread), alert retention daemon, TI feed refresh (default 3600s), anomaly auto-fit (per-event), pipeline worker thread.
+
+**Pass 2 — Runtime Flow (primary chains)**
+
+| Flow | Sequence | State touches |
+|---|---|---|
+| API request | middleware chain → `require_roles()` → handler → OpsStore | `g.auth` set; audit deque append |
+| Detection (stream) | pipeline event → EngineAggregator → `_on_detection_event` (app.py:665) → OpsStore.insert alert → EventBus DetectionEvent → RiskEngine → PolicyEngine → ActionExecutor → SocketIO emit | alerts table, EventBus, WS |
+| Detection (direct predict) | `/api/predict` → DetectionService → OpsStore → EventBus → ... | as above; full-UUID alert IDs |
+| Blocking | PolicyDecisionEvent → ActionExecutor.execute → adapter subprocess/HTTP → OpsStore.insert action → WS emit | actions table, circuit breaker state |
+| Auth | POST `/api/auth/login` → SHA-256 key → `get_user_by_key_hash` → JWT issue | api_keys, JWT in-process key |
+| Audit write | after_request → `request.headers.get('X-User-ID', 'anonymous')` → deque append | **SPOOFABLE — header source** |
+
+**Failure swallowing observed:** anomaly buffer `add_sample()` exceptions at app.py:~687 → `logger.debug`; RealTimeStreamer broadcast exceptions logged only.
+
+**Pass 3 — Event Propagation & Backpressure**
+
+| Channel | Producer | Consumer | Bound | Drop policy |
+|---|---|---|---|---|
+| EventBus | Engine paths | `_on_detection_event`, RiskEngine, PolicyEngine | UNSPECIFIED-IN-REPORT (assumed in-process sync dispatch) | None visible |
+| AuditLog deque | every request | reader queries | 10000 (ring) | Oldest evicted |
+| InMemoryRateLimiter | rate checks | stale eviction | 50000 keys | Stale evict |
+| Perception queue | pipeline events | 2 worker threads | Bounded | Drop if full |
+| Redis stream | pipeline producer | pipeline worker | XADD default | UNSPECIFIED-IN-REPORT |
+| SocketIO `/events` | RealTimeStreamer | browsers (unauthenticated) | None | Missed events not replayed |
+
+**Pass 4 — Failure Mode Inventory**
+
+| Subsystem | Process crash | Network partition | OOM/disk-full | Dep unavailable |
+|---|---|---|---|---|
+| Flask app | Eventlet `-w 1` → full outage | N/A in-process | OOM → restart → ephemeral JWT key → mass logout | OpsStore down = 500s |
+| LeaderElection | Lease lost → all instances non-leader | Default no-leader (Redis-required true) | N/A | No Redis → IPS silently disabled |
+| PreventionScheduler | Thread death silently swallowed (assumed) | N/A | N/A | Adapter CB open 60s |
+| Alert retention daemon | Thread death | N/A | N/A | Multi-instance: concurrent delete (no lock) |
+| RealTimeStreamer | Exception logged, continues | WS disconnect → no replay | N/A | N/A |
+| AnomalyEngine auto-fit | Exception swallowed at debug level | N/A | N/A | N/A |
+| OpsStore | Per-request connection (SQLite) | N/A | Unbounded growth (no retention indexes) | Caller 500 |
+
+**Pass 5 — Scaling & Concurrency**
+
+| Bottleneck | Site | Type |
+|---|---|---|
+| Single-writer | gunicorn `--worker-class eventlet -w 1` | Mandated by SocketIO threading |
+| ML inference blocks loop | Eventlet single worker | CPU-bound on event loop |
+| Shared globals | `web_app/app.py` module state | All blueprints read via deferred import |
+| Unbounded queries | `_fetchall()` callers without LIMIT | Hot path: `_buildDashboardMetrics` last 100 alerts unbounded variant |
+| Missing indexes | `audits.created_at`, `alerts.source_ip`, `actions.status` | Full-table scan |
+| Per-request SQLite conn | `ops_store._connect()` | No pool |
+| Audit deque lock | UNSPECIFIED-IN-REPORT (assumed `collections.deque` thread-safe append) | — |
+
+---
+
+# FINDING_LEDGER
+
+| ID | Source§ | Category | Verification | Severity | Statement |
+|---|---|---|---|---|---|
+| F-001 | D, 4.1 P0-001 | CONFIG | VERIFIED | S0-SURVIVAL | `settings.py` reads `SECRET_KEY`, ignores `SECRET_KEY_FILE` injected by docker-compose → RuntimeError on container start. |
+| F-002 | D, 4.1 P0-002 | SECURITY | VERIFIED | S0-SURVIVAL | No `INIDS_JWT_PRIVATE_KEY` configured; ephemeral RSA-2048 generated per process; restart invalidates all tokens. |
+| F-003 | C.7, 3.8, 4.2 P1-001 | SECURITY | VERIFIED | S1-INTEGRITY | `AuditLogMiddleware` reads identity from client-controlled `X-User-ID` header → audit forgery. |
+| F-004 | C.5, 4.2 P1-002 | LIFECYCLE | VERIFIED | S0-SURVIVAL | `INIDS_REDIS_REQUIRED` defaults true; no Redis → `is_leader=False` → PreventionScheduler runs but takes no action → IPS silently disabled. |
+| F-005 | E, 3.8, 4.2 P1-003 | SECURITY | VERIFIED | S1-INTEGRITY | Socket.IO `/events` namespace accepts any connection; broadcasts detections/actions/metrics with no auth. |
+| F-006 | C.3, 3.5, 4.2 P1-004 | PERSISTENCE | VERIFIED | S2-DEGRADATION | Missing indexes on `audits.created_at`, `alerts.source_ip`, `alerts.timestamp`, `actions.status`. |
+| F-007 | D (app.py), 4.2 P1-005 | CONTRACT | VERIFIED | S1-INTEGRITY | `_on_detection_event` (app.py:665) emits short alert IDs `al_<10hex>` while DetectionService emits full UUIDs → coexisting ID formats in same table. |
+| F-008 | C.7, F.8, 3.8 | SECURITY | VERIFIED | S2-DEGRADATION | CSP `style-src` retains `'unsafe-inline'` → CSS injection feasible. |
+| F-009 | D (settings/app), 4.3 P2-002 | CONFIG | VERIFIED | S1-INTEGRITY | `SETTINGS.internal_cidrs` accessed via `hasattr` guard; field does not exist in dataclass → EntityEnrichmentEngine always `internal_cidrs=None`. |
+| F-010 | D (docker-compose), 4.3 P2-003 | INTEGRATION | VERIFIED | S2-DEGRADATION | No Redis service in compose; pipeline + HA features unreachable from default compose deployment. |
+| F-011 | 4.3 P2-004 | OBSERVABILITY | VERIFIED | S3-OPERATIONAL | CI coverage gate excludes `web_app/app.py`, `src/ops_store.py`, `src/middleware.py` — three largest modules ungated. |
+| F-012 | F.1, 4.4 P3-1 | CONTRACT | VERIFIED | S4-HYGIENE | Circular module dependency: all 11 blueprints deferred-import `web_app.app`. |
+| F-013 | F.8, C.7, 4.4 P3-2 | RESOURCE-MGMT | VERIFIED | S4-HYGIENE | `RateLimitMiddleware` instantiated in `register_middleware()` but not wired (C-05 removed); object retained. |
+| F-014 | F.8, 4.4 P3-3 | EVENT-FLOW | VERIFIED | S3-OPERATIONAL | `temporal_correlation_engine` registered with zero patterns → no-op on every pipeline event. |
+| F-015 | F.7, 4.4 P3-4 | CONTRACT | INFERRED-HIGH | S4-HYGIENE | `connexion_integration.py`/`connexion_router.py` present alongside Flask routing; possible duplicate router. |
+| F-016 | 4.4 P3-5 | OBSERVABILITY | VERIFIED | S4-HYGIENE | 15+ `validate_phase_*.py` / `test_*.py` scripts at repo root outside pytest discovery. |
+| F-017 | 4.4 P3-6 | OBSERVABILITY | VERIFIED | S4-HYGIENE | `global_state.js` at repo root unreferenced. |
+| F-018 | 4.4 P3-7 | CONFIG | VERIFIED | S3-OPERATIONAL | `pyproject.toml` loose bounds vs hash-pinned `requirements.txt` — no sync check. |
+| F-019 | 3.7, 4.4 P3-8 | RESOURCE-MGMT | VERIFIED | S2-DEGRADATION | No gzip/brotli compression on API responses. |
+| F-020 | C.7, 3.7 | RESOURCE-MGMT | INFERRED-HIGH | S2-DEGRADATION | `_fetchall()` callers omit `LIMIT` → unbounded result sets possible; dashboard fetches last 100 alerts variant unbounded. |
+| F-021 | C.2, C.7, 3.3 | SECURITY | INFERRED-LOW | S3-OPERATIONAL | Tier-1 IP rate-check (`check_ip()`) not visible in observed `register_middleware()` chain. |
+| F-022 | C.5 | CONCURRENCY | VERIFIED | S2-DEGRADATION | Alert retention daemon has no distributed lock; multi-instance → concurrent delete. |
+| F-023 | B.1, F-005 context | SECURITY | VERIFIED | S2-DEGRADATION | Tailwind, Socket.IO, Chart.js loaded from CDN with no SRI; CDN compromise → arbitrary JS in security dashboard. |
+| F-024 | C.1, C.7, F.2 | CONTRACT | SPECULATIVE | S4-HYGIENE | "1917-line god file" is structural debt without bounded production failure. |
+| F-025 | D (csrf_protection) | SECURITY | VERIFIED | S3-OPERATIONAL | `csrf_protect_middleware` runs on every request; `require_csrf_token` imported but unused on routes → dead enforcement. |
+| F-026 | C.4, B.6 | LIFECYCLE | INFERRED-HIGH | S3-OPERATIONAL | No client-side automatic JWT refresh wiring visible; user session interrupted at 1h. |
+| F-027 | D (.env) | SECURITY | VERIFIED | S3-OPERATIONAL | `.env` with real API keys on disk; no `INIDS_ANALYST_API_KEY` set → analyst role not seeded. |
+| F-028 | D (decorators) | LIFECYCLE | VERIFIED | S1-INTEGRITY | `_get_ops_store()` returns `None` if `current_app.ops_store` not set → all protected routes 401 silently. |
+| F-029 | 3.8 | SECURITY | INFERRED-LOW | S2-DEGRADATION | `ops_store.get_alert(id)` lacks tenant/owner scoping → IDOR by alert ID. |
+
+---
+
+# DEFERRED
+
+- **F-024** — God-file size alone is hygiene without bounded failure; structural rework belongs in a separate program, not survival remediation.
+- **F-029** — INFERRED-LOW IDOR claim; report did not confirm a tenancy model. Fix would require designing a scoping model not described in the report.
+- **F-021** — INFERRED-LOW absence of `check_ip()` wiring; before designing a fix, the wiring must be verified (V-002 in OPEN_ASSUMPTIONS). Not remediated until verification.
+- **F-015** — `connexion_*` modules: removal is conditional on confirming no live imports; covered by OPEN_ASSUMPTIONS A-005, deferred until verified.
+
+---
+
+# DEPENDENCY_GRAPH
+
+```
+FIX-001 (settings _FILE convention)         → []
+FIX-002 (JWT persistent keypair)            → [FIX-001]
+FIX-003 (audit identity from g.auth)        → []
+FIX-004 (INIDS_REDIS_REQUIRED=false default for single-node) → []
+FIX-005 (SocketIO /events auth gate)        → [FIX-002]
+FIX-006 (DB indexes v6 migration)           → []
+FIX-007 (alert ID full UUID at app.py:665)  → []
+FIX-008 (CSP style-src unsafe-inline removal) → []
+FIX-009 (Settings.internal_cidrs field)     → []
+FIX-010 (Redis service in compose)          → [FIX-001, FIX-002]
+FIX-011 (CI coverage gate expansion)        → []
+FIX-012 (anomaly auto-fit exception path)   → []
+FIX-013 (RealTimeStreamer exception path)   → []
+FIX-014 (alert retention distributed lock)  → []
+FIX-015 (decorators _get_ops_store guard)   → []
+FIX-016 (remove dead RateLimitMiddleware instantiation) → []
+FIX-017 (deregister no-pattern temporal engine) → []
+FIX-018 (LIMIT enforcement in _fetchall)    → []
+FIX-019 (gzip via flask-compress)           → []
+FIX-020 (SRI for CDN scripts)               → [FIX-008]
+FIX-021 (CSRF middleware short-circuit for stateless API) → []
+FIX-022 (client-side JWT refresh wiring)    → [FIX-002]
+FIX-023 (analyst API key seeding)           → [FIX-001]
+FIX-024 (dead/legacy file cleanup: root scripts, global_state.js) → []
+FIX-025 (pyproject↔requirements sync CI)    → [FIX-011]
+```
+
+**Topological execution order:**
+FIX-001 → FIX-003 → FIX-004 → FIX-007 → FIX-009 → FIX-015 → FIX-002 → FIX-006 → FIX-014 → FIX-018 → FIX-012 → FIX-013 → FIX-005 → FIX-022 → FIX-008 → FIX-020 → FIX-021 → FIX-016 → FIX-017 → FIX-019 → FIX-010 → FIX-023 → FIX-011 → FIX-025 → FIX-024
+
+No cycles.
+
+---
+
+# STABILIZATION_PHASES
+
+**Phase 0 — Survival**
+Fixes: FIX-001, FIX-003, FIX-004, FIX-007.
+Exit criterion: container starts from `docker-compose up` and emits zero `RuntimeError` lines; audit log entry written by an authenticated request shows `g.auth.username` (not header); `is_leader=true` in single-node deployment; all newly written alert IDs match UUID regex.
+
+**Phase 1 — Containment**
+Fixes: FIX-002, FIX-015, FIX-018, FIX-012, FIX-013, FIX-009.
+Exit criterion: JWT keypair loads from file; `_fetchall` calls without LIMIT raise; anomaly auto-fit failures emit structured WARN with counter increment; `internal_cidrs` parsed at startup, log line shows configured CIDRs.
+
+**Phase 2 — Correctness**
+Fixes: FIX-006, FIX-014, FIX-017.
+Exit criterion: `SCHEMA_VERSION=6` recorded; alert retention runs only on leader; temporal engine deregistered until patterns exist.
+
+**Phase 3 — Integration & Contracts**
+Fixes: FIX-005, FIX-022, FIX-021, FIX-023.
+Exit criterion: SocketIO `/events` rejects unauthenticated upgrade; browser JS refreshes JWT before expiry; CSRF middleware no-ops for `/api/*`; analyst role seeded.
+
+**Phase 4 — Operational Hardening**
+Fixes: FIX-008, FIX-020, FIX-010, FIX-011, FIX-016, FIX-024, FIX-025.
+Exit criterion: response CSP carries no `'unsafe-inline'`; CDN script tags carry SRI hash; `redis` service reachable from `inids-web`; CI gate covers the three added modules at 50% line coverage; dead code removed.
+
+**Phase 5 — Targeted Optimization**
+Fixes: FIX-019.
+Exit criterion: gzip `Content-Encoding` on `>1KB` JSON responses confirmed via curl probe.
+
+---
+
+# FIX_SPECIFICATIONS
+
+### FIX-001
+ADDRESSES: F-001
+PHASE: 0
+
+TARGET:
+- File/module: `src/settings.py`
+- Function/class/config: `load_settings()`
+- Insertion point: Top of function body, before the existing `os.getenv("SECRET_KEY", ...)` read.
+
+CURRENT BEHAVIOR (1 sentence): `load_settings()` reads `SECRET_KEY` directly from env and raises `RuntimeError` when the env var is empty, ignoring `SECRET_KEY_FILE`.
+NEW BEHAVIOR (1 sentence): `load_settings()` resolves `<KEY>_FILE` paths first by reading the file content, falling back to the plain env var.
+
+IMPLEMENTATION STEPS:
+1. Add module-level helper in `src/settings.py`:
+   ```python
+   def _read_file_secret(env_key: str, fallback_key: str = "") -> str:
+       file_path = os.getenv(f"{env_key}_FILE", "").strip()
+       if file_path:
+           try:
+               return Path(file_path).read_text(encoding="utf-8").strip()
+           except OSError as e:
+               logger.error("settings._FILE_read_failed", extra={"key": env_key, "path": file_path, "err": str(e)})
+       return os.getenv(env_key, os.getenv(fallback_key, "") if fallback_key else "").strip()
+   ```
+2. Replace each direct `os.getenv(...)` for the following keys with `_read_file_secret(...)`: `SECRET_KEY` (fallback `FLASK_SECRET_KEY`), `INIDS_ADMIN_API_KEY`, `INIDS_SENSOR_API_KEY`, `INIDS_VIEWER_API_KEY`, `INIDS_ANALYST_API_KEY`, `INIDS_JWT_PRIVATE_KEY`, `INIDS_JWT_PUBLIC_KEY`.
+3. Import `from pathlib import Path` and `import logging; logger = logging.getLogger(__name__)` at top if absent.
+4. Add unit test `tests/test_settings_file_secrets.py` covering: `_FILE` path read, `_FILE` missing-file falls back to plain env, both absent raises for `SECRET_KEY`.
+
+CONCURRENCY POSTURE: None (single-threaded import-time read).
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: No retry on `OSError`; one read attempt; failure logged and falls through to plain env.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive — `<KEY>_FILE` env vars become recognized; plain env continues to work.
+
+FAILURE HANDLING:
+- On timeout: N/A (local filesystem).
+- On exception (OSError reading file): log error; fall through to plain env; if both empty and key is `SECRET_KEY`, existing `RuntimeError` fires.
+- On downstream unavailable: N/A.
+- On poison input (empty file): treated as empty; existing fail-closed path triggers for `SECRET_KEY`.
+- On partial success: file present, env also set → file wins.
+
+BLAST RADIUS:
+- Directly affects: `src/settings.py` import path; everything downstream that reads `SETTINGS`.
+- Isolated from: detection pipeline, OpsStore, EventBus.
+- Regression candidates: app fails to boot when both `_FILE` and plain env are absent for `SECRET_KEY` (intended, identical to current).
+
+ROLLBACK:
+- Reverse procedure: revert `src/settings.py`; remove `<KEY>_FILE` references from compose env section.
+- Data compatibility window: immediate; no persisted state changed.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: structured log `settings.loaded` with field `secret_source` ∈ `{"file","env"}`; new pytest `tests/test_settings_file_secrets.py::test_secret_from_file`.
+- Healthy threshold: zero `settings._FILE_read_failed` log lines in first 60s post-start.
+- Unhealthy signature: `RuntimeError: SECRET_KEY environment variable is required` in container stderr.
+
+---
+
+### FIX-002
+ADDRESSES: F-002
+PHASE: 1
+
+TARGET:
+- File/module: `deploy/compose/docker-compose.yml`, `deploy/compose/secrets/` (new files), `src/auth/jwt_manager.py`, `.env.example`.
+- Function/class/config: compose `secrets:` and `environment:` sections; `RS256JWTManager.__init__`.
+- Insertion point: compose secrets stanza; jwt_manager constructor key-loading branch.
+
+CURRENT BEHAVIOR (1 sentence): `RS256JWTManager` generates an ephemeral RSA-2048 keypair when env keys absent and proceeds with a WARNING.
+NEW BEHAVIOR (1 sentence): Compose injects `INIDS_JWT_PRIVATE_KEY_FILE` and `INIDS_JWT_PUBLIC_KEY_FILE`; settings reads them via `_read_file_secret` (FIX-001); `RS256JWTManager` refuses ephemeral key generation when `INIDS_JWT_REQUIRE_PERSISTENT=true`.
+
+IMPLEMENTATION STEPS:
+1. Generate keypair (operator step, documented in `deploy/compose/README.md`):
+   `openssl genrsa -out deploy/compose/secrets/jwt_private.pem 2048`
+   `openssl rsa -in deploy/compose/secrets/jwt_private.pem -pubout -out deploy/compose/secrets/jwt_public.pem`
+2. In `docker-compose.yml` add to top-level `secrets:`:
+   ```yaml
+   inids_jwt_private_key:
+     file: ./secrets/jwt_private.pem
+   inids_jwt_public_key:
+     file: ./secrets/jwt_public.pem
+   ```
+3. Attach to `inids-web` service `secrets:` list and add to environment:
+   ```yaml
+   - INIDS_JWT_PRIVATE_KEY_FILE=/run/secrets/inids_jwt_private_key
+   - INIDS_JWT_PUBLIC_KEY_FILE=/run/secrets/inids_jwt_public_key
+   - INIDS_JWT_REQUIRE_PERSISTENT=true
+   ```
+4. In `src/auth/jwt_manager.py` `__init__`, after attempting to load `INIDS_JWT_PRIVATE_KEY`, if absent and `os.getenv("INIDS_JWT_REQUIRE_PERSISTENT","false").lower()=="true"`, raise `RuntimeError("INIDS_JWT_PRIVATE_KEY required but not provided")` instead of generating ephemeral.
+5. Add `.env.example` lines documenting `INIDS_JWT_PRIVATE_KEY_FILE` / `INIDS_JWT_PUBLIC_KEY_FILE` / `INIDS_JWT_REQUIRE_PERSISTENT`.
+6. Add startup log line `auth.jwt_key_source` ∈ `{"file","env","ephemeral"}`.
+
+CONCURRENCY POSTURE: Process singleton; one-time load at module import.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: None; single read at startup.
+PERSISTENCE IMPACT: none (keys are config, not DB).
+CONTRACT IMPACT: none — JWT format unchanged; only key material persists.
+
+FAILURE HANDLING:
+- On timeout: N/A.
+- On exception (file unreadable): log error; with `REQUIRE_PERSISTENT=true` raise and abort startup; else ephemeral fallback with WARN.
+- On downstream unavailable: N/A.
+- On poison input (malformed PEM): `cryptography` raises ValueError → abort startup.
+- On partial success (private present, public absent): existing public-key-derivation path executes, log WARN `auth.jwt_pub_derived`.
+
+BLAST RADIUS:
+- Directly affects: auth flow, all token issuance and verification.
+- Isolated from: detection pipeline, OpsStore (except revocation table reads continue).
+- Regression candidates: tokens issued by a previous container are invalid until first deploy with new persistent keys (one-time forced re-login).
+
+ROLLBACK:
+- Reverse procedure: set `INIDS_JWT_REQUIRE_PERSISTENT=false`; remove `*_FILE` envs; container regenerates ephemeral key.
+- Data compatibility window: rollback invalidates tokens issued under persistent key; clients must re-login.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup log `auth.jwt_key_source=file`; integration test that restarts the app and verifies a token issued pre-restart still verifies post-restart.
+- Healthy threshold: zero `auth.jwt_key_source=ephemeral` lines on production startup.
+- Unhealthy signature: log `auth.jwt_key_source=ephemeral` with `INIDS_JWT_REQUIRE_PERSISTENT=true` (impossible if FIX correct; if seen, startup misconfig).
+
+---
+
+### FIX-003
+ADDRESSES: F-003
+PHASE: 0
+
+TARGET:
+- File/module: `src/middleware.py`
+- Function/class/config: `AuditLogMiddleware.after_request`
+- Insertion point: Line 230, the assignment `user = request.headers.get('X-User-ID', 'anonymous')`.
+
+CURRENT BEHAVIOR (1 sentence): Audit entry's user field is taken from the client-controlled `X-User-ID` header.
+NEW BEHAVIOR (1 sentence): Audit entry's user field is taken from `g.auth.username` set by `require_roles()`; falls back to `"anonymous"` for unauthenticated routes; header is ignored.
+
+IMPLEMENTATION STEPS:
+1. At top of `src/middleware.py`, ensure `from flask import g` is imported.
+2. Replace line 230:
+   ```python
+   user = request.headers.get('X-User-ID', 'anonymous')
+   ```
+   with:
+   ```python
+   auth_ctx = getattr(g, 'auth', None)
+   user = getattr(auth_ctx, 'username', None) or 'anonymous'
+   ```
+3. Add explicit log field `audit.source="g.auth"` on the audit deque entry to enable post-deploy verification.
+4. Add regression test in `tests/test_middleware_audit.py`: send request with `X-User-ID: admin` header against an authenticated route as user `viewer`; assert audit entry shows `viewer`.
+
+CONCURRENCY POSTURE: No change; same per-request thread/eventlet context.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none (in-memory deque only).
+CONTRACT IMPACT: breaking for any internal tooling that relied on `X-User-ID` to label audit entries — none found in report.
+
+FAILURE HANDLING:
+- On timeout: N/A.
+- On exception (g.auth attribute access throws): caught by existing global handler; audit entry omitted (existing behavior preserved).
+- On downstream unavailable: N/A.
+- On poison input (`X-User-ID` header still set by client): ignored.
+- On partial success (unauthenticated route, `g.auth` not set): `user = "anonymous"`.
+
+BLAST RADIUS:
+- Directly affects: audit log entries written after this fix.
+- Isolated from: detection pipeline, prevention, persistence.
+- Regression candidates: dashboards or queries that filter audit by `X-User-ID`-derived values will see corrected attribution; any external SIEM consuming audit must accept new values.
+
+ROLLBACK:
+- Reverse procedure: revert the two-line change.
+- Data compatibility window: immediate; deque is in-memory.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: pytest `tests/test_middleware_audit.py::test_audit_ignores_x_user_id_header`.
+- Healthy threshold: test passes; manual curl with `X-User-ID: admin` and a viewer JWT shows `user=viewer` via `GET /api/audit/recent`.
+- Unhealthy signature: audit entry `user` field matches `X-User-ID` header value on any authenticated request.
+
+---
+
+### FIX-004
+ADDRESSES: F-004
+PHASE: 0
+
+TARGET:
+- File/module: `.env`, `.env.example`, `deploy/compose/docker-compose.yml` (single-node template variant).
+- Function/class/config: env variable `INIDS_REDIS_REQUIRED`.
+- Insertion point: env files; compose `environment:` section of `inids-web` service.
+
+CURRENT BEHAVIOR (1 sentence): `INIDS_REDIS_REQUIRED` defaults to `true`; without Redis, `LeaderElection._is_leader=False` and the PreventionScheduler executes no actions.
+NEW BEHAVIOR (1 sentence): For single-node deployments, env is shipped with `INIDS_REDIS_REQUIRED=false`, making `LeaderElection._is_leader=True` when no Redis client is configured; multi-node deployments override with `true` and a working `REDIS_URL`.
+
+IMPLEMENTATION STEPS:
+1. Add to `.env.example` with documentation block:
+   ```
+   # Single-instance: false → prevention scheduler enabled without Redis.
+   # Multi-instance: true → Redis required for leader election; set REDIS_URL too.
+   INIDS_REDIS_REQUIRED=false
+   ```
+2. Add same line to `.env` (dev).
+3. In `deploy/compose/docker-compose.yml`, add to `inids-web` environment:
+   ```
+   - INIDS_REDIS_REQUIRED=${INIDS_REDIS_REQUIRED:-false}
+   ```
+4. Add startup log line in `LeaderElection.__init__`: `ha.leader_init redis_required=<bool> redis_client=<bool> is_leader=<bool>`.
+5. Add `/api/health` field `is_leader: <bool>`.
+
+CONCURRENCY POSTURE: No change.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive (`/api/health` adds `is_leader` field).
+
+FAILURE HANDLING:
+- On timeout: N/A.
+- On exception: N/A.
+- On downstream unavailable (no Redis, `INIDS_REDIS_REQUIRED=true`): `is_leader=False` (preserved behavior); operator must set `false`.
+- On poison input (non-boolean env): treat as `true` (fail-closed, preserves current default).
+- On partial success: N/A.
+
+BLAST RADIUS:
+- Directly affects: PreventionScheduler, TI feed refresh, alert retention daemon (FIX-014).
+- Isolated from: auth, detection, persistence reads.
+- Regression candidates: in any deployment that previously relied on `is_leader=False` to suppress blocking (e.g., a "monitor-only" deployment), automatic blocking will now fire; the existing `DRY_RUN` flag remains the correct gate for that.
+
+ROLLBACK:
+- Reverse procedure: set `INIDS_REDIS_REQUIRED=true` in env.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup log `ha.leader_init is_leader=true`; `GET /api/health` returns `is_leader=true`.
+- Healthy threshold: in single-node, `is_leader=true`; PreventionScheduler tick counter increments and a synthetic detection results in an entry in `actions` table.
+- Unhealthy signature: PreventionScheduler tick log `scheduler.tick skipped=not_leader` in a single-node deployment.
+
+---
+
+### FIX-005
+ADDRESSES: F-005
+PHASE: 3
+
+TARGET:
+- File/module: `web_app/app.py` (SocketIO connect handlers, ~line 1740+); `web_app/static/js/core/socket-manager.js`.
+- Function/class/config: `@socketio.on('connect', namespace='/events')`; client-side `io('/events', ...)` invocation.
+- Insertion point: top of the events-namespace connect handler; `socket-manager.js` connection bootstrap.
+
+CURRENT BEHAVIOR (1 sentence): `/events` namespace accepts any client and broadcasts detections, actions, metrics, and perception events to anonymous browsers.
+NEW BEHAVIOR (1 sentence): `/events` namespace requires a valid JWT presented via Socket.IO `auth.token`, validated by `UnifiedAuthService.authenticate_jwt`; connections without a valid token are disconnected before joining any room.
+
+IMPLEMENTATION STEPS:
+1. In `web_app/app.py` connect handler:
+   ```python
+   from flask_socketio import disconnect
+   from flask import request
+   @socketio.on('connect', namespace='/events')
+   def handle_events_connect(auth=None):
+       token = (auth or {}).get('token') if isinstance(auth, dict) else None
+       if not token:
+           hdr = request.headers.get('Authorization', '')
+           if hdr.startswith('Bearer '):
+               token = hdr[7:]
+       if not token:
+           logger.warning("ws.connect_rejected reason=no_token sid=%s", request.sid)
+           return False  # rejects the connection
+       ctx = UnifiedAuthService(ops_store).authenticate_jwt(token)
+       if ctx is None:
+           logger.warning("ws.connect_rejected reason=invalid_token sid=%s", request.sid)
+           return False
+       # bind ctx to session for room-join authorization
+       request.environ['inids_auth_ctx'] = ctx
+       logger.info("ws.connect_accepted user=%s sid=%s", ctx.username, request.sid)
+   ```
+2. Update `web_app/static/js/core/socket-manager.js` to read the current JWT from in-memory store and connect with `io('/events', { auth: { token: jwt } })`.
+3. Add subscribe-event authorization: in each `subscribe_*` handler, verify `request.environ.get('inids_auth_ctx')` is present and has the required role (e.g., `subscribe_actions` requires `analyst`+).
+4. Add metric counter `ws.connect_rejected_total{reason}` and `ws.connect_accepted_total{user}`.
+5. Regression test in `tests/test_ws_auth.py`: connect without token → rejected; connect with viewer JWT → accepted; connect with revoked JWT → rejected.
+
+CONCURRENCY POSTURE: Per-connection check at connect time; no shared state mutation beyond per-session `request.environ` slot.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: JWT verify uses existing `RS256JWTManager` (no network call); no timeout needed.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: breaking for WebSocket clients — all clients must now send `auth.token`. Versioning: SocketIO namespace `/events` semantics changed; document in API changelog.
+
+FAILURE HANDLING:
+- On timeout: N/A.
+- On exception during verify: rejected; log `ws.connect_error`.
+- On downstream unavailable (OpsStore down during revocation check): connection rejected; log `ws.connect_rejected reason=revocation_check_failed`.
+- On poison input (malformed token): rejected.
+- On partial success (expired token within grace): rejected — refresh must be done over HTTP first.
+
+BLAST RADIUS:
+- Directly affects: all browser sessions; the dashboard, alerts page, investigate page.
+- Isolated from: detection pipeline, OpsStore writes.
+- Regression candidates: any external WebSocket consumer not updated to send a token will silently disconnect.
+
+ROLLBACK:
+- Reverse procedure: replace handler body with `pass` and revert client to unauthenticated `io('/events')`.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `ws.connect_rejected_total{reason="no_token"}` counter.
+- Healthy threshold: post-deploy, `ws.connect_accepted_total` ≥ active dashboard tab count; `ws.connect_rejected_total{reason="no_token"}` near zero for known clients.
+- Unhealthy signature: dashboard shows "disconnected" badge persistently for an authenticated user (indicates client not passing token correctly).
+
+---
+
+### FIX-006
+ADDRESSES: F-006
+PHASE: 2
+
+TARGET:
+- File/module: `src/ops_store.py`
+- Function/class/config: schema migration registry; bump `SCHEMA_VERSION` from 5 to 6; new function `_migration_v6_indexes`.
+- Insertion point: alongside existing `_migration_v*_*` functions; registered in the version dispatch dict.
+
+CURRENT BEHAVIOR (1 sentence): No indexes on `audits.created_at`, `alerts.source_ip`, `alerts.timestamp`, `actions.status` — common investigation queries scan entire tables.
+NEW BEHAVIOR (1 sentence): Migration v6 adds four `CREATE INDEX IF NOT EXISTS` statements for both SQLite and PostgreSQL code paths; `SCHEMA_VERSION` bumped to 6.
+
+IMPLEMENTATION STEPS:
+1. Define `_migration_v6_indexes(conn, dialect)` issuing:
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_alerts_source_ip ON alerts(source_ip);
+   CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp);
+   CREATE INDEX IF NOT EXISTS idx_audits_created_at ON audits(created_at);
+   CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
+   ```
+2. Append `(6, _migration_v6_indexes)` to the migration registry.
+3. Set `SCHEMA_VERSION = 6`.
+4. Add pytest `tests/test_ops_store_v6.py` that creates a fresh DB, asserts `schema_version=6`, and queries `sqlite_master` / `pg_indexes` for each new index name.
+
+CONCURRENCY POSTURE: Migration runs at startup under existing migration lock; `CREATE INDEX IF NOT EXISTS` is idempotent and safe to retry. Note: on PostgreSQL, `CREATE INDEX` (non-concurrent) acquires a SHARE lock that blocks writes — acceptable during startup pre-traffic; for large production tables, operators can pre-create with `CONCURRENTLY` manually and the migration's `IF NOT EXISTS` will no-op.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: Existing migration error handling; no new retry.
+PERSISTENCE IMPACT: additive (indexes created); migration plan = run-once forward; rollback supported by dropping indexes.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On timeout: long index build on PostgreSQL may exceed deploy timeout; operator pre-creates with `CONCURRENTLY` if table large; migration's `IF NOT EXISTS` then no-ops.
+- On exception: existing migration error path aborts startup; revert by dropping `schema_version` row and indexes.
+- On downstream unavailable: N/A.
+- On poison input: N/A.
+- On partial success (3 of 4 created): retry on next start completes remaining.
+
+BLAST RADIUS:
+- Directly affects: query plans for any SELECT against the four columns; write amplification on INSERT/UPDATE of these tables.
+- Isolated from: detection pipeline logic, auth.
+- Regression candidates: INSERT throughput on `alerts`, `audits`, `actions` decreases marginally — verify with FIX-006 verification metric.
+
+ROLLBACK:
+- Reverse procedure: `DROP INDEX IF EXISTS idx_alerts_source_ip, idx_alerts_timestamp, idx_audits_created_at, idx_actions_status;` and set `schema_version=5`.
+- Data compatibility window: indefinite (indexes do not change data).
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup log `db.migration_applied version=6`; pytest in step 4.
+- Healthy threshold: query `EXPLAIN SELECT * FROM alerts WHERE source_ip=?` uses index after migration.
+- Unhealthy signature: post-migration `EXPLAIN` still shows `SEQ SCAN`/`SCAN TABLE alerts`.
+
+---
+
+### FIX-007
+ADDRESSES: F-007
+PHASE: 0
+
+TARGET:
+- File/module: `web_app/app.py`
+- Function/class/config: `_on_detection_event()` (~line 665).
+- Insertion point: the alert dict construction line `"id": f"al_{uuid.uuid4().hex[:10]}"`.
+
+CURRENT BEHAVIOR (1 sentence): Alert IDs from the streaming/event-bus path use the short format `al_<10hex>` while `DetectionService` emits full UUIDs, causing two ID formats in the same table.
+NEW BEHAVIOR (1 sentence): All alert IDs are `str(uuid.uuid4())` regardless of code path, matching the format established by D-06.
+
+IMPLEMENTATION STEPS:
+1. Open `web_app/app.py` at line ~665 inside `_on_detection_event()`.
+2. Replace `"id": f"al_{uuid.uuid4().hex[:10]}"` with `"id": str(uuid.uuid4())`.
+3. Add regression test `tests/test_detection_event_uuid.py`: push a synthetic detection event through `_on_detection_event` and assert the resulting alert ID matches `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`.
+4. Add startup data check: log warning if any existing alerts have IDs not matching the UUID regex (informational only — historical data not rewritten).
+
+CONCURRENCY POSTURE: No change.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none for existing rows; new rows use new format. Historical short-form IDs remain valid as opaque strings.
+CONTRACT IMPACT: none (IDs are opaque to API consumers per existing contract).
+
+FAILURE HANDLING:
+- On timeout / exception / etc: N/A (single-line behavioral change in pure function).
+
+BLAST RADIUS:
+- Directly affects: streaming-path alerts only.
+- Isolated from: persistence, auth, prevention.
+- Regression candidates: any consumer that filtered by `al_` prefix will need updating — none found in report.
+
+ROLLBACK:
+- Reverse procedure: revert single line.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: pytest `tests/test_detection_event_uuid.py`; post-deploy SQL `SELECT count(*) FROM alerts WHERE id NOT LIKE '%-%-%-%-%' AND created_at > <deploy_ts>` returns 0.
+- Healthy threshold: count = 0.
+- Unhealthy signature: count > 0 after deploy timestamp.
+
+---
+
+### FIX-008
+ADDRESSES: F-008
+PHASE: 4
+
+TARGET:
+- File/module: `src/middleware.py` (`SecurityHeadersMiddleware.HEADERS`), templates in `web_app/templates/`.
+- Function/class/config: CSP header `style-src` directive.
+- Insertion point: `HEADERS["Content-Security-Policy"]` definition; templates with inline `style=...` attributes.
+
+CURRENT BEHAVIOR (1 sentence): CSP `style-src` includes `'unsafe-inline'`, permitting CSS injection in any rendered template.
+NEW BEHAVIOR (1 sentence): CSP `style-src` no longer includes `'unsafe-inline'`; all inline `style=...` attributes in templates are moved to externalized CSS classes or files (the script-externalization pattern E-02 applied).
+
+IMPLEMENTATION STEPS:
+1. Inventory inline styles: `grep -rE 'style="' web_app/templates/ web_app/static/js/`.
+2. For each occurrence, replace with a class defined in `web_app/static/css/inids-inline-replacements.css`.
+3. Add that CSS file to `base.html`.
+4. Edit `SecurityHeadersMiddleware.HEADERS` `Content-Security-Policy` `style-src` directive to drop `'unsafe-inline'`. Keep allow-list for known stylesheet hosts plus `'self'`.
+5. Add post-deploy smoke test: render each page route, assert HTTP 200 and absence of console errors via the headless test harness already present in `tests/`.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none (CSP is response header; tightening).
+
+FAILURE HANDLING:
+- On poison input: residual inline style that was missed → browser refuses to apply it; visible CSP violation in browser console; not a server-side failure.
+
+BLAST RADIUS:
+- Directly affects: all rendered HTML pages.
+- Isolated from: API, detection pipeline.
+- Regression candidates: any page that relied on JS injecting inline styles (e.g., chart tooltips) — Chart.js supports CSP-compliant rendering; verify.
+
+ROLLBACK:
+- Reverse procedure: re-add `'unsafe-inline'` to `style-src`.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: response header `Content-Security-Policy` lacks `'unsafe-inline'` for `style-src`; CSP violation report endpoint count of `style-src-elem` and `style-src-attr` violations.
+- Healthy threshold: 0 CSP violations in 24h post-deploy.
+- Unhealthy signature: CSP violation reports referencing `style-src-attr`.
+
+---
+
+### FIX-009
+ADDRESSES: F-009
+PHASE: 1
+
+TARGET:
+- File/module: `src/settings.py`, `web_app/app.py` line ~283.
+- Function/class/config: `Settings` dataclass; EntityEnrichmentEngine instantiation site.
+- Insertion point: `Settings` dataclass field definition; replacement of the `hasattr()` guard at app.py:283.
+
+CURRENT BEHAVIOR (1 sentence): `Settings` has no `internal_cidrs` field; `hasattr(SETTINGS, 'internal_cidrs')` is always False; EntityEnrichmentEngine instantiates with `internal_cidrs=None`.
+NEW BEHAVIOR (1 sentence): `Settings.internal_cidrs: tuple[str, ...]` parsed from `INIDS_INTERNAL_CIDRS` (comma-separated); EntityEnrichmentEngine receives the parsed tuple.
+
+IMPLEMENTATION STEPS:
+1. In `src/settings.py`, add field to `Settings` dataclass: `internal_cidrs: tuple[str, ...] = ()`.
+2. In `load_settings()`, parse: `internal_cidrs = tuple(c.strip() for c in os.getenv("INIDS_INTERNAL_CIDRS","").split(",") if c.strip())`.
+3. Validate each entry parses via `ipaddress.ip_network(c, strict=False)`; on `ValueError`, log warning and skip that entry.
+4. In `web_app/app.py` line ~283, remove `hasattr` guard; pass `SETTINGS.internal_cidrs` directly.
+5. Document `INIDS_INTERNAL_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` in `.env.example`.
+
+CONCURRENCY POSTURE: N/A (immutable tuple in frozen dataclass).
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On poison input (malformed CIDR): logged, entry dropped, remaining entries used.
+- On all entries invalid: `internal_cidrs=()`; EntityEnrichmentEngine receives empty tuple; behavior identical to current `None` case.
+
+BLAST RADIUS:
+- Directly affects: EntityEnrichmentEngine classification output → may change "internal_ip" flag on enriched events.
+- Isolated from: auth, persistence, prevention.
+- Regression candidates: detections that depended on `internal_ip=False` for all hosts (the current accidental default) may flip; verify on staging.
+
+ROLLBACK:
+- Reverse procedure: revert dataclass field and parse step; restore `hasattr` guard.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup log `enrichment.internal_cidrs count=<n> values=<csv>`.
+- Healthy threshold: `count > 0` when env var set.
+- Unhealthy signature: `count=0` despite env var being set with valid CIDRs.
+
+---
+
+### FIX-010
+ADDRESSES: F-010
+PHASE: 4
+
+TARGET:
+- File/module: `deploy/compose/docker-compose.yml`.
+- Function/class/config: top-level `services:` and `volumes:` blocks.
+- Insertion point: new `redis` service; `inids-web` environment additions.
+
+CURRENT BEHAVIOR (1 sentence): No Redis container is defined; pipeline and Redis-backed rate limiter and Redis-required leader election are unreachable from the default compose stack.
+NEW BEHAVIOR (1 sentence): A `redis:7-alpine` service is defined with a persistent volume; `inids-web` receives `REDIS_URL=redis://redis:6379/0` and `INIDS_REDIS_REQUIRED` is governed via `.env`.
+
+IMPLEMENTATION STEPS:
+1. Add to `docker-compose.yml` services:
+   ```yaml
+   redis:
+     image: redis:7-alpine
+     command: ["redis-server","--appendonly","yes"]
+     volumes:
+       - inids-redis:/data
+     healthcheck:
+       test: ["CMD","redis-cli","ping"]
+       interval: 10s
+       timeout: 3s
+       retries: 5
+     restart: unless-stopped
+   ```
+2. Add `inids-redis:` to top-level `volumes:`.
+3. Add to `inids-web` environment: `- REDIS_URL=redis://redis:6379/0`.
+4. Add `depends_on: redis: condition: service_healthy` to `inids-web`.
+5. Document multi-node vs single-node `INIDS_REDIS_REQUIRED` matrix in `deploy/compose/README.md`.
+
+CONCURRENCY POSTURE: N/A (compose-level).
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: Existing UnifiedRateLimiter Redis fallback remains. Healthcheck has `retries=5` × `interval=10s` = ~50s startup window.
+PERSISTENCE IMPACT: Redis AOF persists rate-limit state and leader lease across restarts.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On timeout: `depends_on.condition=service_healthy` blocks `inids-web` startup until Redis is reachable (or 5×10s exhausted → compose reports failure).
+- On Redis unavailable mid-run: rate limiter falls back to in-memory (existing); leader election demotes; PreventionScheduler stops blocking.
+- On downstream unavailable: covered above.
+- On poison input: N/A.
+- On partial success: N/A.
+
+BLAST RADIUS:
+- Directly affects: rate limiter, leader election, pipeline.
+- Isolated from: auth, OpsStore.
+- Regression candidates: container resource usage rises by Redis footprint; minimal.
+
+ROLLBACK:
+- Reverse procedure: remove `redis` service; remove `REDIS_URL` env; set `INIDS_REDIS_REQUIRED=false`.
+- Data compatibility window: stop Redis container; volume preserved unless explicitly removed.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `docker compose ps` shows `redis` healthy; `inids-web` log `ratelimit.backend=redis` and `ha.leader_init redis_client=true`.
+- Healthy threshold: both log lines present at startup.
+- Unhealthy signature: `ratelimit.backend=memory` despite `REDIS_URL` set.
+
+---
+
+### FIX-011
+ADDRESSES: F-011
+PHASE: 4
+
+TARGET:
+- File/module: `.github/workflows/security.yml`.
+- Function/class/config: pytest invocation step.
+- Insertion point: pytest `--cov` arguments.
+
+CURRENT BEHAVIOR (1 sentence): Coverage gate covers only `src/auth`, `src/detection`, `src/ips` at 80% threshold.
+NEW BEHAVIOR (1 sentence): Coverage gate adds `src/ops_store`, `src/middleware`, `web_app` at an initial 50% threshold to unblock CI while expanding the gated surface.
+
+IMPLEMENTATION STEPS:
+1. Modify the pytest step in `.github/workflows/security.yml`:
+   ```yaml
+   - run: pytest --cov=src/auth --cov=src/detection --cov=src/ips
+            --cov=src/ops_store --cov=src/middleware --cov=web_app
+            --cov-fail-under=50
+            --cov-report=term-missing
+   ```
+2. Add a per-module floor via `.coveragerc` or `coverage` config: `src/auth` 80%, `src/detection` 80%, `src/ips` 80%, others 50%.
+3. Add CI step to publish coverage XML artifact.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On poison input (a module dropping below 50%): CI fails the PR.
+
+BLAST RADIUS:
+- Directly affects: CI workflow only.
+- Isolated from: runtime.
+- Regression candidates: PRs that previously passed may fail until tests added.
+
+ROLLBACK:
+- Reverse procedure: revert workflow change.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: GitHub Actions run status on main; coverage summary line.
+- Healthy threshold: `TOTAL >= 50%`.
+- Unhealthy signature: coverage gate failure on previously-passing PRs.
+
+---
+
+### FIX-012
+ADDRESSES: F-007 swallow context (anomaly auto-fit), referenced under Pass 2 — supports observability of S1-INTEGRITY classes.
+PHASE: 1
+
+TARGET:
+- File/module: `web_app/app.py` ~line 687 (anomaly buffer `add_sample`).
+- Function/class/config: anomaly auto-fit exception block.
+- Insertion point: existing `except` block currently calling `logger.debug`.
+
+CURRENT BEHAVIOR (1 sentence): Exceptions from `anomaly_buffer.add_sample()` are swallowed at DEBUG level, hiding model fit failures from operators.
+NEW BEHAVIOR (1 sentence): Exceptions are logged at WARNING with a structured payload and incremented on a counter `anomaly.add_sample_errors_total`.
+
+IMPLEMENTATION STEPS:
+1. Replace `logger.debug(...)` in the relevant `except Exception` block with:
+   ```python
+   logger.warning("anomaly.add_sample_failed", exc_info=True, extra={"engine":"anomaly"})
+   _ANOMALY_ADD_SAMPLE_ERRORS.inc()  # module-level Counter or fallback simple counter
+   ```
+2. If Prometheus client not present (likely per report), define a simple thread-safe `IntCounter` in `src/_telemetry.py` and bind `_ANOMALY_ADD_SAMPLE_ERRORS` at module top.
+3. Expose value via `/api/health` (`anomaly_add_sample_errors: <int>`).
+
+CONCURRENCY POSTURE: Counter uses `threading.Lock` for increments (cheap).
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: None — failure logged and ignored as before.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive (`/api/health` adds field).
+
+FAILURE HANDLING: same as current (exception swallowed after log); behavior unchanged except visibility.
+
+BLAST RADIUS:
+- Directly affects: log volume on `/health` and anomaly path.
+- Isolated from: detection correctness.
+- Regression candidates: log noise spike if anomaly path is failing — that is the desired signal.
+
+ROLLBACK:
+- Reverse procedure: revert log level to DEBUG and remove counter.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `/api/health` field `anomaly_add_sample_errors`.
+- Healthy threshold: counter does not increase faster than 1/min in steady state.
+- Unhealthy signature: counter grows linearly with traffic.
+
+---
+
+### FIX-013
+ADDRESSES: Pass 4 finding ("RealTimeStreamer broadcast exception logged, continues") — observability gap related to F-005 dependency.
+PHASE: 1
+
+TARGET:
+- File/module: `web_app/app.py` (RealTimeStreamer registration / handler).
+- Function/class/config: broadcast loop / SocketIO emit wrapper.
+- Insertion point: the `except Exception` block in the broadcast path.
+
+CURRENT BEHAVIOR (1 sentence): Broadcast exceptions are logged without rate-limiting or counter; repeated failures generate log spam without quantification.
+NEW BEHAVIOR (1 sentence): Broadcast exceptions increment counter `streamer.emit_errors_total{room}`; logged at WARN with rate-limit (log throttler) of one line per 10s per room.
+
+IMPLEMENTATION STEPS:
+1. Define `_STREAMER_EMIT_ERRORS` IntCounter in `src/_telemetry.py`.
+2. Wrap log call with a per-key `time.monotonic()` last-log timestamp dict guarded by lock; emit log only if `now - last >= 10`.
+3. Expose counter via `/api/health` (`streamer_emit_errors_by_room: {room: count}`).
+
+CONCURRENCY POSTURE: Lock-guarded dict.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A (continues on failure as before).
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive (`/api/health`).
+
+FAILURE HANDLING: unchanged (broadcast skipped on error).
+
+BLAST RADIUS:
+- Directly affects: log volume and `/api/health`.
+- Isolated from: detection.
+- Regression candidates: none.
+
+ROLLBACK:
+- Reverse procedure: revert wrapper.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `streamer.emit_errors_total{room}` in `/api/health`.
+- Healthy threshold: 0 in steady state.
+- Unhealthy signature: rising counter for any single room.
+
+---
+
+### FIX-014
+ADDRESSES: F-022
+PHASE: 2
+
+TARGET:
+- File/module: alert retention daemon thread (source location not named in report — most-specific locator: the alert-retention daemon thread referenced in C.5; bind symbol `alert_retention_worker` inside `web_app/app.py` start sequence).
+- Function/class/config: retention loop body.
+- Insertion point: top of each iteration before deletion query.
+
+CURRENT BEHAVIOR (1 sentence): Daily retention thread runs on every instance with no coordination; in multi-instance deployments, concurrent DELETEs may race.
+NEW BEHAVIOR (1 sentence): Retention loop calls `leader_election.is_leader()` at the start of each iteration and skips the deletion when not leader.
+
+IMPLEMENTATION STEPS:
+1. Locate the retention daemon (assumed in `web_app/app.py` start sequence; if it lives in `src/`, edit there).
+2. At the top of the iteration body, add:
+   ```python
+   if not leader_election.is_leader():
+       logger.info("retention.skipped reason=not_leader")
+       time.sleep(<retention_interval>)
+       continue
+   ```
+3. Emit metric `retention.runs_total` and `retention.skipped_not_leader_total`.
+
+CONCURRENCY POSTURE: Single-leader-only execution via existing `LeaderElection` (Redis SETNX in multi-node, always-true in single-node after FIX-004).
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none (gating, not changing the delete logic).
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On `leader_election.is_leader()` raising: caught, treated as not-leader, skip.
+- On poison input: N/A.
+
+BLAST RADIUS:
+- Directly affects: alert retention timing in multi-instance.
+- Isolated from: detection, auth.
+- Regression candidates: in a misconfigured single-node deployment (FIX-004 not applied), retention would never run; FIX-004 must precede or be applied with this.
+
+ROLLBACK:
+- Reverse procedure: remove the `is_leader()` gate.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `retention.runs_total`, `retention.skipped_not_leader_total`.
+- Healthy threshold: in single-node with FIX-004 applied, `runs_total > 0` daily.
+- Unhealthy signature: `runs_total=0` after 26h in single-node.
+
+---
+
+### FIX-015
+ADDRESSES: F-028
+PHASE: 1
+
+TARGET:
+- File/module: `src/auth/decorators.py`.
+- Function/class/config: `_get_ops_store()` and `require_roles()`.
+- Insertion point: `_get_ops_store()` return path.
+
+CURRENT BEHAVIOR (1 sentence): `_get_ops_store()` silently returns `None` if `current_app.ops_store` is unset; downstream `require_roles()` then 401s every protected request without distinguishing missing-credential from missing-binding.
+NEW BEHAVIOR (1 sentence): `_get_ops_store()` raises an internal exception that the global 500 handler converts to a 503 with body `{"error":"service_unavailable","reason":"auth_store_unbound"}`, distinguishing infrastructure misbinding from auth failure.
+
+IMPLEMENTATION STEPS:
+1. Define `class AuthStoreUnboundError(RuntimeError): pass` in `src/auth/decorators.py`.
+2. Modify `_get_ops_store()`:
+   ```python
+   store = getattr(current_app, "ops_store", None)
+   if store is None:
+       logger.error("auth.ops_store_unbound")
+       raise AuthStoreUnboundError("ops_store not attached to current_app")
+   return store
+   ```
+3. Register handler in `web_app/app.py`:
+   ```python
+   @app.errorhandler(AuthStoreUnboundError)
+   def _handle_auth_unbound(e):
+       return jsonify({"error":"service_unavailable","reason":"auth_store_unbound"}), 503
+   ```
+4. Add startup smoke check: after app construction, assert `hasattr(app, 'ops_store')` and `app.ops_store is not None`; otherwise fail-fast at boot.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive — new 503 response shape for a previously-401 condition (correct semantic).
+
+FAILURE HANDLING:
+- On `ops_store` truly absent: 503 returned; startup assertion would also catch this at boot in normal deployments.
+- On exception during attribute access: same as above.
+
+BLAST RADIUS:
+- Directly affects: all 133+ protected routes when ops_store binding fails.
+- Isolated from: detection, prevention.
+- Regression candidates: test fixtures that omit `app.ops_store` will now fail with `AuthStoreUnboundError` instead of 401; tests must be updated to attach a store.
+
+ROLLBACK:
+- Reverse procedure: revert decorator changes and remove handler.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup assertion `auth.ops_store_bound=true` log line; absence of `auth.ops_store_unbound` log in steady state.
+- Healthy threshold: zero `auth.ops_store_unbound` in 24h.
+- Unhealthy signature: 503 with `reason=auth_store_unbound` on any request.
+
+---
+
+### FIX-016
+ADDRESSES: F-013
+PHASE: 4
+
+TARGET:
+- File/module: `src/middleware.py` (`register_middleware`).
+- Function/class/config: removal of the unused `RateLimitMiddleware` instantiation.
+- Insertion point: the line that creates `RateLimitMiddleware(...)` and stores it in the middleware dict.
+
+CURRENT BEHAVIOR (1 sentence): `RateLimitMiddleware` is instantiated and retained in the middleware registry but receives no requests after C-05.
+NEW BEHAVIOR (1 sentence): `RateLimitMiddleware` instantiation removed; the class definition remains (to avoid breaking imports elsewhere if any), but it is no longer created at startup.
+
+IMPLEMENTATION STEPS:
+1. In `register_middleware()`, delete the `RateLimitMiddleware(...)` instantiation line and its entry in any returned dict.
+2. Search-and-remove `from .middleware import RateLimitMiddleware` imports if no remaining references.
+3. Update tests that referenced the registered middleware (none should remain after C-05).
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING: N/A.
+
+BLAST RADIUS:
+- Directly affects: middleware registry shape.
+- Isolated from: everything else.
+- Regression candidates: any test asserting presence of the middleware in the dict.
+
+ROLLBACK:
+- Reverse procedure: re-add the instantiation line.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: pytest collection passes; runtime log `middleware.registered` lists do not include `RateLimitMiddleware`.
+- Healthy threshold: absent from list.
+- Unhealthy signature: still present.
+
+---
+
+### FIX-017
+ADDRESSES: F-014
+PHASE: 2
+
+TARGET:
+- File/module: `web_app/app.py` (engine registry wiring).
+- Function/class/config: `temporal_correlation_engine` registration site.
+- Insertion point: the registration call.
+
+CURRENT BEHAVIOR (1 sentence): `temporal_correlation_engine` is registered and invoked on every pipeline event but has zero patterns, so it always returns no-match while consuming CPU on each call.
+NEW BEHAVIOR (1 sentence): The engine is registered only when `TemporalCorrelationEngine.pattern_count() > 0`; otherwise it is omitted from the aggregator chain and a log line states why.
+
+IMPLEMENTATION STEPS:
+1. Add method `pattern_count(self) -> int` to `TemporalCorrelationEngine` returning the size of its pattern store.
+2. At the registration site, guard:
+   ```python
+   if temporal_engine.pattern_count() > 0:
+       engine_registry.register("temporal", temporal_engine)
+   else:
+       logger.info("engine.temporal.skipped reason=no_patterns")
+   ```
+3. Expose status in `/api/health` (`engines: {"temporal":{"enabled":<bool>,"patterns":<n>}}`).
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive on `/api/health`.
+
+FAILURE HANDLING: N/A.
+
+BLAST RADIUS:
+- Directly affects: pipeline per-event CPU.
+- Isolated from: other engines.
+- Regression candidates: if downstream code assumed temporal engine always present in the registry, those assumptions must be updated; report shows no such consumer.
+
+ROLLBACK:
+- Reverse procedure: register unconditionally.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `/api/health` `engines.temporal.enabled`.
+- Healthy threshold: with no patterns loaded → `enabled=false`; with patterns loaded → `enabled=true`.
+- Unhealthy signature: `enabled=true` with `patterns=0`.
+
+---
+
+### FIX-018
+ADDRESSES: F-020
+PHASE: 1
+
+TARGET:
+- File/module: `src/ops_store.py`.
+- Function/class/config: `_fetchall(...)` helper.
+- Insertion point: function body.
+
+CURRENT BEHAVIOR (1 sentence): `_fetchall()` executes any query as supplied; callers omitting `LIMIT` can fetch unbounded result sets.
+NEW BEHAVIOR (1 sentence): `_fetchall()` enforces a `max_rows` parameter (default 1000) by wrapping the query with a `LIMIT` clause if absent and raising a `ValueError` if a row count exceeding `hard_max_rows=10000` is requested.
+
+IMPLEMENTATION STEPS:
+1. Change signature to `_fetchall(self, query, params=(), max_rows: int = 1000)`.
+2. Detect presence of `LIMIT` in `query` (case-insensitive regex on the trailing clause); if absent, append `LIMIT :__max_rows`.
+3. For SQLite, append `LIMIT ?` and inject `max_rows` to params; for SQLAlchemy/PG, use named binding.
+4. If `max_rows > 10000`, raise `ValueError("max_rows exceeds hard cap")`.
+5. Update existing callers: a one-shot grep `\b_fetchall\(` — for each, either pass `max_rows=` or accept the 1000 default; for the two known unbounded sites (dashboard "last 100 alerts" variant + audit ranges), set `max_rows=` explicitly.
+6. Add pytest `tests/test_ops_store_limit.py` asserting an unbounded query returns ≤1000 rows.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: additive — endpoints that returned >1000 rows now return ≤1000; consumers must paginate.
+
+FAILURE HANDLING:
+- On poison input (caller passes `max_rows=99999`): raises `ValueError`; bubbles to 500 handler.
+- On caller-supplied `LIMIT` already present: respected as-is.
+
+BLAST RADIUS:
+- Directly affects: every `_fetchall` caller.
+- Isolated from: write paths.
+- Regression candidates: dashboards that displayed >1000 rows will be truncated; pagination must be added in a follow-up.
+
+ROLLBACK:
+- Reverse procedure: revert function signature; remove `LIMIT` injection.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: log line `db.fetchall_limit_injected query_hash=<h> max_rows=1000` count; assertion in pytest.
+- Healthy threshold: zero rows returned > 1000 from any `_fetchall` call.
+- Unhealthy signature: dashboard reports "showing 1000 of N" persistently — indicates pagination follow-up needed (operational, not a bug).
+
+---
+
+### FIX-019
+ADDRESSES: F-019
+PHASE: 5
+
+TARGET:
+- File/module: `web_app/app.py`; `requirements.txt`.
+- Function/class/config: Flask app construction; `flask-compress` dependency.
+- Insertion point: app factory.
+
+CURRENT BEHAVIOR (1 sentence): API responses are served uncompressed; large alert/audit JSON payloads transit at full byte size.
+NEW BEHAVIOR (1 sentence): `flask-compress` registered with `COMPRESS_MIMETYPES=['application/json','text/html','text/css','application/javascript']` and `COMPRESS_MIN_SIZE=1024`.
+
+IMPLEMENTATION STEPS:
+1. Add `flask-compress==1.15` (hash-pinned) to `requirements.txt` and `pyproject.toml`.
+2. In app construction:
+   ```python
+   from flask_compress import Compress
+   app.config["COMPRESS_MIMETYPES"] = ["application/json","text/html","text/css","application/javascript"]
+   app.config["COMPRESS_MIN_SIZE"] = 1024
+   Compress(app)
+   ```
+3. Add smoke test: request `/api/alerts?limit=1000` with `Accept-Encoding: gzip` and assert `Content-Encoding: gzip`.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none (transparent to clients).
+
+FAILURE HANDLING:
+- On client without `Accept-Encoding`: response served uncompressed (normal HTTP content-negotiation).
+
+BLAST RADIUS:
+- Directly affects: CPU per response (compression cost) and bandwidth (saving).
+- Isolated from: data correctness.
+- Regression candidates: latency on small responses unchanged due to `COMPRESS_MIN_SIZE`.
+
+ROLLBACK:
+- Reverse procedure: remove `Compress(app)` line and dependency.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: response header `Content-Encoding: gzip` on JSON >1KB.
+- Healthy threshold: header present on alert list endpoints.
+- Unhealthy signature: header absent on response of length > 1024 bytes with `Accept-Encoding: gzip`.
+
+---
+
+### FIX-020
+ADDRESSES: F-023
+PHASE: 4
+
+TARGET:
+- File/module: `web_app/templates/base.html`.
+- Function/class/config: `<script>` and `<link rel="stylesheet">` tags referencing CDN.
+- Insertion point: every `<script src="https://cdn...">` and `<link href="https://cdn...">`.
+
+CURRENT BEHAVIOR (1 sentence): CDN scripts and stylesheets load without `integrity` / Subresource Integrity hashes; any CDN compromise injects arbitrary code into the security dashboard.
+NEW BEHAVIOR (1 sentence): All CDN script and stylesheet tags carry `integrity="sha384-<hash>"` and `crossorigin="anonymous"`, pinning the exact bytes; CSP `script-src` and `style-src` are restricted to `'self'` plus the exact CDN origins.
+
+IMPLEMENTATION STEPS:
+1. Pin exact versions of each CDN asset (Tailwind, Bootstrap, Chart.js, Socket.IO).
+2. Compute SHA-384 hash for each: `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+3. Add `integrity` and `crossorigin="anonymous"` to each CDN tag.
+4. Update CSP `script-src` and `style-src` to enumerate the exact CDN origins; remove wildcards.
+5. Add a CI step `scripts/check_cdn_integrity.py` that downloads each CDN URL referenced in `base.html` and verifies it matches the pinned hash; fails the build on mismatch.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: CI integrity check uses 10s timeout per URL, 2 retries.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On CDN bytes changing: CI fails — operator chooses to update hash or pin a different version.
+- On client browser refusing the script (hash mismatch in production): script not executed; page degraded.
+
+BLAST RADIUS:
+- Directly affects: all rendered HTML pages.
+- Isolated from: API, detection.
+- Regression candidates: if a CDN auto-upgrades the file, browsers will refuse to load it until the hash is updated — that is the intended security property.
+
+ROLLBACK:
+- Reverse procedure: remove `integrity` attributes; relax CSP.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: CI step `cdn_integrity_check` exit 0; browser DevTools shows scripts loaded with no SRI errors.
+- Healthy threshold: zero SRI errors in browser console.
+- Unhealthy signature: console error "Failed to find a valid digest".
+
+---
+
+### FIX-021
+ADDRESSES: F-025
+PHASE: 3
+
+TARGET:
+- File/module: `web_app/app.py` (`csrf_protect_middleware` `before_request` registration); `src/csrf_protection.py`.
+- Function/class/config: middleware function.
+- Insertion point: top of middleware body.
+
+CURRENT BEHAVIOR (1 sentence): `csrf_protect_middleware` runs on every request including `/api/*` where stateless JWT auth makes CSRF non-exploitable, consuming CPU and Flask session storage to no enforcement benefit.
+NEW BEHAVIOR (1 sentence): `csrf_protect_middleware` short-circuits with `return None` on requests whose path starts with `/api/`; HTML routes continue to receive token issuance.
+
+IMPLEMENTATION STEPS:
+1. In `csrf_protect_middleware`, add at the top:
+   ```python
+   if request.path.startswith('/api/'):
+       return None
+   ```
+2. Document in `src/csrf_protection.py` docstring that the middleware is HTML-only.
+3. Add pytest asserting CSRF token cookie not set on `/api/health` response.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING: N/A.
+
+BLAST RADIUS:
+- Directly affects: per-request CPU on `/api/*`.
+- Isolated from: HTML routes, CSRF for form posts.
+- Regression candidates: any HTML form that submitted to a `/api/` URL relying on the cookie-based CSRF token must use the JWT auth path instead.
+
+ROLLBACK:
+- Reverse procedure: revert short-circuit.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: pytest `tests/test_csrf_api_skip.py`.
+- Healthy threshold: API responses lack CSRF cookie.
+- Unhealthy signature: CSRF cookie set on API response.
+
+---
+
+### FIX-022
+ADDRESSES: F-026
+PHASE: 3
+
+TARGET:
+- File/module: `web_app/static/js/core/http-client.js`.
+- Function/class/config: fetch wrapper / interceptor.
+- Insertion point: response handler; periodic timer setup.
+
+CURRENT BEHAVIOR (1 sentence): No automatic JWT refresh; users hit 401 on any API call after the 1-hour TTL expires and are left without a session.
+NEW BEHAVIOR (1 sentence): The HTTP client wrapper schedules a refresh call to `/api/auth/refresh` at 80% of token TTL (48 min by default); on a 401 with `error=token_expired`, it transparently retries the request once after refresh.
+
+IMPLEMENTATION STEPS:
+1. On login, store `expires_in` and compute `refresh_at = now + 0.8 * expires_in`.
+2. Add `setTimeout` invoking `refreshToken()` at that point.
+3. `refreshToken()` POSTs to `/api/auth/refresh` with current Bearer token; on success, replaces stored token and reschedules.
+4. Wrap fetch: on 401 with payload `{"error":"token_expired"}`, call `refreshToken()` once; if successful, retry original request once; if not, redirect to login.
+5. Persist current token only in memory (not localStorage) to limit exposure; reload page = re-login.
+
+CONCURRENCY POSTURE: Single-flight refresh: a module-level `Promise` field ensures concurrent 401s share one refresh call.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: Refresh timeout 5s; one retry on the original request.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none (uses existing `/api/auth/refresh`).
+
+FAILURE HANDLING:
+- On refresh timeout / failure: redirect to `/login`.
+- On refresh returning revoked: redirect to `/login`.
+- On concurrent 401s: single-flight via shared promise.
+
+BLAST RADIUS:
+- Directly affects: browser session continuity.
+- Isolated from: server-side detection and auth logic.
+- Regression candidates: none.
+
+ROLLBACK:
+- Reverse procedure: revert `http-client.js` changes.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: server log shows `/api/auth/refresh` call count per active session ≈ 1 per 48 min.
+- Healthy threshold: 401 rate from browsers near zero except after revoke.
+- Unhealthy signature: 401 spike at the 1h mark post-login.
+
+---
+
+### FIX-023
+ADDRESSES: F-027
+PHASE: 3
+
+TARGET:
+- File/module: `src/settings.py`; `_seed_service_accounts()` in `web_app/app.py` (or wherever currently implemented per report).
+- Function/class/config: analyst API key handling.
+- Insertion point: alongside admin/sensor/viewer key seeding.
+
+CURRENT BEHAVIOR (1 sentence): `_seed_service_accounts()` reads admin/sensor/viewer keys but no analyst key, leaving analyst role unseeded from env.
+NEW BEHAVIOR (1 sentence): `INIDS_ANALYST_API_KEY` (and `INIDS_ANALYST_API_KEY_FILE` per FIX-001) is read on startup and seeds an analyst-role user identical to the other roles.
+
+IMPLEMENTATION STEPS:
+1. In settings, add field `inids_analyst_api_key: str = ""` populated via `_read_file_secret("INIDS_ANALYST_API_KEY")`.
+2. In `_seed_service_accounts()`, add a block mirroring the viewer seeding but with `roles=["analyst"]` and `username="analyst-service"`.
+3. Add to `.env.example` documenting the env var.
+4. Add to compose env section with `INIDS_ANALYST_API_KEY_FILE=/run/secrets/inids_analyst_api_key` and a corresponding secret entry.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: idempotent INSERT into `api_keys` table.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On missing env: analyst account simply not seeded (matches current behavior for other roles).
+- On duplicate seed: idempotent (existing pattern).
+
+BLAST RADIUS:
+- Directly affects: auth seeding only.
+- Isolated from: detection, persistence schema.
+- Regression candidates: none.
+
+ROLLBACK:
+- Reverse procedure: remove seed block; existing user row may be left in place harmlessly.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: startup log `auth.seeded role=analyst`.
+- Healthy threshold: log line present when env set.
+- Unhealthy signature: env set but log line missing.
+
+---
+
+### FIX-024
+ADDRESSES: F-016, F-017
+PHASE: 4
+
+TARGET:
+- File/module: root-level `validate_phase_*.py`, `test_*.py` scripts; root `global_state.js`.
+- Function/class/config: filesystem cleanup.
+- Insertion point: repo root.
+
+CURRENT BEHAVIOR (1 sentence): 15+ ad-hoc validation scripts and an unreferenced `global_state.js` clutter the repo root with files outside pytest discovery.
+NEW BEHAVIOR (1 sentence): Validation scripts moved to `tools/validate/`; `global_state.js` deleted.
+
+IMPLEMENTATION STEPS:
+1. `git mv` each `validate_phase_*.py` and `test_*.py` from root to `tools/validate/`.
+2. `git rm global_state.js` after confirming no references via `grep -r global_state.js`.
+3. Update `README.md` if it referenced these scripts.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: N/A.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING: N/A.
+
+BLAST RADIUS:
+- Directly affects: repo layout only.
+- Isolated from: runtime.
+- Regression candidates: any developer doc referencing old paths.
+
+ROLLBACK:
+- Reverse procedure: `git revert` the move/delete commit.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: `ls` of repo root shows no `validate_phase_*` and no `global_state.js`.
+- Healthy threshold: clean root listing.
+- Unhealthy signature: stragglers remain.
+
+---
+
+### FIX-025
+ADDRESSES: F-018
+PHASE: 4
+
+TARGET:
+- File/module: `.github/workflows/security.yml`; new `requirements.in`.
+- Function/class/config: CI workflow step.
+- Insertion point: new step that runs `pip-compile`.
+
+CURRENT BEHAVIOR (1 sentence): `pyproject.toml` carries loose version bounds; `requirements.txt` is hash-pinned; nothing checks they remain consistent.
+NEW BEHAVIOR (1 sentence): CI step runs `pip-compile --generate-hashes requirements.in` and fails if the produced `requirements.txt` differs from the committed file.
+
+IMPLEMENTATION STEPS:
+1. Author `requirements.in` derived from current `requirements.txt` (un-pinned top-level requirements).
+2. Add CI step in `security.yml`:
+   ```yaml
+   - run: pip install pip-tools
+   - run: pip-compile --generate-hashes --output-file=requirements.lock.check requirements.in
+   - run: diff -u requirements.txt requirements.lock.check
+   ```
+3. Document update flow in `CONTRIBUTING.md`: edit `requirements.in`, run `pip-compile`, commit both.
+
+CONCURRENCY POSTURE: N/A.
+TIMEOUTS / RETRIES / CIRCUIT BREAKER: CI step timeout 5 min.
+PERSISTENCE IMPACT: none.
+CONTRACT IMPACT: none.
+
+FAILURE HANDLING:
+- On drift detected: CI fails; PR author runs `pip-compile` and commits.
+
+BLAST RADIUS:
+- Directly affects: CI only.
+- Isolated from: runtime.
+- Regression candidates: none.
+
+ROLLBACK:
+- Reverse procedure: revert workflow change.
+- Data compatibility window: immediate.
+- Point of no return: none.
+
+VERIFICATION:
+- Metric/log/assertion name: CI step status green; `requirements.lock.check` matches `requirements.txt`.
+- Healthy threshold: zero diff.
+- Unhealthy signature: persistent diff on main branch.
+
+---
+
+# EXECUTION_SEQUENCE
+
+| # | Fix ID | Owner role | Size | Must precede | Must follow |
+|---|---|---|---|---|---|
+| 1 | FIX-001 | Principal Systems Architect | S | FIX-002, FIX-010, FIX-023 | — |
+| 2 | FIX-003 | Senior Backend Engineer | S | — | — |
+| 3 | FIX-004 | Production Reliability Engineer | S | FIX-014 (multi-instance correctness) | — |
+| 4 | FIX-007 | Senior Backend Engineer | S | — | — |
+| 5 | FIX-009 | Senior Backend Engineer | S | — | — |
+| 6 | FIX-015 | Senior Backend Engineer | S | — | — |
+| 7 | FIX-002 | Principal Systems Architect | M | FIX-005, FIX-010, FIX-022 | FIX-001 |
+| 8 | FIX-006 | Distributed Systems Engineer | S | — | — |
+| 9 | FIX-014 | Production Reliability Engineer | S | — | FIX-004 |
+| 10 | FIX-018 | Senior Backend Engineer | M | — | — |
+| 11 | FIX-012 | Production Reliability Engineer | S | — | — |
+| 12 | FIX-013 | Production Reliability Engineer | S | — | — |
+| 13 | FIX-005 | Distributed Systems Engineer | M | FIX-022 | FIX-002 |
+| 14 | FIX-022 | Senior Backend Engineer | M | — | FIX-002 |
+| 15 | FIX-008 | Stabilization Specialist | M | FIX-020 | — |
+| 16 | FIX-020 | Stabilization Specialist | M | — | FIX-008 (ordering: 020 first) |
+| 17 | FIX-021 | Senior Backend Engineer | S | — | — |
+| 18 | FIX-016 | Stabilization Specialist | S | — | — |
+| 19 | FIX-017 | Senior Backend Engineer | S | — | — |
+| 20 | FIX-019 | Production Reliability Engineer | S | — | — |
+| 21 | FIX-010 | Principal Systems Architect | S | — | FIX-001, FIX-002 |
+| 22 | FIX-023 | Senior Backend Engineer | S | — | FIX-001 |
+| 23 | FIX-011 | Stabilization Specialist | S | — | — |
+| 24 | FIX-025 | Stabilization Specialist | S | — | FIX-011 |
+| 25 | FIX-024 | Stabilization Specialist | S | — | — |
+
+Note on FIX-008/FIX-020 ordering in the dependency graph: SRI hashes (FIX-020) must be applied before tightening CSP (FIX-008) so the tightened policy does not block scripts not yet carrying integrity attributes.
+
+---
+
+# OPEN_ASSUMPTIONS
+
+| ID | Assumption | Depends on FIX | Falsification check |
+|---|---|---|---|
+| A-001 | `EventBus` dispatch is in-process synchronous; no separate broker. | FIX-005, FIX-013, FIX-017 | `grep -n "subscribe\|publish\|emit" app.py` shows direct function-call dispatch. |
+| A-002 | Alert retention daemon lives in `web_app/app.py` startup sequence (not a separate src module). | FIX-014 | `grep -rn "retention" src/ web_app/`. |
+| A-003 | `temporal_correlation_engine` has a `pattern_count()` or equivalent and is registered in the same place engines are bound. | FIX-017 | `grep -n "temporal" web_app/app.py src/detection/`. |
+| A-004 | `flask-compress==1.15` is compatible with Flask 3.1.3 + eventlet. | FIX-019 | `pip install flask-compress==1.15 flask==3.1.3` in isolation, hit one endpoint. |
+| A-005 | `src/connexion_integration.py` and `src/connexion_router.py` have no live imports from `web_app/app.py` or blueprints. | (F-015 deferred) | `grep -rn "connexion_integration\|connexion_router" web_app/ src/`. |
+| A-006 | Existing `_seed_service_accounts()` is idempotent (re-running on startup with same key does not create a duplicate). | FIX-023 | Run app twice, query `SELECT count(*) FROM users WHERE username='analyst-service'`. |
+| A-007 | `RS256JWTManager` constructor reads env at instantiation, allowing FIX-002's `REQUIRE_PERSISTENT` gate to fire before any token is issued. | FIX-002 | Trace `import` chain: `web_app/app.py` instantiates auth services before `register_blueprints`. |
+| A-008 | The `SocketIO` connect handler can return `False` to reject the connection in the installed Flask-SocketIO 5.6.1 version. | FIX-005 | Flask-SocketIO docs version pin confirms; one local test connecting without auth returns `disconnect` event client-side. |
+| A-009 | `_fetchall` is the single funnel for read queries — no separate `_fetchone` callers are unbounded in ways that matter. | FIX-018 | `grep -n "fetchall\|fetchone\|execute" src/ops_store.py`. |
+| A-010 | `pip-compile` `--generate-hashes` is deterministic across Python 3.11 patch versions used in CI and in `requirements.txt` build. | FIX-025 | Run twice locally; diff output. |

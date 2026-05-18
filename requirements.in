@@ -27,6 +27,7 @@ aiofiles
 sqlalchemy
 gunicorn
 eventlet
+flask-compress
 
 # Development / test dependencies
 pytest

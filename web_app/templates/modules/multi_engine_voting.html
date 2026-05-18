@@ -648,7 +648,7 @@ class MultiEngineVotingController extends BaseModuleController {
             const verdict = this.mapVerdict(decision.final_verdict);
             const timestamp = new Date(decision.timestamp).toLocaleTimeString();
             return `
-                <div class="decision-item" style="animation-delay: ${idx * 50}ms">
+                <div class="decision-item" data-delay="${idx * 50}">
                     <div class="decision-info">
                         <div>${decision.source_ip} → ${decision.dest_ip}</div>
                         <div class="decision-time">${timestamp} | ${decision.reason || 'Multi-engine consensus'}</div>
@@ -657,6 +657,9 @@ class MultiEngineVotingController extends BaseModuleController {
                 </div>
             `;
         }).join('');
+        list.querySelectorAll('[data-delay]').forEach(el => {
+            el.style.animationDelay = el.dataset.delay + 'ms';
+        });
     }
 
     onClose() {

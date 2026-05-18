@@ -31,6 +31,7 @@ def api_health():
         "detection_engines": _m.engine_registry.list_engines(),
         "pipeline": _m._pipeline_status(),
         "leader_election": _m.leader_election.status(),
+        **__import__("src._telemetry", fromlist=["health_snapshot"]).health_snapshot(),
     })
 
 

@@ -30,7 +30,7 @@
     </div>
 
     <!-- Module Context Bar (optional) -->
-    <div class="module-context-bar" id="contextBar" style="display: none;">
+    <div class="module-context-bar inids-hidden" id="contextBar">
         <div class="context-item">
             <span class="context-label">Status:</span>
             <span class="context-value" id="contextStatus">-</span>
@@ -54,12 +54,12 @@
         </div>
 
         <!-- Main Content (populated by module) -->
-        <div class="module-main" id="moduleMain" style="display: none;">
+        <div class="module-main inids-hidden" id="moduleMain">
             <!-- Module-specific content goes here -->
         </div>
 
         <!-- Error State -->
-        <div class="module-error" id="moduleError" style="display: none;">
+        <div class="module-error inids-hidden" id="moduleError">
             <div class="error-icon">⚠️</div>
             <div class="error-title">Module Error</div>
             <div class="error-message" id="errorMessage">-</div>
@@ -67,7 +67,7 @@
         </div>
 
         <!-- Empty State -->
-        <div class="module-empty" id="moduleEmpty" style="display: none;">
+        <div class="module-empty inids-hidden" id="moduleEmpty">
             <div class="empty-icon">📭</div>
             <div class="empty-title">No Data Available</div>
             <div class="empty-message">{{ empty_message | default("Check back soon or trigger demo mode.") }}</div>

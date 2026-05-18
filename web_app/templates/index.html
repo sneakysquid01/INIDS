@@ -56,7 +56,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>
     ACTIVE INCIDENT — DEMO PREDICTIONS MAY REFLECT LIVE CONDITIONS
@@ -74,7 +74,7 @@
       </div>
 
       {% if error %}
-      <div class="ds-alert warn" style="margin-bottom:12px;">
+      <div class="ds-alert warn inids-mb-3">
         {{ error }}
       </div>
       {% endif %}
@@ -82,7 +82,7 @@
       <form method="post" autocomplete="off">
 
         {% for feat in features %}
-        <div style="margin-bottom:12px;">
+        <div class="inids-mb-3">
           <label class="policy-description">{{ feat }}</label>
           <input
             type="number"
@@ -93,7 +93,7 @@
         </div>
         {% endfor %}
 
-        <button type="submit" class="btn-primary" style="width:100%; margin-top:8px;">
+        <button type="submit" class="btn-primary inids-w-full inids-mt-2">
           Run Prediction
         </button>
 

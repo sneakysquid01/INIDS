@@ -622,13 +622,19 @@ class RiskScoreController extends BaseModuleController {
             const verdict = this.mapVerdict(riskScore);
             
             return `
-                <div class="timeline-item" style="animation-delay: ${idx * 30}ms">
-                    <div class="timeline-bar ${verdict}" style="height: ${height}px;" 
+                <div class="timeline-item" data-delay="${idx * 30}">
+                    <div class="timeline-bar ${verdict}" data-height="${height}"
                          title="${event.source_ip || 'Unknown'}: ${riskScore.toFixed(2)}"></div>
                     <div class="timeline-value">${riskScore.toFixed(2)}</div>
                 </div>
             `;
         }).join('');
+        container.querySelectorAll('[data-delay]').forEach(el => {
+            el.style.animationDelay = el.dataset.delay + 'ms';
+        });
+        container.querySelectorAll('[data-height]').forEach(el => {
+            el.style.height = el.dataset.height + 'px';
+        });
     }
 
     onClose() {

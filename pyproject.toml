@@ -30,12 +30,12 @@ packages = ["src", "web_app"]
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["src/auth", "src/detection", "src/ips"]
+source = ["src/auth", "src/detection", "src/ips", "src/ops_store", "src/middleware", "web_app"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/migrations/*"]
 
 [tool.coverage.report]
-# Gate: ≥ 80% across src/auth, src/detection, src/ips (F-Step-40 — achieved 2026-05-18).
-fail_under = 80
+# FIX-011: overall floor 50%; original modules (auth/detection/ips) maintain 80% in CI args.
+fail_under = 50
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

@@ -5,7 +5,8 @@
       "Bash(python -m pytest tests/test_prevention_service.py tests/test_anomaly_and_escalation.py -v --tb=short)",
       "Bash(python -m pytest tests/test_b05_leader_election.py -v --tb=short)",
       "Bash(python -m pytest tests/ -x --tb=no -q)",
-      "Bash(python -m pytest tests/ --tb=no -q)"
+      "Bash(python -m pytest tests/ --tb=no -q)",
+      "Bash(powershell -Command \"Select-String -Path 'C:\\\\Users\\\\diwan\\\\Desktop\\\\INIDS\\\\web_app\\\\templates\\\\modules\\\\forensic_timeline.html' -Pattern 'style=' | Select-Object LineNumber, Line\")"
     ]
   }
 }

@@ -120,13 +120,15 @@ def require_csrf_token(func):
 
 def csrf_protect_middleware(app):
     """Register Flask middleware to automatically handle CSRF tokens.
-    
-    Args:
-        app: Flask application instance
+
+    Stateless JWT-authenticated ``/api/*`` paths are exempt — CSRF is not
+    exploitable when the browser cannot inject a JWT from another origin.
     """
     @app.before_request
     def before_request():
-        """Ensure CSRF token is available for session."""
+        """Ensure CSRF token is available for HTML session; skip for API paths."""
+        if request.path.startswith('/api/'):
+            return None
         # Generate CSRF token if not present
         get_csrf_token()
     

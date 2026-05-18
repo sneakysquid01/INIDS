@@ -81,7 +81,7 @@
             </button>
 
             <!-- LOADING SPINNER -->
-            <div id="loading-spinner" style="display: none;" class="mt-4 text-center">
+            <div id="loading-spinner" class="mt-4 text-center inids-hidden">
                 <div class="inline-block animate-spin h-6 w-6 border-2 border-[#3b82f6] border-t-transparent rounded-full"></div>
                 <div class="text-[#8f9099] text-xs mt-2">Analyzing...</div>
             </div>
@@ -107,7 +107,7 @@
             </div>
 
             <!-- RESULTS CONTAINER -->
-            <div id="results-container" style="display: none;" class="space-y-4">
+            <div id="results-container" class="space-y-4 inids-hidden">
                 <!-- Detection result cards mount here -->
             </div>
         </div>
@@ -343,7 +343,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>ACTIVE INCIDENT — MANUAL DETECTION IS OPERATING WITH LIVE THREAT CONTEXT</div>
 </div>
@@ -455,7 +455,7 @@
     </div>
 
     <div class="side-stack">
-      <div class="ds-card layer-elevated interactive" id="result-section" style="display:none;">
+      <div class="ds-card layer-elevated interactive inids-hidden" id="result-section">
         <div class="panel-header">
           <div>
             <div class="panel-kicker">Detection Output</div>
@@ -467,12 +467,12 @@
 
           <div class="confidence-wrap" id="confidence-container">
             <div class="confidence-bar">
-              <div id="confidence-bar" class="confidence-fill" style="width:0%;"></div>
+              <div id="confidence-bar" class="confidence-fill inids-w-0"></div>
             </div>
             <div id="confidence-value" class="mono-val">0%</div>
           </div>
 
-          <div class="result-grid" style="margin-top:16px;">
+          <div class="result-grid inids-mt-4">
             <div class="result-tile">
               <div class="result-label">Attack Type</div>
               <div id="attack-type" class="result-value">—</div>

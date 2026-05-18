@@ -44,8 +44,16 @@ PUBLIC_ROUTES: frozenset[str] = frozenset(
 )
 
 
+class AuthStoreUnboundError(RuntimeError):
+    """Raised when ops_store is not attached to current_app."""
+
+
 def _get_ops_store():
-    return getattr(current_app, "ops_store", None)
+    store = getattr(current_app, "ops_store", None)
+    if store is None:
+        logger.error("auth.ops_store_unbound")
+        raise AuthStoreUnboundError("ops_store not attached to current_app")
+    return store
 
 
 def _try_unified_auth(ops_store) -> AuthContext | None:

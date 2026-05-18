@@ -138,7 +138,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>
     ACTIVE INCIDENT — REALTIME EVENTS MAY CONTAIN ATTACK TRAFFIC
@@ -147,7 +147,7 @@
 {% endif %}
 
 {% if not socketio_enabled %}
-<div class="ds-alert warn" style="margin-bottom:16px;">
+<div class="ds-alert warn inids-mb-4">
   <div>
     WebSocket streaming unavailable. Install
     <code>flask-socketio</code> to enable realtime events.

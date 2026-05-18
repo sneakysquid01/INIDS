@@ -19,7 +19,7 @@ from dataclasses import dataclass, asdict
 from functools import wraps
 from threading import RLock
 
-from flask import request, Response, jsonify
+from flask import g, request, Response, jsonify
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ class SecurityHeadersMiddleware:
         'X-Frame-Options': 'DENY',
         'X-Content-Type-Options': 'nosniff',
         'X-XSS-Protection': '1; mode=block',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com",
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com; style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdn.socket.io https://cdn.tailwindcss.com",
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     }
@@ -226,8 +226,10 @@ class AuditLogMiddleware:
             except Exception:
                 response_body_size = 0
         
-        # Extract user from JWT or request
-        user = request.headers.get('X-User-ID', 'anonymous')
+        # Extract user from verified auth context (g.auth set by require_roles).
+        # Never read from client-controlled X-User-ID header (FIX-003).
+        _auth_ctx = getattr(g, "auth", None)
+        user = getattr(_auth_ctx, "username", None) or "anonymous"
         
         # Don't log sensitive data (passwords in request body)
         error = None
@@ -380,7 +382,6 @@ def register_middleware(
         raw = _os.getenv("INIDS_CORS_ORIGINS", "").strip()
         cors_origins = [o.strip() for o in raw.split(",") if o.strip()] if raw else CORSMiddleware._DEFAULT_ORIGINS
 
-    rate_limiter = RateLimitMiddleware(rate_limit_config or RateLimitConfig())
     ip_blocker = IPBlockingMiddleware()
     security_headers = SecurityHeadersMiddleware()
     audit_log = AuditLogMiddleware()

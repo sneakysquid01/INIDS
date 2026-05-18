@@ -165,13 +165,16 @@ class ForensicTimelineController extends BaseModuleController {
         timeline.innerHTML = events.slice(0, 10).reverse().map((event, idx) => {
             const time = new Date(event.timestamp).toLocaleTimeString();
             return `
-                <div class="timeline-event" style="animation-delay: ${idx * 50}ms">
+                <div class="timeline-event" data-delay="${idx * 50}">
                     <div class="event-dot"></div>
                     <div class="event-time">${time}</div>
                     <div class="event-description">${event.description || event.event_type || 'Event'}</div>
                 </div>
             `;
         }).join('');
+        timeline.querySelectorAll('[data-delay]').forEach(el => {
+            el.style.animationDelay = el.dataset.delay + 'ms';
+        });
     }
 
     onClose() {

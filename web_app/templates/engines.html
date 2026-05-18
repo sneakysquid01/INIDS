@@ -321,7 +321,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>ACTIVE INCIDENT — ENGINE CHANGES SHOULD BE APPLIED CAREFULLY</div>
 </div>
@@ -411,12 +411,12 @@
           </div>
 
           <!-- ENGINE GRID -->
-          <div id="engines-grid" class="engine-grid" style="display:none;">
+          <div id="engines-grid" class="engine-grid inids-hidden">
             <!-- populated by engines.js -->
           </div>
 
           <!-- EMPTY STATE -->
-          <div id="empty-state" class="empty-state" style="display:none;">
+          <div id="empty-state" class="empty-state inids-hidden">
             No detection engines available.
           </div>
         </div>

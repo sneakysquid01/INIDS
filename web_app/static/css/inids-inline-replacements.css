@@ -1,0 +1,69 @@
+/* INIDS inline-style replacements — FIX-008 (CSP style-src unsafe-inline removal) */
+
+/* Margin utilities */
+.inids-mb-4   { margin-bottom: 16px; }
+.inids-mb-3   { margin-bottom: 12px; }
+.inids-mb-6   { margin-bottom: 24px; }
+.inids-mb-1r  { margin-bottom: 1rem; }
+.inids-mb-0r8 { margin-bottom: 0.8rem; }
+.inids-mt-2   { margin-top: 8px; }
+.inids-mt-3   { margin-top: 12px; }
+.inids-mt-4   { margin-top: 16px; }
+.inids-mt-7   { margin-top: 28px; }
+.inids-mt-1r  { margin-top: 1rem; }
+.inids-mt-2r  { margin-top: 2rem; }
+.inids-mt-1p5 { margin-top: 6px; }
+
+/* Display utilities */
+.inids-hidden   { display: none !important; }
+.inids-contents { display: contents; }
+
+/* Width utilities (for progress bars, buttons) */
+.inids-w-full { width: 100%; }
+.inids-w-0    { width: 0%; }
+.inids-w-72pc { width: 72%; }
+
+/* Max-width / max-height */
+.inids-max-w-760 { max-width: 760px; }
+.inids-max-h-260 { max-height: 260px; }
+
+/* Overflow utilities */
+.inids-overflow-x-auto  { overflow-x: auto; }
+.inids-overflow-hidden  { overflow: hidden; }
+
+/* Flex layout utilities */
+.inids-sidebar-list  { overflow-y: auto; flex: 1; padding-bottom: 8px; }
+.inids-status-row    { display: flex; align-items: center; gap: 10px; overflow: hidden; }
+.inids-topbar-right  { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+/* Sidebar text */
+.inids-status-label  { font-size: 11px; color: rgba(255,255,255,0.6); white-space: nowrap; }
+.inids-status-sub    { font-size: 10px; color: rgba(255,255,255,0.25); white-space: nowrap; letter-spacing: 0.5px; }
+.inids-version-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(255,255,255,0.2); letter-spacing: 2px; }
+
+/* Meta / label text */
+.inids-meta-label { font-size: 0.8rem; color: #95a5a6; margin-top: 0.3rem; }
+.inids-meta-text  { color: #95a5a6; font-size: 0.85rem; }
+.inids-badge-safe { font-size: 0.8rem; font-weight: 600; color: var(--color-safe, #2ecc71); }
+
+/* Color utilities */
+.inids-color-safe   { color: var(--color-safe, #2ecc71); }
+.inids-color-attack { color: var(--color-attack, #e74c3c); }
+.inids-color-muted  { color: #666; }
+
+/* Component boxes */
+.inids-feedback-box { background: #f8f9fa; border-radius: 8px; padding: 1rem; font-size: 0.9rem; }
+
+/* Color backgrounds */
+.inids-bg-yellow { background: #ffd43b; }
+.inids-bg-red    { background: #ff6b6b; }
+
+/* SVG / canvas sizing */
+.inids-svg-timeline  { width: 100%; height: 300px; }
+.inids-topology-svg  {
+    width: 100%;
+    height: 400px;
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    border: 1px solid #16477f;
+    border-radius: 6px;
+}

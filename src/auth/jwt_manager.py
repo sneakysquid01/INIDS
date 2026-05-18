@@ -11,6 +11,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from src.settings import _read_file_secret
+
 logger = logging.getLogger(__name__)
 
 _ALGORITHM = "RS256"
@@ -35,12 +37,21 @@ class RS256JWTManager:
         self._private_key, self._public_key = self._load_keys()
 
     def _load_keys(self) -> tuple[Any, Any]:
-        priv_pem = os.environ.get("INIDS_JWT_PRIVATE_KEY", "").strip()
-        pub_pem = os.environ.get("INIDS_JWT_PUBLIC_KEY", "").strip()
+        priv_pem = _read_file_secret("INIDS_JWT_PRIVATE_KEY")
+        pub_pem = _read_file_secret("INIDS_JWT_PUBLIC_KEY")
 
         if not priv_pem:
+            require_persistent = (
+                os.environ.get("INIDS_JWT_REQUIRE_PERSISTENT", "false").strip().lower() == "true"
+            )
+            if require_persistent:
+                raise RuntimeError(
+                    "INIDS_JWT_PRIVATE_KEY required but not provided "
+                    "(INIDS_JWT_REQUIRE_PERSISTENT=true). "
+                    "Set INIDS_JWT_PRIVATE_KEY_FILE or INIDS_JWT_PRIVATE_KEY."
+                )
             logger.warning(
-                "INIDS_JWT_PRIVATE_KEY not set — generating ephemeral RSA-2048 keypair. "
+                "auth.jwt_key_source=ephemeral — INIDS_JWT_PRIVATE_KEY not set. "
                 "Tokens issued now will be invalid after restart. "
                 "Set INIDS_JWT_PRIVATE_KEY and INIDS_JWT_PUBLIC_KEY for production."
             )
@@ -59,13 +70,15 @@ class RS256JWTManager:
             public_key = serialization.load_pem_public_key(
                 _pem_bytes(pub_pem), backend=default_backend()
             )
+            logger.info("auth.jwt_key_source=file")
         else:
-            # Derive public key from the private key (acceptable during compat window)
             logger.warning(
-                "INIDS_JWT_PUBLIC_KEY not set — deriving public key from private key. "
+                "auth.jwt_pub_derived — INIDS_JWT_PUBLIC_KEY not set, "
+                "deriving public key from private key. "
                 "Set INIDS_JWT_PUBLIC_KEY for production."
             )
             public_key = private_key.public_key()
+            logger.info("auth.jwt_key_source=file pub_derived=true")
 
         return private_key, public_key
 

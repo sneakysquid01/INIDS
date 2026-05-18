@@ -161,6 +161,10 @@ class TemporalCorrelationEngine:
     def patterns(self) -> dict[str, CorrelationPattern]:
         return self._patterns
 
+    def pattern_count(self) -> int:
+        """Return the number of registered correlation patterns."""
+        return len(self._patterns)
+
     @property
     def temporal_store(self) -> TemporalStore:
         return self._temporal_store

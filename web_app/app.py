@@ -49,6 +49,11 @@ except ImportError as e:
         "Install with: pip install flask-socketio python-socketio"
     ) from e
 
+try:
+    from flask_compress import Compress as _FlaskCompress
+except ImportError:
+    _FlaskCompress = None
+
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -66,7 +71,7 @@ OPS_DB_PATH = SETTINGS.ops_db_path if os.path.isabs(SETTINGS.ops_db_path) else o
 from src.detection_service import DetectionService
 from src.prevention_service import PreventionService
 from src.ops_store import OpsStore
-from src.auth.decorators import require_roles
+from src.auth.decorators import require_roles, AuthStoreUnboundError
 from src.metrics_service import MetricsService
 from src.ingestion_service import InMemoryIngestionQueue, RedisStreamIngestionQueue, IngestionService
 from src.prevention.allowlist import Allowlist
@@ -174,6 +179,8 @@ detection_service = None
 prevention_service = PreventionService(adapter=_build_firewall_adapter())
 ops_store = OpsStore(OPS_DB_PATH)
 app.ops_store = ops_store  # F-AUTH-REMOVE: wired so require_roles() finds it via current_app
+assert app.ops_store is not None, "ops_store failed to attach to app"
+logger.info("auth.ops_store_bound=true")
 
 # --- Initialize Elasticsearch Audit Bridge (Week 2) ---
 audit_bridge = None
@@ -276,11 +283,18 @@ temporal_correlation_engine = TemporalCorrelationEngine()
 #     ]
 # )
 
+# FIX-017: Only register temporal engine when patterns are loaded; no-op registration
+# wastes CPU on every pipeline event.
+if temporal_correlation_engine.pattern_count() > 0:
+    engine_registry.register(temporal_correlation_engine)
+else:
+    logger.info("engine.temporal.skipped reason=no_patterns")
+
 # Entity context enrichment engine — enriches alerts with GeoIP, threat intel, history
 entity_enrichment_engine = EntityEnrichmentEngine(
     ops_store=ops_store,
     ti_manager=ti_manager,
-    internal_cidrs=SETTINGS.internal_cidrs if hasattr(SETTINGS, "internal_cidrs") else None
+    internal_cidrs=SETTINGS.internal_cidrs or None
 )
 logger.info("Entity enrichment engine initialized with threat intel manager")
 
@@ -662,7 +676,7 @@ def _on_detection_event(event: DetectionEvent) -> None:
         try:
             ops_store.save_alert(
                 {
-                    "id": f"al_{uuid.uuid4().hex[:10]}",
+                    "id": str(uuid.uuid4()),
                     "timestamp": event.timestamp,
                     "severity": event.severity,
                     "prediction": event.prediction,
@@ -686,7 +700,13 @@ def _on_detection_event(event: DetectionEvent) -> None:
                 engine_registry.set_enabled(anomaly_engine.engine_id, True)
                 logger.info("AnomalyEngine auto-fitted and enabled from traffic")
         except Exception:
-            logger.debug("Anomaly buffer sample failed", exc_info=True)
+            from src._telemetry import anomaly_add_sample_errors
+            anomaly_add_sample_errors.inc()
+            logger.warning(
+                "anomaly.add_sample_failed",
+                exc_info=True,
+                extra={"engine": "anomaly"},
+            )
 
     # Use policy-configured weights for dynamic risk scoring.
     policy = prevention_service.policy
@@ -1087,8 +1107,10 @@ def _start_alert_retention_thread() -> None:
         while True:
             time.sleep(86400)  # run once per day
             try:
-                if not leader_election.is_leader:
+                if not leader_election.is_leader():
+                    logger.info("retention.skipped reason=not_leader")
                     continue
+                logger.info("retention.runs_total")
                 _run_alert_retention()
             except Exception:
                 logger.exception("Alert retention loop failed")
@@ -1877,6 +1899,11 @@ app.register_blueprint(prevention_bp)
 app.register_blueprint(intel_bp)
 app.register_blueprint(system_bp)
 app.register_blueprint(modules_bp)
+
+
+@app.errorhandler(AuthStoreUnboundError)
+def _handle_auth_unbound(e):
+    return jsonify({"error": "service_unavailable", "reason": "auth_store_unbound"}), 503
 
 
 @app.errorhandler(404)

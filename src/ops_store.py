@@ -19,7 +19,7 @@ class OpsStore:
     """Operational persistence supporting SQLite (dev) and PostgreSQL (prod)."""
     
     # Current schema version - increment when making breaking schema changes
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -64,7 +64,23 @@ class OpsStore:
                 return conn.execute(text(query), params or {})
             return conn.execute(query, params or {})
 
-    def _fetchall(self, query: str, params: Any = None) -> list[dict[str, Any]]:
+    _FETCHALL_HARD_MAX: int = 10000
+
+    def _fetchall(
+        self,
+        query: str,
+        params: Any = None,
+        max_rows: int = 1000,
+    ) -> list[dict[str, Any]]:
+        if max_rows > self._FETCHALL_HARD_MAX:
+            raise ValueError(
+                f"max_rows {max_rows} exceeds hard cap {self._FETCHALL_HARD_MAX}"
+            )
+        import re as _re
+        _stripped = query.lstrip()
+        _is_select = _stripped.upper().startswith("SELECT") or _stripped.upper().startswith("WITH")
+        if _is_select and not _re.search(r'\bLIMIT\b', query, _re.IGNORECASE):
+            query = query.rstrip().rstrip(";") + f" LIMIT {int(max_rows)}"
         with self._connect() as conn:
             if self._is_postgres:
                 rows = conn.execute(text(query), params or {}).mappings().all()
@@ -168,6 +184,7 @@ class OpsStore:
             (3, self._migration_v3_auth_tables),
             (4, self._migration_v4_actions_idempotency_index),
             (5, self._migration_v5_alert_dedup),
+            (6, self._migration_v6_indexes),
         ]
         for version, fn in migrations:
             if version > current:
@@ -468,7 +485,8 @@ class OpsStore:
         (INSERT OR IGNORE / ON CONFLICT DO NOTHING).
         """
         import hashlib
-        import os
+
+        from src.settings import _read_file_secret
 
         env_key_map = {
             "INIDS_ADMIN_API_KEY": "admin",
@@ -478,7 +496,7 @@ class OpsStore:
         }
         now = self._utc_now_iso()
         for env_var, role in env_key_map.items():
-            raw_key = os.environ.get(env_var, "").strip()
+            raw_key = _read_file_secret(env_var)
             if not raw_key:
                 continue
             user_id = f"svc-{role}"
@@ -562,6 +580,23 @@ class OpsStore:
                     WHERE dedup_key IS NOT NULL
                     """
                 )
+
+    def _migration_v6_indexes(self) -> None:
+        """Schema v6: add performance indexes on hot query columns.
+
+        Indexes: alerts(source_ip), alerts(timestamp), audits(created_at),
+        actions(status). All use CREATE INDEX IF NOT EXISTS — idempotent.
+        On PostgreSQL with large tables, operators can pre-create with CONCURRENTLY;
+        the IF NOT EXISTS clause will then no-op.
+        """
+        statements = [
+            "CREATE INDEX IF NOT EXISTS idx_alerts_source_ip ON alerts(source_ip)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_audits_created_at ON audits(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status)",
+        ]
+        for stmt in statements:
+            self._execute(stmt)
 
     def _verify_schema_version(self) -> None:
         """Confirm schema_version matches SCHEMA_VERSION; re-raise on any failure."""

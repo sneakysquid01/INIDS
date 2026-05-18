@@ -106,7 +106,7 @@
 </div>
 
 {% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active" style="margin-bottom:16px;">
+<div class="ds-alert threat threat-active inids-mb-4">
   <div class="pulse-dot"></div>
   <div>
     ACTIVE INCIDENT — THREAT INTEL CORRELATED WITH LIVE ALERTS
@@ -146,7 +146,7 @@
       </div>
 
       <!-- RESULTS SUMMARY -->
-      <div id="resultsSection" style="display:none; margin-top:16px;">
+      <div id="resultsSection" class="inids-hidden inids-mt-4">
         <div class="ds-card layer-panel">
           <div class="ds-card-body">
             <div class="kv-grid">
@@ -161,7 +161,7 @@
               <div>
                 <div class="panel-title">Reputation</div>
                 <div class="reputation-bar">
-                  <div id="reputationProgress" class="reputation-bar-fill" style="width:0%;"></div>
+                  <div id="reputationProgress" class="reputation-bar-fill inids-w-0"></div>
                 </div>
                 <div id="reputationScore" class="mono-val">0%</div>
               </div>
@@ -174,7 +174,7 @@
         </div>
 
         <!-- TABS -->
-        <div class="tab-buttons" style="margin-top:16px;">
+        <div class="tab-buttons inids-mt-4">
           <div class="tab-btn active" onclick="switchTab('reputation')">Reputation</div>
           <div class="tab-btn" onclick="switchTab('threats')">Threats</div>
           <div class="tab-btn" onclick="switchTab('feeds')">Feeds</div>
@@ -198,7 +198,7 @@
                 <div>
                   <div class="panel-title">Confidence</div>
                   <div class="reputation-bar">
-                    <div id="rep-confidence" class="reputation-bar-fill" style="width:0%;"></div>
+                    <div id="rep-confidence" class="reputation-bar-fill inids-w-0"></div>
                   </div>
                 </div>
                 <div>
@@ -207,33 +207,33 @@
                 </div>
               </div>
 
-              <div style="margin-top:12px;">
+              <div class="inids-mt-3">
                 <div class="panel-title">Threat Categories</div>
-                <div id="threatCategories" style="margin-top:6px;"></div>
+                <div id="threatCategories" class="inids-mt-1p5"></div>
               </div>
             </div>
           </div>
         </div>
 
-        <div id="tab-threats" style="display:none;">
+        <div id="tab-threats" class="inids-hidden">
           <div class="ds-card layer-panel">
             <div class="ds-card-body" id="threatsList"></div>
           </div>
         </div>
 
-        <div id="tab-feeds" style="display:none;">
+        <div id="tab-feeds" class="inids-hidden">
           <div class="ds-card layer-panel">
             <div class="ds-card-body" id="feedsList"></div>
           </div>
         </div>
 
-        <div id="tab-incidents" style="display:none;">
+        <div id="tab-incidents" class="inids-hidden">
           <div class="ds-card layer-panel">
             <div class="ds-card-body" id="incidentsList"></div>
           </div>
         </div>
 
-        <div id="tab-geo" style="display:none;">
+        <div id="tab-geo" class="inids-hidden">
           <div class="ds-card layer-panel">
             <div class="ds-card-body">
               <div class="kv-grid">
@@ -248,12 +248,12 @@
       </div>
 
       <!-- NO RESULTS -->
-      <div id="noResultsSection" class="empty-state" style="display:none;">
+      <div id="noResultsSection" class="empty-state inids-hidden">
         Enter an IP address or domain to query threat intelligence.
       </div>
 
       <!-- LOADING -->
-      <div id="loadingSection" class="empty-state" style="display:none;">
+      <div id="loadingSection" class="empty-state inids-hidden">
         Querying threat intelligence sources…
       </div>
 

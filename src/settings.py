@@ -1,8 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def _read_file_secret(env_key: str, fallback_key: str = "") -> str:
+    """Read a secret from a file pointed to by <env_key>_FILE, or from the
+    plain env var.  File wins over plain env when both are set."""
+    file_path = os.getenv(f"{env_key}_FILE", "").strip()
+    if file_path:
+        try:
+            value = Path(file_path).read_text(encoding="utf-8").strip()
+            logger.debug("settings.secret_loaded key=%s source=file", env_key)
+            return value
+        except OSError as exc:
+            logger.error(
+                "settings._FILE_read_failed key=%s path=%s err=%s",
+                env_key, file_path, exc,
+            )
+    plain = os.getenv(env_key, os.getenv(fallback_key, "") if fallback_key else "").strip()
+    if plain:
+        logger.debug("settings.secret_loaded key=%s source=env", env_key)
+    return plain
 
 
 def _load_dotenv() -> None:
@@ -58,6 +82,7 @@ class Settings:
     adapter_cb_failure_threshold: int = 3
     adapter_cb_open_duration_s: float = 60.0
     cors_origins: str = "http://localhost:5000,http://127.0.0.1:5000"
+    internal_cidrs: tuple[str, ...] = ()
 
 
 def _safe_int(env_key: str, default: int) -> int:
@@ -89,7 +114,7 @@ def load_settings() -> Settings:
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     host = os.getenv("HOST", "0.0.0.0")
     ops_db_path = os.getenv("OPS_DB_PATH", os.getenv("INIDS_OPS_DB_PATH", "data/inids_ops.db"))
-    secret = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "")).strip()
+    secret = _read_file_secret("SECRET_KEY", "FLASK_SECRET_KEY")
     redis_url = os.getenv("REDIS_URL", "").strip()
     pipeline_enabled = _safe_bool("INIDS_PIPELINE_ENABLED", True)
     pipeline_batch_size = _safe_int("INIDS_PIPELINE_BATCH_SIZE", 50)
@@ -121,6 +146,17 @@ def load_settings() -> Settings:
     cors_origins = os.getenv(
         "INIDS_CORS_ORIGINS", "http://localhost:5000,http://127.0.0.1:5000"
     ).strip()
+    _raw_cidrs = [c.strip() for c in os.getenv("INIDS_INTERNAL_CIDRS", "").split(",") if c.strip()]
+    internal_cidrs: tuple[str, ...] = ()
+    _valid: list[str] = []
+    for _c in _raw_cidrs:
+        try:
+            ipaddress.ip_network(_c, strict=False)
+            _valid.append(_c)
+        except ValueError:
+            logger.warning("settings.invalid_cidr skipped=%s", _c)
+    internal_cidrs = tuple(_valid)
+    logger.debug("settings.internal_cidrs count=%d values=%s", len(internal_cidrs), ",".join(internal_cidrs))
     return Settings(
         host=host,
         port=port,
@@ -154,4 +190,5 @@ def load_settings() -> Settings:
         adapter_cb_failure_threshold=adapter_cb_failure_threshold,
         adapter_cb_open_duration_s=adapter_cb_open_duration_s,
         cors_origins=cors_origins,
+        internal_cidrs=internal_cidrs,
     )
