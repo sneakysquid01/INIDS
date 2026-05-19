@@ -1124,3 +1124,5 @@ Traceback (most recent call last):
     assert status_set is not None, "write() before start_response"
            ^^^^^^^^^^^^^^^^^^^^^^
 AssertionError: write() before start_response
+timestamp=2026-05-19 15:00:28,633 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=scheduler reconcile summary={'db_active': 0, 'firewall_rules': 0, 'missing_in_firewall': 0, 'orphan_firewall_rules': 0}
+timestamp=2026-05-19 15:10:28,668 level=INFO request_id=- source_ip=- risk_score=- action=- endpoint=- message=scheduler reconcile summary={'db_active': 0, 'firewall_rules': 0, 'missing_in_firewall': 0, 'orphan_firewall_rules': 0}
