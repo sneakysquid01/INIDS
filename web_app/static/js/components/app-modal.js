@@ -12,6 +12,7 @@ export class AppModal {
     constructor(options = {}) {
         this.title = options.title || "";
         this.content = options.content || "";
+        this._contentIsHtml = options.contentIsHtml === true;
         this.size = options.size || "lg"; // sm, md, lg, xl
         this.onClose = options.onClose || (() => {});
         this.closeable = options.closeable !== false;
@@ -85,7 +86,7 @@ export class AppModal {
         const content = document.createElement("div");
         content.className = "px-6 py-4 max-h-[60vh] overflow-auto text-gray-300";
         content.setAttribute("data-modal-content", "true");
-        content.innerHTML = this.content;
+        this._applyContent(content, this.content, this._contentIsHtml);
 
         // Create footer with default close button
         const footer = document.createElement("div");
@@ -176,16 +177,35 @@ export class AppModal {
     }
 
     /**
-     * Update modal content
+     * Apply content to a DOM element safely.
+     * Strings default to textContent; pass { html: true } to opt in to innerHTML.
      */
-    setContent(html) {
-        if (this.isOpen) {
-            const content = this.el?.querySelector("[data-modal-content]");
-            if (content) {
-                content.innerHTML = html;
+    _applyContent(el, content, isHtml = false) {
+        if (content instanceof Node) {
+            el.replaceChildren(content);
+        } else if (typeof content === "string") {
+            if (isHtml) {
+                el.innerHTML = content;
+            } else {
+                el.textContent = content;
             }
         } else {
-            this.content = html;
+            el.replaceChildren();
+        }
+    }
+
+    /**
+     * Update modal content dynamically.
+     * Pass { html: true } to render raw HTML (caller is responsible for sanitization).
+     */
+    setContent(content, options = {}) {
+        const { html = false } = options;
+        if (this.isOpen) {
+            const el = this.el?.querySelector("[data-modal-content]");
+            if (el) this._applyContent(el, content, html);
+        } else {
+            this.content = content;
+            this._contentIsHtml = html;
         }
     }
 
@@ -230,9 +250,12 @@ export class AppModal {
      * Static helper to show confirmation dialog
      */
     static confirm(title, message, onConfirm, onCancel) {
+        const msgEl = document.createElement("p");
+        msgEl.className = "text-gray-300";
+        msgEl.textContent = message;
         const modal = new AppModal({
             title,
-            content: `<p class="text-gray-300">${message}</p>`,
+            content: msgEl,
             size: "md",
         });
 
@@ -268,9 +291,12 @@ export class AppModal {
      * Static helper to show alert
      */
     static alert(title, message, onClose) {
+        const msgEl = document.createElement("p");
+        msgEl.className = "text-gray-300";
+        msgEl.textContent = message;
         const modal = new AppModal({
             title,
-            content: `<p class="text-gray-300">${message}</p>`,
+            content: msgEl,
             size: "md",
             onClose,
         });

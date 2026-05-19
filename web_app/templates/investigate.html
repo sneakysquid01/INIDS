@@ -1,585 +1,315 @@
 {% extends "base.html" %}
 
-{% block title %}Investigate — INIDS 3.0{% endblock %}
+{% block title %}Investigate — IDPS{% endblock %}
 {% block page_title %}Investigate{% endblock %}
 
-{% block content %}
-<div class="flex flex-col h-screen bg-[#0a0c10]">
-    <!-- PAGE HEADER -->
-    <div class="mb-6">
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-3xl font-bold text-white font-syne">Investigate</h1>
-                <p class="text-[#8f9099] text-sm mt-1">Threat investigation and analysis workflow</p>
-            </div>
-            <button id="new-investigation-btn" class="px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded font-medium text-sm transition-colors">
-                + New Investigation
-            </button>
-        </div>
-    </div>
-
-    <!-- STATS -->
-    <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Active</div>
-            <div id="stat-active" class="text-2xl font-bold text-[#3b82f6] mt-1">0</div>
-        </div>
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Completed</div>
-            <div id="stat-completed" class="text-2xl font-bold text-[#10b981] mt-1">0</div>
-        </div>
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total</div>
-            <div id="stat-total" class="text-2xl font-bold text-white mt-1">0</div>
-        </div>
-    </div>
-
-    <!-- FILTER BAR -->
-    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-2 gap-4">
-            <!-- STATUS FILTERS -->
-            <div>
-                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
-                <div class="flex flex-wrap gap-2">
-                    <button class="status-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-status="all">All</button>
-                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="open">Open</button>
-                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="closed">Closed</button>
-                </div>
-            </div>
-
-            <!-- SEVERITY FILTERS -->
-            <div>
-                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Severity</div>
-                <div class="flex flex-wrap gap-2">
-                    <button class="severity-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-severity="all">All</button>
-                    <button class="severity-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-severity="critical">Critical</button>
-                    <button class="severity-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-severity="high">High</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- SEARCH INPUT -->
-        <div class="mt-4">
-            <input 
-                id="search-investigations" 
-                type="text" 
-                placeholder="Search by title or description..."
-                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
-            />
-        </div>
-    </div>
-
-    <!-- INVESTIGATIONS GRID -->
-    <div class="flex-1 overflow-y-auto">
-        <div id="investigations-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-6">
-            <!-- Investigation cards mount here -->
-        </div>
-    </div>
-</div>
-
-<script type="module" src="{{ url_for('static', filename='js/pages/investigate.page.js') }}"></script>
-{% endblock %}
-:root {
-            --color-safe: #4caf50;
-            --color-suspicious: #ff9800;
-            --color-attack: #f44336;
-            --color-bg: #f5f7fa;
-            --color-card: #ffffff;
-            --color-border: #e1e8ed;
-            --color-text: #2c3e50;
-        }
-        
-        body {
-            background-color: var(--color-bg);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            color: var(--color-text);
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 0.8rem 0;
-        }
-        
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            letter-spacing: 0.5px;
-        }
-        
-        .nav-item {
-            margin: 0 0.5rem;
-        }
-        
-        .nav-link {
-            font-weight: 500;
-            padding: 0.5rem 1rem !important;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-        
-        .nav-link:hover {
-            background: rgba(255,255,255,0.1);
-        }
-        
-        .nav-link.active {
-            background: rgba(255,255,255,0.2);
-            border-bottom: 2px solid #fff;
-        }
-        
-        .container-fluid {
-            padding: 2rem 1.5rem;
-        }
-        
-        .main-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            color: var(--color-text);
-        }
-        
-        .subtitle {
-            font-size: 0.95rem;
-            color: #7f8c8d;
-            margin-bottom: 2rem;
-        }
-        
-        /* Filter Bar */
-        .filter-bar {
-            background: var(--color-card);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .filter-label {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #7f8c8d;
-        }
-        
-        .filter-input, .filter-select {
-            padding: 0.5rem 0.8rem;
-            border: 1px solid var(--color-border);
-            border-radius: 6px;
-            font-size: 0.9rem;
-            background: #f8f9fa;
-        }
-        
-        .filter-select {
-            cursor: pointer;
-            min-width: 120px;
-        }
-        
-        .btn-filter {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 0.5rem 1.2rem;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-            margin-left: auto;
-        }
-        
-        .btn-filter:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        
-        /* Alert Card - Expanded */
-        .alert-card {
-            background: var(--color-card);
-            border-radius: 12px;
-            overflow: hidden;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            border-left: 4px solid #ccc;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        
-        .alert-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            transform: translateY(-2px);
-        }
-        
-        .alert-card.high { border-left-color: var(--color-attack); }
-        .alert-card.medium { border-left-color: var(--color-suspicious); }
-        .alert-card.low { border-left-color: #2196f3; }
-        
-        .alert-header {
-            padding: 1.5rem;
-            background: linear-gradient(90deg, rgba(102,126,234,0.03) 0%, transparent 100%);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-        }
-        
-        .alert-header-left {
-            flex: 1;
-        }
-        
-        .alert-time {
-            font-size: 0.8rem;
-            color: #95a5a6;
-            margin-bottom: 0.3rem;
-        }
-        
-        .alert-title {
-            font-size: 1rem;
-            font-weight: 700;
-            color: var(--color-text);
-            margin-bottom: 0.5rem;
-        }
-        
-        .alert-sources {
-            font-size: 0.85rem;
-            color: #7f8c8d;
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-        
-        .alert-source {
-            display: flex;
-            gap: 0.3rem;
-            align-items: center;
-        }
-        
-        .alert-source-label {
-            font-weight: 600;
-            color: #667eea;
-        }
-        
-        .alert-severity {
-            display: inline-block;
-            padding: 0.3rem 0.8rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.2px;
-        }
-        
-        .alert-severity.high {
-            background: rgba(244,67,54,0.15);
-            color: var(--color-attack);
-        }
-        
-        .alert-severity.medium {
-            background: rgba(255,152,0,0.15);
-            color: var(--color-suspicious);
-        }
-        
-        .alert-severity.low {
-            background: rgba(33,150,243,0.15);
-            color: #2196f3;
-        }
-        
-        .expand-icon {
-            color: #95a5a6;
-            font-size: 1.2rem;
-            transition: transform 0.3s ease;
-        }
-        
-        .alert-card.expanded .expand-icon {
-            transform: rotate(180deg);
-        }
-        
-        /* Alert Details - Hidden by default */
-        .alert-details {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease;
-            background: #f8f9fa;
-        }
-        
-        .alert-card.expanded .alert-details {
-            max-height: 500px;
-            border-top: 1px solid var(--color-border);
-        }
-        
-        .details-content {
-            padding: 1.5rem;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-        }
-        
-        .detail-group {
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .detail-label {
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: #7f8c8d;
-            letter-spacing: 0.3px;
-            margin-bottom: 0.3rem;
-        }
-        
-        .detail-value {
-            font-size: 0.95rem;
-            color: var(--color-text);
-            font-weight: 500;
-            word-break: break-all;
-        }
-        
-        .detail-value.highlight {
-            background: rgba(244,67,54,0.1);
-            padding: 0.3rem 0.6rem;
-            border-radius: 4px;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 0.85rem;
-        }
-        
-        .confidence-bar {
-            height: 8px;
-            background: #ecf0f1;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 0.5rem;
-        }
-        
-        .confidence-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        }
-        
-        .actions-row {
-            padding: 1rem 1.5rem;
-            background: #f8f9fa;
-            display: flex;
-            gap: 0.5rem;
-            border-top: 1px solid var(--color-border);
-        }
-        
-        .btn-action {
-            padding: 0.5rem 1rem;
-            border: 1px solid var(--color-border);
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: all 0.3s ease;
-            background: white;
-            color: var(--color-text);
-        }
-        
-        .btn-action:hover {
-            background: var(--color-bg);
-            transform: translateY(-1px);
-        }
-        
-        .btn-action.mark-tp {
-            background: rgba(76,175,80,0.1);
-            color: var(--color-safe);
-            border-color: var(--color-safe);
-        }
-        
-        .btn-action.mark-fp {
-            background: rgba(244,67,54,0.1);
-            color: var(--color-attack);
-            border-color: var(--color-attack);
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 3rem 1rem;
-            color: #95a5a6;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-            opacity: 0.5;
-        }
-        
-        @media (max-width: 768px) {
-            .filter-bar {
-                flex-direction: column;
-            }
-            
-            .btn-filter {
-                margin-left: 0;
-                width: 100%;
-            }
-            
-            .details-content {
-                grid-template-columns: 1fr;
-            }
-            
-            .alert-sources {
-                flex-direction: column;
-            }
-        }
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+{% block extra_css %}
+<style>
+/* ---- Investigate page ---- */
+.inv-search-bar {
+    display:grid;
+    grid-template-columns: 160px 160px 1fr 180px auto;
+    gap:10px; align-items:end;
+    background:#0f1117;
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:10px;
+    padding:16px;
+    margin-bottom:20px;
 }
-
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+@media(max-width:900px){
+    .inv-search-bar { grid-template-columns:1fr 1fr; }
+    .inv-search-bar .inv-search-btn { grid-column:span 2; }
 }
+@media(max-width:520px){ .inv-search-bar { grid-template-columns:1fr; } }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
-}
+.inv-results-wrap { display:grid; grid-template-columns:1fr 320px; gap:16px; align-items:start; }
+@media(max-width:1024px){ .inv-results-wrap { grid-template-columns:1fr; } }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.inv-detail-panel {
+    background:#0f1117; border:1px solid rgba(255,255,255,.07); border-radius:10px;
+    position:sticky; top:76px; overflow:hidden;
 }
+.inv-detail-empty { padding:28px 20px; text-align:center; color:rgba(255,255,255,.2); font-size:12px; }
+.inv-detail-row { display:flex; justify-content:space-between; gap:10px;
+    padding:9px 0; border-bottom:1px solid rgba(255,255,255,.04); font-size:11px; }
+.inv-detail-row:last-child { border-bottom:none; }
+.inv-detail-label { color:rgba(255,255,255,.35); text-transform:uppercase; letter-spacing:.7px; flex-shrink:0; }
+.inv-detail-val   { color:rgba(255,255,255,.8); text-align:right; font-family:'JetBrains Mono',monospace; word-break:break-all; }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
+.inv-row-selected { background:rgba(59,130,246,.1) !important; }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
+.score-pill {
+    display:inline-block; border-radius:4px; padding:2px 8px;
+    font-size:10px; font-weight:700; letter-spacing:.4px;
 }
+.score-crit { background:rgba(239,68,68,.2); color:#f87171; }
+.score-high { background:rgba(245,158,11,.2); color:#fbbf24; }
+.score-med  { background:rgba(59,130,246,.2);  color:#60a5fa; }
+.score-low  { background:rgba(16,185,129,.2); color:#34d399; }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+.flag-pill { display:inline-block; background:rgba(168,85,247,.15); color:#c084fc;
+    border-radius:3px; padding:1px 6px; font-size:9px; font-weight:700; margin:1px; }
+
+.inv-chart-wrap { background:#0f1117; border:1px solid rgba(255,255,255,.07);
+    border-radius:10px; padding:16px; margin-bottom:20px; }
+</style>
 {% endblock %}
 
 {% block content %}
+<!-- PAGE HEADER -->
 <div class="page-header">
-  <div>
-    <h1 class="page-title">INIDS Investigate - Alert Analysis</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
-  </div>
-  <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
-  </div>
+    <div>
+        <h1 class="page-title">Investigate</h1>
+        <div class="page-subtitle">FORENSICS &amp; LOG ANALYSIS</div>
+    </div>
+    <div class="page-meta">
+        <span class="badge-info">FORENSICS</span>
+        <span style="color:rgba(255,255,255,.3); font-size:11px;">10 sample log entries loaded</span>
+    </div>
 </div>
 
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active inids-mb-4">
-  <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
+<div style="margin-top:20px;">
+
+<!-- SEARCH BAR -->
+<div class="inv-search-bar">
+    <div>
+        <label class="ds-label">Date From</label>
+        <input type="date" id="f-date-from" class="ds-input" value="2026-05-19" title="Filter from date" aria-label="Filter from date">
+    </div>
+    <div>
+        <label class="ds-label">Date To</label>
+        <input type="date" id="f-date-to" class="ds-input" value="2026-05-19" title="Filter to date" aria-label="Filter to date">
+    </div>
+    <div>
+        <label class="ds-label">Source IP Filter</label>
+        <input type="text" id="f-src-ip" class="ds-input" placeholder="e.g. 185.220.101.47">
+    </div>
+    <div>
+        <label class="ds-label">Threat Type</label>
+        <select id="f-threat-type" class="ds-select" title="Filter by threat type" aria-label="Threat type filter">
+            <option value="">All Types</option>
+            <option>DDoS Flood</option>
+            <option>Brute Force SSH</option>
+            <option>Port Scanning</option>
+            <option>SQL Injection</option>
+            <option>Malware C2</option>
+            <option>XSS Attempt</option>
+            <option>Credential Stuffing</option>
+        </select>
+    </div>
+    <div class="inv-search-btn" style="display:flex; gap:8px; align-items:flex-end;">
+        <input type="text" id="f-freetext" class="ds-input" placeholder="Free-text search…" style="width:200px;">
+        <button type="button" class="btn-primary" onclick="runSearch()" style="white-space:nowrap;">
+            <i class="bi bi-search"></i> Search
+        </button>
+    </div>
 </div>
-{% endif %}
 
-<div class="ds-card layer-panel interactive">
-  <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/monitor">Monitor</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/investigate">Investigate</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/respond">Respond</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/learn">Learn</a>
-                    </li>
-                </ul>
-            </div>
+<!-- TRAFFIC CHART -->
+<div class="inv-chart-wrap">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <i class="bi bi-graph-up" style="color:#60a5fa"></i>
+        <span class="ds-card-title" style="font-size:12px;">Traffic &amp; Threat Score — Last 24 Hours (IST)</span>
+    </div>
+    <canvas id="traffic-chart" height="90"></canvas>
+</div>
+
+<!-- RESULTS + DETAIL -->
+<div class="inv-results-wrap">
+
+    <!-- LOG TABLE -->
+    <div class="ds-card">
+        <div class="ds-card-header">
+            <i class="bi bi-table" style="color:#60a5fa"></i>
+            <span class="ds-card-title">Log Entries</span>
+            <span id="result-count" style="margin-left:auto; font-size:11px; color:rgba(255,255,255,.3);">10 entries</span>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container-fluid">
-        <div class="main-title">Investigate</div>
-        <div class="subtitle">Deep-dive into alerts and detection context</div>
-
-        <!-- Filter Bar -->
-        <div class="filter-bar">
-            <div class="filter-group">
-                <label class="filter-label">Severity:</label>
-                <select class="filter-select" id="filter-severity">
-                    <option value="">All</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                </select>
-            </div>
-
-            <div class="filter-group">
-                <label class="filter-label">Status:</label>
-                <select class="filter-select" id="filter-status">
-                    <option value="">All</option>
-                    <option value="open">Open</option>
-                    <option value="blocked">Blocked</option>
-                    <option value="flagged">Flagged</option>
-                </select>
-            </div>
-
-            <div class="filter-group">
-                <label class="filter-label">Source IP:</label>
-                <input type="text" class="filter-input" id="filter-ip" placeholder="x.x.x.x">
-            </div>
-
-            <button class="btn-filter" onclick="applyFilters()">🔍 Filter</button>
+        <div class="inids-overflow-x-auto">
+            <table class="ds-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp (IST)</th>
+                        <th>Src IP</th>
+                        <th>Dst IP</th>
+                        <th>Proto</th>
+                        <th>Port</th>
+                        <th>Pkt Size</th>
+                        <th>Score</th>
+                        <th>Flags</th>
+                    </tr>
+                </thead>
+                <tbody id="log-tbody"></tbody>
+            </table>
         </div>
+    </div>
 
-        <!-- Alerts List -->
-        <div id="alerts-container">
-            <div class="empty-state">
-                <div class="empty-state-icon">📊</div>
-                <div>No alerts found</div>
+    <!-- DETAIL PANEL -->
+    <div class="inv-detail-panel">
+        <div class="ds-card-header" style="border-bottom:1px solid rgba(255,255,255,.07);">
+            <i class="bi bi-file-earmark-text" style="color:#a78bfa"></i>
+            <span class="ds-card-title">Entry Detail</span>
+        </div>
+        <div id="detail-content">
+            <div class="inv-detail-empty">
+                <i class="bi bi-cursor-text" style="font-size:24px; display:block; margin-bottom:8px;"></i>
+                Click any row to inspect entry details
             </div>
         </div>
     </div>
 
-    <!-- Socket.IO for real-time updates -->
-  </div>
+</div><!-- /inv-results-wrap -->
 </div>
+
+<script>
+const LOG_DATA = [
+    { ts:'19 May 2026, 14:12:05', src:'185.220.101.47', dst:'10.0.0.1',   proto:'TCP', port:80,   pkt:1420, score:98, flags:['SYN','PSH'], type:'DDoS Flood',         geo:'Russia',       related:3, actions:['Block IP','Rate-limit','Notify NOC'] },
+    { ts:'19 May 2026, 13:58:31', src:'92.118.37.12',   dst:'10.0.0.5',   proto:'TCP', port:22,   pkt:64,   score:87, flags:['SYN'],        type:'Brute Force SSH',    geo:'Netherlands',  related:12, actions:['Block IP','Lock account','Alert admin'] },
+    { ts:'19 May 2026, 13:41:07', src:'45.142.212.34',  dst:'10.0.0.1',   proto:'TCP', port:443,  pkt:60,   score:62, flags:['SYN','RST'],  type:'Port Scanning',      geo:'Germany',      related:47, actions:['Block IP','Update IDS rule'] },
+    { ts:'19 May 2026, 12:29:55', src:'103.25.6.88',    dst:'10.0.0.12',  proto:'TCP', port:3306, pkt:312,  score:95, flags:['PSH','ACK'],  type:'SQL Injection',       geo:'Vietnam',      related:2,  actions:['Block IP','WAF rule','Patch DB'] },
+    { ts:'19 May 2026, 11:05:14', src:'194.165.16.172', dst:'10.0.0.8',   proto:'TCP', port:8080, pkt:880,  score:91, flags:['ACK','PSH'],  type:'Malware C2',          geo:'Ukraine',      related:6,  actions:['Quarantine host','Block IP','SIEM alert'] },
+    { ts:'19 May 2026, 10:47:38', src:'77.83.34.9',     dst:'10.0.0.15',  proto:'HTTP',port:80,   pkt:234,  score:38, flags:['GET'],        type:'XSS Attempt',         geo:'Romania',      related:1,  actions:['WAF block','Log entry'] },
+    { ts:'19 May 2026, 09:33:20', src:'162.55.82.14',   dst:'10.0.0.3',   proto:'UDP', port:53,   pkt:512,  score:71, flags:['AMP'],        type:'DNS Amplification',   geo:'Germany',      related:5,  actions:['Rate-limit','Block source','Contact ISP'] },
+    { ts:'19 May 2026, 08:15:44', src:'5.188.206.17',   dst:'10.0.0.1',   proto:'TCP', port:445,  pkt:144,  score:84, flags:['SYN','PSH'],  type:'SMB Exploit Attempt', geo:'Russia',       related:3,  actions:['Block IP','Patch SMB','Isolate host'] },
+    { ts:'19 May 2026, 07:02:11', src:'31.41.244.99',   dst:'10.0.0.9',   proto:'TCP', port:3389, pkt:60,   score:76, flags:['SYN'],        type:'Credential Stuffing', geo:'Bulgaria',     related:21, actions:['Block IP','Lock RDP','Enable MFA'] },
+    { ts:'19 May 2026, 05:48:03', src:'159.89.155.22',  dst:'10.0.0.11',  proto:'TCP', port:21,   pkt:96,   score:55, flags:['SYN','ACK'],  type:'FTP Scan',            geo:'Singapore',    related:4,  actions:['Disable FTP','Block IP'] },
+];
+
+let filteredData = [...LOG_DATA];
+let selectedIdx = null;
+
+function scoreClass(s) {
+    if (s >= 90) return 'score-crit';
+    if (s >= 70) return 'score-high';
+    if (s >= 50) return 'score-med';
+    return 'score-low';
+}
+
+function renderTable(data) {
+    document.getElementById('result-count').textContent = `${data.length} entr${data.length===1?'y':'ies'}`;
+    document.getElementById('log-tbody').innerHTML = data.map((row, i) => `
+        <tr onclick="selectRow(${i})" style="cursor:pointer;" id="log-row-${i}">
+            <td style="font-size:11px; color:rgba(255,255,255,.4);">${row.ts}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#60a5fa;">${row.src}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:rgba(255,255,255,.5);">${row.dst}</td>
+            <td>${row.proto}</td>
+            <td style="color:rgba(255,255,255,.55);">${row.port}</td>
+            <td style="color:rgba(255,255,255,.55);">${row.pkt}B</td>
+            <td><span class="score-pill ${scoreClass(row.score)}">${row.score}</span></td>
+            <td>${row.flags.map(f=>`<span class="flag-pill">${f}</span>`).join('')}</td>
+        </tr>`).join('');
+}
+
+function selectRow(i) {
+    selectedIdx = i;
+    document.querySelectorAll('#log-tbody tr').forEach((r,j) => {
+        r.classList.toggle('inv-row-selected', j === i);
+    });
+    const row = filteredData[i];
+    document.getElementById('detail-content').innerHTML = `
+        <div style="padding:14px 16px;">
+            <div class="ds-alert info" style="margin-bottom:12px; font-size:11px;">
+                <i class="bi bi-shield-exclamation"></i>
+                <strong>${row.type}</strong> &nbsp;·&nbsp; Score: ${row.score} &nbsp;·&nbsp; Geo: ${row.geo}
+            </div>
+            <div style="margin-bottom:14px;">
+                ${[
+                    ['Timestamp',    row.ts],
+                    ['Source IP',    row.src],
+                    ['Destination',  row.dst],
+                    ['Protocol',     row.proto],
+                    ['Port',         row.port],
+                    ['Packet Size',  row.pkt+'B'],
+                    ['Threat Score', row.score+'/100'],
+                    ['Geolocation',  row.geo],
+                    ['Flags',        row.flags.join(', ')],
+                    ['Related Events', row.related+' events in 30-min window'],
+                ].map(([l,v]) => `
+                    <div class="inv-detail-row">
+                        <span class="inv-detail-label">${l}</span>
+                        <span class="inv-detail-val">${v}</span>
+                    </div>`).join('')}
+            </div>
+            <div style="margin-bottom:10px;">
+                <div class="ds-label" style="margin-bottom:8px;">Suggested Actions</div>
+                ${row.actions.map(a=>`
+                    <div style="display:flex; align-items:center; gap:8px; padding:6px 0;
+                        border-bottom:1px solid rgba(255,255,255,.04); font-size:11px; color:rgba(255,255,255,.65);">
+                        <i class="bi bi-chevron-right" style="color:#60a5fa; font-size:10px;"></i>${a}
+                    </div>`).join('')}
+            </div>
+        </div>`;
+}
+
+function runSearch() {
+    const srcIp  = document.getElementById('f-src-ip').value.trim().toLowerCase();
+    const type   = document.getElementById('f-threat-type').value;
+    const free   = document.getElementById('f-freetext').value.trim().toLowerCase();
+    filteredData = LOG_DATA.filter(r =>
+        (!srcIp || r.src.includes(srcIp)) &&
+        (!type  || r.type === type) &&
+        (!free  || JSON.stringify(r).toLowerCase().includes(free))
+    );
+    renderTable(filteredData);
+    document.getElementById('detail-content').innerHTML =
+        `<div class="inv-detail-empty"><i class="bi bi-cursor-text" style="font-size:24px;display:block;margin-bottom:8px;"></i>Click any row to inspect</div>`;
+}
+
+/* Chart.js — traffic + threat score over 24h */
+(function buildChart() {
+    const hours = Array.from({length:24}, (_,i) => `${String(i).padStart(2,'0')}:00`);
+    const traffic  = [120,85,60,45,38,52,77,210,380,420,510,490,470,560,620,580,540,490,410,350,280,220,160,130];
+    const threats  = [2,1,0,0,1,0,3,8,14,18,22,21,19,25,28,26,24,20,16,13,9,7,4,3];
+
+    const ctx = document.getElementById('traffic-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: hours,
+            datasets: [
+                {
+                    label: 'Traffic (flows/s)',
+                    data: traffic,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                    yAxisID: 'yLeft'
+                },
+                {
+                    label: 'Threat Events',
+                    data: threats,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239,68,68,.08)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#ef4444',
+                    borderWidth: 2,
+                    yAxisID: 'yRight'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode:'index', intersect:false },
+            plugins: {
+                legend: { labels:{ color:'rgba(255,255,255,.45)', boxWidth:10, font:{size:11} } },
+                tooltip: { backgroundColor:'#151922', borderColor:'rgba(255,255,255,.12)',
+                    borderWidth:1, titleColor:'rgba(255,255,255,.8)', bodyColor:'rgba(255,255,255,.55)' }
+            },
+            scales: {
+                x: { grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'rgba(255,255,255,.35)', maxTicksLimit:8, font:{size:10} } },
+                yLeft:  { position:'left',  grid:{ color:'rgba(255,255,255,.05)' },
+                    ticks:{ color:'rgba(255,255,255,.35)', font:{size:10} } },
+                yRight: { position:'right', grid:{ drawOnChartArea:false },
+                    ticks:{ color:'#f87171', font:{size:10} } }
+            }
+        }
+    });
+})();
+
+renderTable(filteredData);
+</script>
 {% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-<script src="{{ url_for('static', filename='js/investigate-inline.js') }}"></script>
-
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
-{% endblock %}
-
-

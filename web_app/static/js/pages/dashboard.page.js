@@ -59,7 +59,13 @@ function renderModules() {
 
         modules.forEach((module, index) => {
             try {
-                const card = ModuleCard(module);
+                const card = ModuleCard(module.id, {
+                    title: module.title || module.name || module.id,
+                    status: module.status,
+                    description: module.description,
+                    metrics: module.metrics,
+                    enabled: module.enabled,
+                });
                 modulesGrid.appendChild(card);
             } catch (err) {
                 console.error(`[ModuleCard ${index}] Error:`, err);
@@ -250,7 +256,7 @@ function initPage() {
         renderActions();
         
         console.log('[Dashboard] Page initialized successfully');
-        AppToast.success('Dashboard loaded', 'System is ready for monitoring');
+        AppToast.success('Dashboard loaded — System is ready for monitoring', 3500);
     } catch (err) {
         console.error('[Dashboard] Init error:', err);
         AppToast.error('Dashboard Error', 'Failed to initialize page. Check console for details.');

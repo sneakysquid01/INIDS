@@ -4,8 +4,9 @@ import logging
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable
+from urllib.parse import quote
 
-from flask import current_app, g, jsonify, request
+from flask import current_app, g, jsonify, redirect, request
 
 from src.auth.models import AuthContext
 from src.auth.auth_service import UnifiedAuthService
@@ -40,6 +41,8 @@ PUBLIC_ROUTES: frozenset[str] = frozenset(
         "/api/auth/revoke",
         "/api/auth/validate",
         "/api/auth/status",
+        "/login",
+        "/logout",
     }
 )
 
@@ -57,7 +60,7 @@ def _get_ops_store():
 
 
 def _try_unified_auth(ops_store) -> AuthContext | None:
-    """Attempt auth via UnifiedAuthService (RS256 JWT then X-API-Key)."""
+    """Attempt auth via UnifiedAuthService (RS256 JWT then X-API-Key then cookie)."""
     if ops_store is None:
         return None
     svc = UnifiedAuthService(ops_store)
@@ -71,6 +74,13 @@ def _try_unified_auth(ops_store) -> AuthContext | None:
     api_key = request.headers.get("X-API-Key", "").strip()
     if api_key:
         ctx = svc.authenticate_api_key(api_key)
+        if ctx is not None:
+            return ctx
+
+    # Cookie JWT (set by /login for browser sessions)
+    cookie_token = request.cookies.get("inids_jwt", "").strip()
+    if cookie_token:
+        ctx = svc.authenticate_jwt(cookie_token)
         if ctx is not None:
             return ctx
 
@@ -115,6 +125,10 @@ def require_roles(*roles: str) -> Callable:
             ctx = _try_unified_auth(ops_store)
 
             if ctx is None:
+                # For browser page routes, redirect to login instead of returning JSON
+                if not request.path.startswith("/api/"):
+                    next_url = quote(request.path + ("?" + request.query_string.decode() if request.query_string else ""))
+                    return redirect(f"/login?next={next_url}")
                 return (
                     jsonify({"error": "unauthorized", "reason": "access_denied"}),
                     401,

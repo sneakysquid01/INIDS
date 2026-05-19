@@ -1,809 +1,381 @@
 {% extends "base.html" %}
 
-{% block title %}Learn — INIDS 3.0{% endblock %}
+{% block title %}Learn — IDPS{% endblock %}
 {% block page_title %}Learn{% endblock %}
 
-{% block content %}
-<div class="flex flex-col h-screen bg-[#0a0c10]">
-    <!-- PAGE HEADER -->
-    <div class="mb-6">
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-3xl font-bold text-white font-syne">Learn</h1>
-                <p class="text-[#8f9099] text-sm mt-1">Documentation, guides, and best practices</p>
-            </div>
-        </div>
-    </div>
+{% block extra_css %}
+<style>
+/* ---- Learn page ---- */
+.learn-grid { display:grid; grid-template-columns:1fr 300px; gap:20px; align-items:start; }
+@media(max-width:900px){ .learn-grid { grid-template-columns:1fr; } }
 
-    <!-- SEARCH BAR -->
-    <div class="mb-6">
-        <input 
-            id="search-docs" 
-            type="text" 
-            placeholder="Search documentation..."
-            class="w-full px-4 py-3 bg-[#151922] border border-[#1a1f2e] rounded-lg text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
-        />
-    </div>
-
-    <!-- CATEGORY TABS -->
-    <div class="flex gap-2 mb-6 border-b border-[#1a1f2e] pb-4 overflow-x-auto">
-        <button class="category-tab px-4 py-2 text-sm font-medium text-white bg-[#3b82f6] rounded" data-category="all">
-            All Docs
-        </button>
-        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="getting-started">
-            Getting Started
-        </button>
-        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="configuration">
-            Configuration
-        </button>
-        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="detection">
-            Detection
-        </button>
-        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="troubleshooting">
-            Troubleshooting
-        </button>
-        <button class="category-tab px-4 py-2 text-sm font-medium text-[#8f9099] hover:text-white rounded transition-colors" data-category="api">
-            API Docs
-        </button>
-    </div>
-
-    <!-- DOCS CONTAINER -->
-    <div class="flex-1 overflow-y-auto">
-        <div id="docs-container" class="space-y-4 pb-6">
-            <!-- Documentation cards mount here -->
-        </div>
-    </div>
-</div>
-
-<script type="module" src="{{ url_for('static', filename='js/pages/learn.page.js') }}"></script>
-{% endblock %}
-:root {
-            --color-safe: #4caf50;
-            --color-suspicious: #ff9800;
-            --color-attack: #f44336;
-            --color-bg: #f5f7fa;
-            --color-card: #ffffff;
-            --color-border: #e1e8ed;
-            --color-text: #2c3e50;
-        }
-        
-        body {
-            background-color: var(--color-bg);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            color: var(--color-text);
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 0.8rem 0;
-        }
-        
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.3rem;
-            letter-spacing: 0.5px;
-        }
-        
-        .nav-item {
-            margin: 0 0.5rem;
-        }
-        
-        .nav-link {
-            font-weight: 500;
-            padding: 0.5rem 1rem !important;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-        
-        .nav-link:hover {
-            background: rgba(255,255,255,0.1);
-        }
-        
-        .nav-link.active {
-            background: rgba(255,255,255,0.2);
-            border-bottom: 2px solid #fff;
-        }
-        
-        .container-fluid {
-            padding: 2rem 1.5rem;
-        }
-        
-        .main-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            color: var(--color-text);
-        }
-        
-        .subtitle {
-            font-size: 0.95rem;
-            color: #7f8c8d;
-            margin-bottom: 2rem;
-        }
-        
-        /* Active Model Card */
-        .active-model {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 12px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 16px rgba(102,126,234,0.3);
-        }
-        
-        .model-label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            opacity: 0.9;
-        }
-        
-        .model-name {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin: 0.5rem 0;
-        }
-        
-        .model-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 1.5rem;
-            margin-top: 1.5rem;
-        }
-        
-        .model-stat {
-            text-align: center;
-        }
-        
-        .model-stat-label {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.2px;
-            opacity: 0.85;
-        }
-        
-        .model-stat-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-top: 0.5rem;
-        }
-        
-        /* Tabs */
-        .tabs-container {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 2rem;
-            border-bottom: 2px solid var(--color-border);
-        }
-        
-        .tab-btn {
-            padding: 0.8rem 1.5rem;
-            border: none;
-            background: none;
-            cursor: pointer;
-            font-weight: 600;
-            color: #7f8c8d;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s ease;
-        }
-        
-        .tab-btn:hover {
-            color: var(--color-text);
-        }
-        
-        .tab-btn.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-        }
-        
-        /* Sections */
-        .section {
-            background: var(--color-card);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-            color: var(--color-text);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .section-title::before {
-            content: '';
-            width: 4px;
-            height: 1.2rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 2px;
-        }
-        
-        /* Training Progress */
-        .training-item {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            border-left: 3px solid #667eea;
-        }
-        
-        .training-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-        
-        .training-title {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: var(--color-text);
-        }
-        
-        .training-badge {
-            display: inline-block;
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.2px;
-        }
-        
-        .training-badge.running {
-            background: rgba(33,150,243,0.15);
-            color: #1565c0;
-        }
-        
-        .training-badge.completed {
-            background: rgba(76,175,80,0.15);
-            color: var(--color-safe);
-        }
-        
-        .training-badge.scheduled {
-            background: rgba(255,152,0,0.15);
-            color: var(--color-suspicious);
-        }
-        
-        .progress-bar-container {
-            background: #ecf0f1;
-            border-radius: 4px;
-            height: 8px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
-        }
-        
-        .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            border-radius: 4px;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        .progress-text {
-            font-size: 0.75rem;
-            color: #7f8c8d;
-            display: flex;
-            justify-content: space-between;
-        }
-        
-        /* Metrics Comparison */
-        .metrics-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .metrics-table thead {
-            background: #f8f9fa;
-            border-bottom: 1px solid var(--color-border);
-        }
-        
-        .metrics-table th {
-            padding: 0.8rem;
-            text-align: left;
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: #7f8c8d;
-            letter-spacing: 0.2px;
-        }
-        
-        .metrics-table td {
-            padding: 0.8rem;
-            border-bottom: 1px solid var(--color-border);
-            font-size: 0.9rem;
-        }
-        
-        .metrics-table tbody tr:hover {
-            background: #f8f9fa;
-        }
-        
-        .metric-value {
-            font-weight: 600;
-            color: #667eea;
-        }
-        
-        .improvement {
-            color: var(--color-safe);
-            font-weight: 700;
-        }
-        
-        .degradation {
-            color: var(--color-attack);
-            font-weight: 700;
-        }
-        
-        /* Training Data */
-        .dataset-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-        }
-        
-        .dataset-stat {
-            background: linear-gradient(135deg, rgba(102,126,234,0.05) 0%, transparent 100%);
-            border-radius: 8px;
-            padding: 1rem;
-            border-left: 3px solid #667eea;
-        }
-        
-        .dataset-stat-label {
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            color: #7f8c8d;
-            letter-spacing: 0.2px;
-        }
-        
-        .dataset-stat-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #667eea;
-            margin-top: 0.5rem;
-        }
-        
-        /* Actions */
-        .action-buttons {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-        
-        .btn-action {
-            padding: 0.6rem 1.2rem;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        
-        .btn-secondary {
-            background: #f8f9fa;
-            color: var(--color-text);
-            border: 1px solid var(--color-border);
-        }
-        
-        .btn-secondary:hover {
-            background: var(--color-bg);
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 2rem;
-            color: #95a5a6;
-        }
-        
-        .empty-state-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-            opacity: 0.5;
-        }
-        
-        @media (max-width: 768px) {
-            .model-stats {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .action-buttons {
-                flex-direction: column;
-            }
-            
-            .btn-action {
-                width: 100%;
-            }
-            
-            .metrics-table {
-                font-size: 0.8rem;
-            }
-        }
-
-.page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 20px;
+.threat-card {
+    background:#0f1117; border:1px solid rgba(255,255,255,.07); border-radius:10px;
+    overflow:hidden; transition:border-color .2s, box-shadow .2s;
 }
+.threat-card:hover { border-color:rgba(59,130,246,.35); box-shadow:0 8px 24px rgba(0,0,0,.4); }
 
-.page-title {
-    margin: 0;
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    line-height: 1.1;
+.threat-card-header {
+    display:flex; align-items:center; gap:10px; padding:14px 16px;
+    cursor:pointer; -webkit-user-select:none; user-select:none;
+    border-bottom:1px solid rgba(255,255,255,.07);
 }
+.threat-card-header:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
+.threat-card-body { padding:16px; display:none; }
+.threat-card.open .threat-card-body { display:block; }
+.threat-card.open .card-chevron { transform:rotate(180deg); }
+.card-chevron { margin-left:auto; color:rgba(255,255,255,.3); transition:transform .2s; font-size:14px; }
 
-.page-subtitle {
-    margin-top: 6px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
-}
+.threat-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center;
+    justify-content:center; font-size:15px; flex-shrink:0; }
 
-.page-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.threat-tag {
+    display:inline-block; font-size:9px; font-weight:700; letter-spacing:.8px; text-transform:uppercase;
+    padding:2px 7px; border-radius:3px; margin-right:4px; margin-bottom:4px;
 }
+.tag-red  { background:rgba(239,68,68,.15);  color:#f87171; }
+.tag-amb  { background:rgba(245,158,11,.15); color:#fbbf24; }
+.tag-blue { background:rgba(59,130,246,.15);  color:#60a5fa; }
+.tag-grn  { background:rgba(16,185,129,.15); color:#34d399; }
 
-.empty-state {
-    padding: 24px;
-    text-align: center;
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
+.threat-section { margin-bottom:14px; }
+.threat-section-title { font-size:10px; letter-spacing:1.2px; text-transform:uppercase;
+    color:rgba(255,255,255,.35); font-weight:700; margin-bottom:6px; }
+.threat-section p { font-size:12px; color:rgba(255,255,255,.65); line-height:1.7; margin:0; }
+.threat-section ul { margin:0; padding-left:16px; }
+.threat-section ul li { font-size:12px; color:rgba(255,255,255,.6); line-height:1.8; }
 
-.sev-critical-row {
-    background: rgba(239,68,68,0.08);
-}
+/* search highlight */
+mark { background:rgba(59,130,246,.35); color:#fff; border-radius:2px; padding:0 2px; }
 
-.sev-high-row {
-    background: rgba(245,158,11,0.06);
-}
+/* model stats */
+.model-stat-row { display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:12px; }
+.model-stat-row:last-child { border-bottom:none; }
+.model-stat-label { color:rgba(255,255,255,.45); }
+.model-stat-val   { color:rgba(255,255,255,.85); font-weight:600; }
+
+.retrain-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6);
+    z-index:1000; align-items:center; justify-content:center; }
+.retrain-modal.open { display:flex; }
+.retrain-modal-box { background:#151922; border:1px solid rgba(255,255,255,.12); border-radius:12px;
+    padding:28px; max-width:380px; width:90%; box-shadow:0 24px 64px rgba(0,0,0,.7); }
+
+/* search bar */
+.learn-search-wrap { position:relative; margin-bottom:20px; }
+.learn-search-wrap .bi-search { position:absolute; left:12px; top:50%; transform:translateY(-50%);
+    color:rgba(255,255,255,.3); font-size:14px; pointer-events:none; }
+#learn-search { padding-left:36px; }
+</style>
 {% endblock %}
 
 {% block content %}
+<!-- PAGE HEADER -->
 <div class="page-header">
-  <div>
-    <h1 class="page-title">INIDS Learn - ML Model Management</h1>
-    <div class="page-subtitle">SOC OPERATIONS VIEW</div>
-  </div>
-  <div class="page-meta">
-    <span class="status-chip">LIVE</span>
-    <span class="badge-info">UNIFIED UI</span>
-  </div>
+    <div>
+        <h1 class="page-title">Learn</h1>
+        <div class="page-subtitle">THREAT LIBRARY &amp; MODEL INTELLIGENCE</div>
+    </div>
+    <div class="page-meta">
+        <span class="badge-info">KNOWLEDGE BASE</span>
+        <span style="color:rgba(255,255,255,.3); font-size:11px;">8 threat types &nbsp;·&nbsp; 1,247 indicators</span>
+    </div>
 </div>
 
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active inids-mb-4">
-  <div class="pulse-dot"></div>
-  <div>UNDER ATTACK: Active alerts detected by IDS pipeline.</div>
-</div>
-{% endif %}
+<div style="margin-top:20px;">
+<div class="learn-grid">
 
-<div class="ds-card layer-panel interactive">
-  <div class="ds-card-body">
-<!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">🛡️ INIDS</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/monitor">Monitor</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/investigate">Investigate</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/respond">Respond</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/learn">Learn</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container-fluid">
-        <div class="main-title">Learn</div>
-        <div class="subtitle">ML model management and training oversight</div>
-
-        <!-- Active Model Display -->
-        <div class="active-model">
-            <div class="model-label">Active Model</div>
-            <div class="model-name">🧠 INIDS ML Model v4.2</div>
-            <div class="model-stats">
-                <div class="model-stat">
-                    <div class="model-stat-label">Accuracy</div>
-                    <div class="model-stat-value">96.2%</div>
-                </div>
-                <div class="model-stat">
-                    <div class="model-stat-label">Precision</div>
-                    <div class="model-stat-value">94.8%</div>
-                </div>
-                <div class="model-stat">
-                    <div class="model-stat-label">Recall</div>
-                    <div class="model-stat-label">97.1%</div>
-                </div>
-                <div class="model-stat">
-                    <div class="model-stat-label">F1-Score</div>
-                    <div class="model-stat-value">0.959</div>
-                </div>
-            </div>
+    <!-- LEFT COLUMN: search + threat library + training mode -->
+    <div>
+        <!-- Search -->
+        <div class="learn-search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text" id="learn-search" class="ds-input" placeholder="Search threats, indicators, mitigations…">
         </div>
 
-        <!-- Tabs -->
-        <div class="tabs-container">
-            <button class="tab-btn active" onclick="switchTab('training')">⚙️ Training Status</button>
-            <button class="tab-btn" onclick="switchTab('performance')">📊 Performance</button>
-            <button class="tab-btn" onclick="switchTab('data')">📈 Training Data</button>
-            <button class="tab-btn" onclick="switchTab('versions')">📚 Model Versions</button>
+        <!-- Threat library heading -->
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <span class="ds-card-title" style="font-size:12px; color:rgba(255,255,255,.5);">THREAT LIBRARY</span>
+            <span id="threat-count" style="font-size:11px; color:rgba(255,255,255,.3);">8 entries</span>
         </div>
 
-        <!-- Training Status Tab -->
-        <div id="training-tab" class="tab-content">
-            <div class="section">
-                <div class="section-title">Current Training Operations</div>
-                
-                <div class="training-item">
-                    <div class="training-header">
-                        <div>
-                            <div class="training-title">Daily Scheduled Retraining</div>
-                            <div class="inids-meta-label">Next run: 2:00 AM UTC</div>
-                        </div>
-                        <span class="training-badge scheduled">Scheduled</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar-fill inids-w-0"></div>
-                    </div>
-                    <div class="progress-text">
-                        <span>Waiting for scheduled time</span>
-                        <span>0%</span>
-                    </div>
-                </div>
+        <!-- Threat cards (accordion) -->
+        <div id="threat-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:24px;"></div>
 
-                <div class="training-item">
-                    <div class="training-header">
-                        <div>
-                            <div class="training-title">Training Run #247</div>
-                            <div class="inids-meta-label">Started 45 minutes ago</div>
-                        </div>
-                        <span class="training-badge running">Running</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar-fill inids-w-72pc"></div>
-                    </div>
-                    <div class="progress-text">
-                        <span>Processing 12,847 new labeled samples</span>
-                        <span>72%</span>
-                    </div>
-                </div>
-
-                <div class="training-item">
-                    <div class="training-header">
-                        <div>
-                            <div class="training-title">Training Run #246</div>
-                            <div class="inids-meta-label">Completed 5 hours ago</div>
-                        </div>
-                        <span class="training-badge completed">Completed</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar-fill inids-w-full"></div>
-                    </div>
-                    <div class="progress-text">
-                        <span>Improvement: +0.8% accuracy (RTM triggered)</span>
-                        <span>100%</span>
-                    </div>
-                </div>
+        <!-- Training Mode explanation -->
+        <div class="ds-card" style="margin-bottom:20px;">
+            <div class="ds-card-header">
+                <i class="bi bi-cpu" style="color:#a78bfa"></i>
+                <span class="ds-card-title">Training Mode</span>
             </div>
-
-            <div class="section">
-                <div class="section-title">Trigger Controls</div>
-                <div class="action-buttons inids-mt-1r">
-                    <button class="btn-action btn-primary" onclick="triggerRetraining()">🚀 Trigger Immediate Retraining</button>
-                    <button class="btn-action btn-secondary" onclick="viewSchedule()">📅 View Training Schedule</button>
-                    <button class="btn-action btn-secondary" onclick="viewLogs()">📜 View Training Logs</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Performance Tab -->
-        <div id="performance-tab" class="tab-content inids-hidden">
-            <div class="section">
-                <div class="section-title">Model Performance Metrics</div>
-                
-                <div class="inids-overflow-x-auto">
-                    <table class="metrics-table ds-table">
-                        <thead>
-                            <tr>
-                                <th>Model Version</th>
-                                <th>Accuracy</th>
-                                <th>Precision</th>
-                                <th>Recall</th>
-                                <th>F1-Score</th>
-                                <th>Change</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>v4.2 (Active)</strong></td>
-                                <td class="metric-value">96.2%</td>
-                                <td class="metric-value">94.8%</td>
-                                <td class="metric-value">97.1%</td>
-                                <td class="metric-value">0.959</td>
-                                <td><span class="improvement">↑ +0.8%</span></td>
-                            </tr>
-                            <tr>
-                                <td>v4.1</td>
-                                <td class="metric-value">95.4%</td>
-                                <td class="metric-value">93.9%</td>
-                                <td class="metric-value">96.8%</td>
-                                <td class="metric-value">0.953</td>
-                                <td><span class="improvement">↑ +1.2%</span></td>
-                            </tr>
-                            <tr>
-                                <td>v4.0</td>
-                                <td class="metric-value">94.2%</td>
-                                <td class="metric-value">92.6%</td>
-                                <td class="metric-value">95.8%</td>
-                                <td class="metric-value">0.942</td>
-                                <td><span class="degradation">↓ -0.3%</span></td>
-                            </tr>
-                            <tr>
-                                <td>v3.9</td>
-                                <td class="metric-value">94.5%</td>
-                                <td class="metric-value">92.9%</td>
-                                <td class="metric-value">96.1%</td>
-                                <td class="metric-value">0.945</td>
-                                <td><span class="improvement">↑ +0.6%</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="inids-mt-2r">
-                    <div class="action-buttons">
-                        <button class="btn-action btn-secondary" onclick="viewChart()">📊 View Accuracy Trend</button>
-                        <button class="btn-action btn-secondary" onclick="downloadReport()">⬇️ Download Report</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Training Data Tab -->
-        <div id="data-tab" class="tab-content inids-hidden">
-            <div class="section">
-                <div class="section-title">Training Dataset Statistics</div>
-                
-                <div class="dataset-stats">
-                    <div class="dataset-stat">
-                        <div class="dataset-stat-label">Total Samples</div>
-                        <div class="dataset-stat-value">156,847</div>
-                    </div>
-                    <div class="dataset-stat">
-                        <div class="dataset-stat-label">True Positives</div>
-                        <div class="dataset-stat-value">74,392</div>
-                    </div>
-                    <div class="dataset-stat">
-                        <div class="dataset-stat-label">False Positives</div>
-                        <div class="dataset-stat-value">82,455</div>
-                    </div>
-                    <div class="dataset-stat">
-                        <div class="dataset-stat-label">New This Week</div>
-                        <div class="dataset-stat-value">12,847</div>
-                    </div>
-                </div>
-
-                <div class="inids-mt-2r">
-                    <div class="section-title inids-mb-1r">Recent Analyst Feedback</div>
-                    <div class="inids-feedback-box">
-                        <div class="inids-mb-0r8">
-                            <strong class="inids-color-safe">✓ 1,247</strong> detections marked TRUE POSITIVE this week
-                            <br><span class="inids-meta-text">Model will learn these patterns</span>
-                        </div>
-                        <div>
-                            <strong class="inids-color-attack">✗ 892</strong> detections marked FALSE POSITIVE this week
-                            <br><span class="inids-meta-text">Model will unlearn these patterns</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="inids-mt-2r">
-                    <div class="action-buttons">
-                        <button class="btn-action btn-secondary" onclick="exportData()">⬇️ Export Training Data</button>
-                        <button class="btn-action btn-secondary" onclick="viewDistribution()">📈 View Data Distribution</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Model Versions Tab -->
-        <div id="versions-tab" class="tab-content inids-hidden">
-            <div class="section">
-                <div class="section-title">Model Version History</div>
-                
-                <div id="versions-list">
-                    <div class="training-item">
-                        <div class="training-header">
-                            <div>
-                                <div class="training-title">Model v4.2 <strong class="inids-color-safe">●</strong> ACTIVE</div>
-                                <div class="inids-meta-label">Deployed 2 hours ago • 96.2% accuracy</div>
-                            </div>
-                            <span class="inids-badge-safe">Latest</span>
-                        </div>
-                    </div>
-
-                    <div class="training-item">
-                        <div class="training-header">
-                            <div>
-                                <div class="training-title">Model v4.1</div>
-                                <div class="inids-meta-label">Deployed 1 day ago • 95.4% accuracy</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="training-item">
-                        <div class="training-header">
-                            <div>
-                                <div class="training-title">Model v4.0</div>
-                                <div class="inids-meta-label">Deployed 3 days ago • 94.2% accuracy</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="inids-mt-2r">
-                    <div class="action-buttons">
-                        <button class="btn-action btn-secondary" onclick="compareVersions()">🔄 Compare Versions</button>
-                        <button class="btn-action btn-secondary" onclick="rollbackModel()">⏮️ Rollback Model</button>
-                    </div>
-                </div>
+            <div class="ds-card-body" style="font-size:12px; color:rgba(255,255,255,.6); line-height:1.8;">
+                <p style="margin:0 0 10px;">
+                    IDPS learns normal traffic patterns by establishing a <strong style="color:rgba(255,255,255,.85);">dynamic baseline</strong>
+                    during an initial observation window (default: 72 hours). During this period all traffic is passively monitored
+                    without blocking.
+                </p>
+                <ol style="padding-left:18px; margin:0;">
+                    <li><strong style="color:#60a5fa;">Observation</strong> — Collect flow statistics across all monitored interfaces.</li>
+                    <li><strong style="color:#60a5fa;">Feature extraction</strong> — Derive 78 statistical features per flow (packet rate, IAT, flags, payload entropy…).</li>
+                    <li><strong style="color:#60a5fa;">Baseline fitting</strong> — Fit Gaussian Mixture Model to benign distribution.</li>
+                    <li><strong style="color:#60a5fa;">Anomaly thresholding</strong> — Set per-feature alerting thresholds at μ ± 3σ.</li>
+                    <li><strong style="color:#60a5fa;">Continuous update</strong> — Baseline drifts with traffic; retrained nightly at 02:00 IST.</li>
+                </ol>
             </div>
         </div>
     </div>
 
-    <!-- Socket.IO for real-time updates -->
-  </div>
+    <!-- RIGHT COLUMN: model stats + retrain -->
+    <div style="position:sticky; top:76px;">
+        <div class="ds-card" style="margin-bottom:16px;">
+            <div class="ds-card-header">
+                <i class="bi bi-graph-up-arrow" style="color:#34d399"></i>
+                <span class="ds-card-title">Model Stats</span>
+            </div>
+            <div class="ds-card-body">
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Detection Accuracy</span>
+                    <span class="model-stat-val" style="color:#34d399">97.4%</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">False Positive Rate</span>
+                    <span class="model-stat-val" style="color:#fbbf24">1.8%</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">False Negative Rate</span>
+                    <span class="model-stat-val" style="color:#f87171">0.8%</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Last Trained</span>
+                    <span class="model-stat-val">19 May 2026, 02:00 IST</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Total Samples</span>
+                    <span class="model-stat-val">1,284,761</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Benign Samples</span>
+                    <span class="model-stat-val">982,445</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Attack Samples</span>
+                    <span class="model-stat-val">302,316</span>
+                </div>
+                <div class="model-stat-row">
+                    <span class="model-stat-label">Model Version</span>
+                    <span class="model-stat-val">v3.2.1</span>
+                </div>
+
+                <!-- accuracy bar -->
+                <div style="margin-top:14px;">
+                    <div style="display:flex; justify-content:space-between; font-size:10px;
+                        color:rgba(255,255,255,.35); margin-bottom:6px;">
+                        <span>ACCURACY</span><span>97.4%</span>
+                    </div>
+                    <div class="ds-progress">
+                        <div class="ds-progress-bar safe" style="width:97.4%"></div>
+                    </div>
+                </div>
+                <div style="margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; font-size:10px;
+                        color:rgba(255,255,255,.35); margin-bottom:6px;">
+                        <span>FALSE POSITIVES</span><span>1.8%</span>
+                    </div>
+                    <div class="ds-progress">
+                        <div class="ds-progress-bar warn" style="width:1.8%"></div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-primary" onclick="document.getElementById('retrain-modal').classList.add('open')"
+                    style="width:100%; justify-content:center; margin-top:18px;">
+                    <i class="bi bi-arrow-repeat"></i> Retrain Model
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /learn-grid -->
 </div>
+
+<!-- Retrain confirmation modal -->
+<div id="retrain-modal" class="retrain-modal" role="dialog" aria-modal="true">
+    <div class="retrain-modal-box">
+        <h2 style="font-family:'Syne',sans-serif; font-size:18px; margin:0 0 8px; color:rgba(255,255,255,.9);">
+            Retrain Model?
+        </h2>
+        <p style="font-size:13px; color:rgba(255,255,255,.5); line-height:1.7; margin:0 0 20px;">
+            This will trigger a full model retraining cycle using all collected samples.
+            The process takes approximately <strong style="color:rgba(255,255,255,.8);">8–15 minutes</strong>
+            and will temporarily run in shadow mode alongside the current model.
+            Live detections will not be interrupted.
+        </p>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn-secondary"
+                onclick="document.getElementById('retrain-modal').classList.remove('open')">
+                Cancel
+            </button>
+            <button type="button" class="btn-primary" onclick="triggerRetrain()">
+                <i class="bi bi-arrow-repeat"></i> Confirm Retrain
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const THREATS = [
+    {
+        name: 'SQL Injection',
+        icon: 'bi-database-x',
+        iconColor: '#f87171', iconBg: 'rgba(239,68,68,.15)',
+        tags: ['tag-red', 'tag-amb'],
+        tagLabels: ['Critical', 'OWASP Top 10'],
+        desc: 'Attacker inserts malicious SQL statements into input fields to manipulate the backend database — potentially dumping, modifying, or deleting data.',
+        indicators: ['Unusual SQL keywords in HTTP params (UNION, SELECT, DROP)', "Error messages leaking DB schema", 'Spike in 500-class responses from DB-backed endpoints', 'High query latency on login or search endpoints'],
+        mitigation: ['Use parameterised queries / prepared statements exclusively', 'Deploy WAF with SQLi rule set', 'Apply least-privilege on DB accounts', 'Enable query logging and alert on schema-access patterns']
+    },
+    {
+        name: 'Cross-Site Scripting (XSS)',
+        icon: 'bi-code-slash',
+        iconColor: '#fbbf24', iconBg: 'rgba(245,158,11,.15)',
+        tags: ['tag-amb', 'tag-blue'],
+        tagLabels: ['High', 'OWASP Top 10'],
+        desc: 'Injected client-side scripts execute in a victim\'s browser, stealing cookies, session tokens, or redirecting users to malicious sites.',
+        indicators: ['<script>, <img onerror>, javascript: in request params', 'Unexpected DOM mutations detected by CSP reporting', 'Unusual cookie-exfiltration requests to external hosts'],
+        mitigation: ['Output-encode all user-supplied data', 'Enforce strict Content-Security-Policy headers', 'Use HttpOnly / SameSite=Strict cookie flags', 'Enable XSS-Protection response headers']
+    },
+    {
+        name: 'DDoS / Volumetric Flood',
+        icon: 'bi-water',
+        iconColor: '#60a5fa', iconBg: 'rgba(59,130,246,.15)',
+        tags: ['tag-red', 'tag-blue'],
+        tagLabels: ['Critical', 'Availability'],
+        desc: 'Coordinated high-volume traffic from botnets exhausts bandwidth, connection tables, or application-layer resources, causing denial of service.',
+        indicators: ['Sustained PPS spike exceeding baseline 5×', 'Traffic from >1000 unique ASNs in <60 seconds', 'SYN flood: SYN-to-SYN-ACK ratio > 10:1', 'Amplification factors > 50× (DNS/NTP reflection)'],
+        mitigation: ['Enable traffic scrubbing at upstream provider', 'Rate-limit per source IP at perimeter', 'Geo-block high-volume originating countries', 'Anycast routing + CDN edge absorption']
+    },
+    {
+        name: 'Brute Force',
+        icon: 'bi-key-fill',
+        iconColor: '#f87171', iconBg: 'rgba(239,68,68,.15)',
+        tags: ['tag-red', 'tag-amb'],
+        tagLabels: ['High', 'Credential'],
+        desc: 'Systematic exhaustion of authentication credentials via dictionary, rainbow-table, or credential-stuffing attacks targeting login endpoints.',
+        indicators: ['> 10 failed logins from single IP within 60 seconds', 'Sequential username enumeration pattern', 'Known leaked credential lists in POST body', 'Successful login from unusual geo after repeated failures'],
+        mitigation: ['Enforce account lockout (5 attempts / 15 min)', 'Implement CAPTCHA after 3 failures', 'Deploy MFA / TOTP for all accounts', 'Rate-limit login endpoints; alert on lockout bursts']
+    },
+    {
+        name: 'Port Scanning',
+        icon: 'bi-radar',
+        iconColor: '#a78bfa', iconBg: 'rgba(168,85,247,.15)',
+        tags: ['tag-blue', 'tag-amb'],
+        tagLabels: ['Reconnaissance', 'Medium'],
+        desc: 'Probing a host or subnet for open TCP/UDP ports to map network topology and identify exploitable services — often a precursor to targeted attacks.',
+        indicators: ['Single source IP touching > 50 ports/sec', 'SYN packets to known closed ports', 'Nmap OS-detection fingerprints (TTL anomalies, IP ID patterns)', 'ICMP echo sweeps across /24 subnet in < 5 sec'],
+        mitigation: ['Block on first-stage detection at IPS with 24 h rule', 'Close all non-essential ports at perimeter', 'Enable port-knocking for admin services', 'Alert SOC and correlate with subsequent exploit attempts']
+    },
+    {
+        name: 'Man-in-the-Middle (MitM)',
+        icon: 'bi-shuffle',
+        iconColor: '#fbbf24', iconBg: 'rgba(245,158,11,.15)',
+        tags: ['tag-amb', 'tag-blue'],
+        tagLabels: ['High', 'Interception'],
+        desc: 'Attacker positions themselves between two communicating hosts to eavesdrop, replay, or modify traffic in transit.',
+        indicators: ['ARP cache poisoning detected (duplicate MAC for gateway IP)', 'TLS certificate mismatch / self-signed cert on known domains', 'BGP route hijack alerts from upstream', 'Unexpected HSTS downgrade requests'],
+        mitigation: ['Enforce TLS 1.3 with HSTS preloading', 'Deploy dynamic ARP inspection on managed switches', 'Enable DNSSEC + DNS-over-HTTPS', 'Monitor BGP route advertisements for prefix hijacks']
+    },
+    {
+        name: 'Phishing / Social Engineering',
+        icon: 'bi-envelope-exclamation',
+        iconColor: '#f87171', iconBg: 'rgba(239,68,68,.15)',
+        tags: ['tag-red', 'tag-amb'],
+        tagLabels: ['Critical', 'Human Factor'],
+        desc: 'Deceptive emails, messages, or websites trick users into revealing credentials or executing malicious payloads.',
+        indicators: ['Email domain spoofing / homoglyph lookalike domains', 'Newly registered domain (< 30 days) in email links', 'Executable attachments (js, vbs, hta, docm) in email', 'Credential POST to external non-corporate domain'],
+        mitigation: ['Enforce DMARC/DKIM/SPF on all mail domains', 'Deploy sandboxed email attachment scanning', 'Run phishing simulation exercises quarterly', 'Block newly registered domains at DNS layer']
+    },
+    {
+        name: 'Zero-Day Exploit',
+        icon: 'bi-exclamation-diamond-fill',
+        iconColor: '#f87171', iconBg: 'rgba(239,68,68,.2)',
+        tags: ['tag-red'],
+        tagLabels: ['Critical'],
+        desc: 'Exploitation of a previously unknown vulnerability for which no patch exists, often leveraging novel memory-corruption or logic-flaw techniques.',
+        indicators: ['Anomalous process crash or segfault cascade on production service', 'Outbound beacon to newly categorised C2 domain', 'Heap spray or ROP chain patterns detected by EDR', 'Unexpected privilege escalation by service account'],
+        mitigation: ['Apply exploit mitigations: ASLR, DEP, CFG, stack canaries', 'Isolate vulnerable services in hardened containers', 'Monitor behaviour-based EDR alerts rather than signature only', 'Subscribe to vendor security advisories; patch within 24 h of critical CVE']
+    }
+];
+
+function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function highlight(text, q) {
+    if (!q) return esc(text);
+    const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    return esc(text).replace(re, '<mark>$1</mark>');
+}
+
+function renderThreats(query) {
+    const q = (query||'').trim().toLowerCase();
+    const container = document.getElementById('threat-list');
+    const filtered = THREATS.filter(t =>
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.desc.toLowerCase().includes(q) ||
+        t.indicators.some(i => i.toLowerCase().includes(q)) ||
+        t.mitigation.some(m => m.toLowerCase().includes(q))
+    );
+    document.getElementById('threat-count').textContent = `${filtered.length} entries`;
+
+    container.innerHTML = filtered.map((t, idx) => `
+        <div class="threat-card" id="tc-${idx}">
+            <div class="threat-card-header" tabindex="0" role="button"
+                aria-expanded="false" onclick="toggleCard(${idx})" onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard(${idx})">
+                <div class="threat-icon" style="background:${t.iconBg}; color:${t.iconColor}">
+                    <i class="bi ${t.icon}"></i>
+                </div>
+                <span style="font-size:13px; font-weight:600; color:rgba(255,255,255,.85);">${highlight(t.name, q)}</span>
+                <div style="margin-left:8px; display:flex; gap:4px; flex-wrap:wrap;">
+                    ${t.tags.map((tag, i) => `<span class="threat-tag ${tag}">${t.tagLabels[i]}</span>`).join('')}
+                </div>
+                <i class="bi bi-chevron-down card-chevron"></i>
+            </div>
+            <div class="threat-card-body">
+                <div class="threat-section">
+                    <div class="threat-section-title">Description</div>
+                    <p>${highlight(t.desc, q)}</p>
+                </div>
+                <div class="threat-section">
+                    <div class="threat-section-title">Indicators of Compromise</div>
+                    <ul>${t.indicators.map(i => `<li>${highlight(i, q)}</li>`).join('')}</ul>
+                </div>
+                <div class="threat-section">
+                    <div class="threat-section-title">Mitigation</div>
+                    <ul>${t.mitigation.map(m => `<li>${highlight(m, q)}</li>`).join('')}</ul>
+                </div>
+            </div>
+        </div>`).join('');
+}
+
+function toggleCard(idx) {
+    const card = document.getElementById(`tc-${idx}`);
+    card.classList.toggle('open');
+    const hdr = card.querySelector('.threat-card-header');
+    hdr.setAttribute('aria-expanded', card.classList.contains('open'));
+}
+
+function triggerRetrain() {
+    document.getElementById('retrain-modal').classList.remove('open');
+    /* Would POST /api/models/retrain in a real build */
+    alert('Retraining job queued. Estimated completion: ~12 minutes.');
+}
+
+let searchTimer;
+document.getElementById('learn-search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => renderThreats(e.target.value), 180);
+});
+
+renderThreats('');
+</script>
 {% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-<script src="{{ url_for('static', filename='js/learn-inline.js') }}"></script>
-<script src="{{ url_for('static', filename='bootstrap-5.2.3-dist/js/bootstrap.bundle.min.js') }}"></script>
-{% endblock %}
-
-

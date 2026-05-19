@@ -4,13 +4,70 @@ import logging
 import os
 
 import pandas as pd
-from flask import Blueprint, render_template, request
+from flask import Blueprint, make_response, redirect, render_template, request, url_for
 
-from src.auth.decorators import require_roles
+from src.auth.decorators import public_route, require_roles
 from src.schema import LABEL_COLUMNS
 
 logger = logging.getLogger(__name__)
 pages_bp = Blueprint("pages", __name__)
+
+
+@pages_bp.route("/login", methods=["GET", "POST"])
+@public_route
+def login():
+    import web_app.app as _m
+    from src.auth.auth_service import UnifiedAuthService
+    from src.auth.jwt_manager import get_jwt_manager
+
+    error = None
+    next_url = request.args.get("next", "/")
+
+    if request.method == "POST":
+        api_key = request.form.get("api_key", "").strip()
+        next_url = request.form.get("next", "/")
+        if not api_key:
+            error = "API key is required."
+        else:
+            auth_ctx = UnifiedAuthService(_m.ops_store).authenticate_api_key(api_key)
+            if auth_ctx is None:
+                error = "Invalid API key."
+            else:
+                try:
+                    token = get_jwt_manager().create_token(
+                        user_id=auth_ctx.user_id,
+                        username=auth_ctx.username,
+                        roles=sorted(auth_ctx.roles),
+                    )
+                    resp = make_response(redirect(next_url or "/"))
+                    resp.set_cookie(
+                        "inids_jwt",
+                        token,
+                        max_age=3600,
+                        samesite="Lax",
+                        httponly=False,  # JS must read it to init HttpClient
+                    )
+                    logger.info("login: session started user=%s", auth_ctx.username)
+                    return resp
+                except Exception:
+                    logger.exception("login: token creation failed")
+                    error = "Authentication failed — please try again."
+
+    return render_template(
+        "login.html",
+        error=error,
+        next_url=next_url,
+        admin_key=os.environ.get("INIDS_ADMIN_API_KEY", ""),
+        viewer_key=os.environ.get("INIDS_VIEWER_API_KEY", ""),
+    )
+
+
+@pages_bp.route("/logout")
+@public_route
+def logout():
+    resp = make_response(redirect("/login"))
+    resp.delete_cookie("inids_jwt")
+    return resp
 
 
 @pages_bp.route("/")
@@ -290,11 +347,7 @@ def learn():
 @pages_bp.route("/dashboard/main")
 @require_roles("viewer")
 def dashboard_main():
-    try:
-        return render_template("dashboard_main.html")
-    except Exception:
-        logger.exception("Dashboard main rendering failed")
-        return render_template("dashboard_main.html"), 500
+    return redirect(url_for("pages.dashboard"))
 
 
 @pages_bp.route("/models")

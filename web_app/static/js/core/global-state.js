@@ -28,7 +28,7 @@ export const GlobalState = {
         models: [],
         
         // Modules & Engines
-        modules: {},
+        modules: [],
         engines: [],
         
         // Honeypot
@@ -194,7 +194,7 @@ export const GlobalState = {
             policy: {},
             allowlist: [],
             models: [],
-            modules: {},
+            modules: [],
             engines: [],
             investigations: [],
             honeypot: {}
@@ -237,7 +237,7 @@ export const GlobalState = {
         Object.keys(this.data).forEach(key => {
             this.clear(key);
         });
-        console.log("[GlobalState] Reset to initial state");
+        if (window.__INIDS_DEBUG__) console.log("[GlobalState] Reset to initial state");
     },
 
     /**
@@ -257,5 +257,3 @@ export const GlobalState = {
 
 // Make available globally for debugging
 window.GlobalState = GlobalState;
-
-console.log("[GlobalState] Initialized with sliced observers");

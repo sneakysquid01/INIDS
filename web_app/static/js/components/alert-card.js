@@ -34,11 +34,11 @@ export function AlertCard(alert) {
     detailsEl.className = "space-y-3 text-sm";
 
     // Source/Destination
-    if (alert.src_ip || alert.dst_ip) {
+    if (alert.source_ip || alert.dst_ip) {
         const flowEl = document.createElement("div");
         flowEl.className = "flex items-center gap-2 text-gray-400";
         flowEl.innerHTML = `
-            <span class="font-mono text-xs">${alert.src_ip || "??"}</span>
+            <span class="font-mono text-xs">${alert.source_ip || "??"}</span>
             <i class="bi bi-arrow-right text-blue-400"></i>
             <span class="font-mono text-xs">${alert.dst_ip || "??"}</span>
         `;
@@ -87,36 +87,29 @@ export function AlertCard(alert) {
 
     // Action buttons
     const handleBlockIP = async () => {
+        const loadingToastId = AppToast.loading("Blocking IP address...");
         try {
-            AppToast.show("Blocking IP address...", {
-                type: "info",
-                duration: false,
-            });
-
-            // POST /api/actions with block action (FIXES INT-002)
             const response = await HttpClient.post("/api/actions", {
                 alert_id: alert.id || alert.alert_id,
                 type: "block",
-                target_ip: alert.src_ip,
+                target_ip: alert.source_ip,
             });
 
-            if (response.ok || response.status === 201) {
-                AppToast.success(`Blocked IP: ${alert.src_ip}`);
+            AppToast.dismiss(loadingToastId);
+            AppToast.success(`Blocked IP: ${alert.source_ip}`);
 
-                // Update GlobalState with new action
-                GlobalState.push("actions", {
-                    id: response.data?.id,
-                    type: "block",
-                    target: alert.src_ip,
-                    timestamp: new Date().toISOString(),
-                    status: "executed",
-                });
+            GlobalState.push("actions", {
+                id: response?.id,
+                type: "block",
+                target: alert.source_ip,
+                timestamp: new Date().toISOString(),
+                status: "executed",
+            });
 
-                // Disable button after successful block
-                blockBtn.disabled = true;
-                blockBtn.textContent = "✓ Blocked";
-            }
+            blockBtn.disabled = true;
+            blockBtn.textContent = "✓ Blocked";
         } catch (error) {
+            AppToast.dismiss(loadingToastId);
             console.error("[AlertCard] Block action failed:", error);
             AppToast.error(`Failed to block IP: ${error.message}`);
         }

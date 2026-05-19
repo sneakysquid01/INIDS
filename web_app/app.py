@@ -1258,6 +1258,8 @@ PUBLIC_ROUTES = frozenset({
     "/api/health/live",
     "/api/health/ready",
     "/api/auth/login",
+    "/login",
+    "/logout",
     "/api/auth/refresh",
     "/api/auth/validate",
     "/api/auth/status",
@@ -1956,6 +1958,7 @@ if __name__ == "__main__":
             debug=SETTINGS.debug,
             host=SETTINGS.host,
             port=SETTINGS.port,
+            allow_unsafe_werkzeug=True,
         )
     except KeyboardInterrupt:
         logger.info("Shutdown requested by keyboard interrupt")

@@ -64,30 +64,30 @@ class SocketManager {
 
         // Connection established
         this.socket.on("connect", () => {
-            console.log("[SocketManager] Connected to /events");
+            if (window.__INIDS_DEBUG__) console.log("[SocketManager] Connected to /events");
             this.isConnected = true;
             this.stopFallbackPolling();
-            
+
             // Notify GlobalState
             GlobalState.set("socket.connected", true);
         });
 
         // Connection lost
         this.socket.on("disconnect", (reason) => {
-            console.warn("[SocketManager] Disconnected:", reason);
+            if (window.__INIDS_DEBUG__) console.warn("[SocketManager] Disconnected:", reason);
             this.isConnected = false;
             GlobalState.set("socket.connected", false);
-            
+
             // Only fallback for certain disconnection reasons
             if (reason === "io server disconnect" || reason === "io client namespace disconnect") {
-                console.log("[SocketManager] Starting fallback polling...");
+                if (window.__INIDS_DEBUG__) console.log("[SocketManager] Starting fallback polling...");
                 this.startFallbackPolling();
             }
         });
 
         // Reconnection attempt
         this.socket.on("reconnect_attempt", () => {
-            console.log("[SocketManager] Attempting to reconnect...");
+            if (window.__INIDS_DEBUG__) console.log("[SocketManager] Attempting to reconnect...");
             GlobalState.set("socket.reconnecting", true);
         });
 
@@ -198,38 +198,33 @@ class SocketManager {
      */
     startFallbackPolling() {
         if (this.pollTimer) {
-            console.log("[SocketManager] Fallback polling already active");
+            if (window.__INIDS_DEBUG__) console.log("[SocketManager] Fallback polling already active");
             return;
         }
 
-        console.log("[SocketManager] Starting fallback polling (delay: " + this.pollDelay + "ms)");
+        if (window.__INIDS_DEBUG__) console.log("[SocketManager] Starting fallback polling (delay: " + this.pollDelay + "ms)");
         const poll = async () => {
             try {
-                // Fetch metrics from perception service
                 const metricsRes = await fetch("/api/perception/pulse");
                 if (!metricsRes.ok) throw new Error(`Metrics fetch failed: ${metricsRes.status}`);
-                
+
                 const metricsData = await metricsRes.json();
                 const normalized = this._normalizeMetrics(metricsData);
                 GlobalState.set("metrics", normalized);
 
-                // Reset backoff on successful poll
                 this.pollDelay = 5000;
-                console.log("[SocketManager] Fallback poll successful, resetting backoff");
+                if (window.__INIDS_DEBUG__) console.log("[SocketManager] Fallback poll successful, resetting backoff");
 
             } catch (err) {
-                console.warn("[SocketManager] Fallback polling failed:", err.message);
-                
-                // Increase backoff delay with exponential strategy
+                if (window.__INIDS_DEBUG__) console.warn("[SocketManager] Fallback polling failed:", err.message);
+
                 this.pollDelay = Math.min(this.pollDelay * 2, this.maxDelay);
-                console.log("[SocketManager] Backoff increased to:", this.pollDelay + "ms");
+                if (window.__INIDS_DEBUG__) console.log("[SocketManager] Backoff increased to:", this.pollDelay + "ms");
             }
 
-            // Schedule next poll
             this.pollTimer = setTimeout(poll, this.pollDelay);
         };
 
-        // Start polling immediately
         poll();
     }
 
@@ -240,8 +235,8 @@ class SocketManager {
         if (this.pollTimer) {
             clearTimeout(this.pollTimer);
             this.pollTimer = null;
-            this.pollDelay = 5000;  // Reset for next time
-            console.log("[SocketManager] Fallback polling stopped, backoff reset");
+            this.pollDelay = 5000;
+            if (window.__INIDS_DEBUG__) console.log("[SocketManager] Fallback polling stopped, backoff reset");
         }
     }
 
@@ -369,5 +364,3 @@ export const Socket = new SocketManager();
 
 // Make available globally for debugging
 window.Socket = Socket;
-
-console.log("[SocketManager] Initialized");

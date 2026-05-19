@@ -207,9 +207,8 @@ export const UICard = {
         card.className = "px-4 py-3 text-center text-gray-500 text-xs";
 
         if (label) {
-            card.innerHTML = `<span class="bg-[#151922] px-2">${label}</span>`;
-            card.className +=
-                " border-t border-[#1a1f2e] relative flex items-center justify-center before:content-[''] before:absolute before:inset-0 before:border-t before:border-[#1a1f2e]";
+            card.innerHTML = `<span class="bg-surface-100 px-2">${label}</span>`;
+            card.className += " ui-card-divider";
         } else {
             card.className = "h-px bg-[#1a1f2e]";
         }

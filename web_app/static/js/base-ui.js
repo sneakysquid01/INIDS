@@ -13,13 +13,19 @@ toggleBtn?.addEventListener('click', () => {
             : 'var(--sidebar-w)';
 });
 
-// Live clock
+// Live clock — IST (Asia/Kolkata, UTC+5:30)
 function updateClock() {
     const el = document.getElementById('live-clock');
-    if (el) {
-        const now = new Date();
-        el.textContent = now.toUTCString().replace('GMT', 'UTC');
-    }
+    if (!el) return;
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        weekday: 'short', day: '2-digit', month: 'short',
+        year: 'numeric', hour: '2-digit', minute: '2-digit',
+        second: '2-digit', hour12: false
+    }).formatToParts(now);
+    const get = type => parts.find(p => p.type === type)?.value ?? '';
+    el.textContent = `${get('weekday')}, ${get('day')} ${get('month')} ${get('year')} ${get('hour')}:${get('minute')}:${get('second')} IST`;
 }
 updateClock();
 setInterval(updateClock, 1000);

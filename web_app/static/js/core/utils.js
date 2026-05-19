@@ -513,20 +513,13 @@ export function animateBar(bar, newValue, duration = 300) {
  * @param {string} level - "high", "medium", "low"
  */
 export function playAlertTone(level) {
+    const file =
+        level === "high" ? "/static/sfx/alert_high.wav" :
+        level === "medium" ? "/static/sfx/alert_med.wav" :
+        "/static/sfx/alert_low.wav";
     try {
-        const file =
-            level === "high" ? "/static/sfx/alert_high.mp3" :
-            level === "medium" ? "/static/sfx/alert_med.mp3" :
-            "/static/sfx/alert_low.mp3";
-
         const audio = new Audio(file);
         audio.volume = level === "high" ? 1 : 0.4;
-        audio.play().catch(err => {
-            console.warn("[utils] Audio playback failed:", err);
-        });
-    } catch (err) {
-        console.warn("[utils] Audio error:", err);
-    }
+        audio.play().catch(() => { /* noop — autoplay policy or missing file */ });
+    } catch (_) { /* noop */ }
 }
-
-console.log("[utils] Initialized with comprehensive helpers");

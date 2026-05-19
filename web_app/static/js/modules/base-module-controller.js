@@ -127,8 +127,8 @@ class BaseModuleController {
         if (this.contextBar) {
             this.contextBar.style.display = 'flex';
             const status = this.state.loading ? 'loading' : this.state.error ? 'error' : 'active';
-            document.getElementById('contextStatus').textContent = status.toUpperCase();
-            document.getElementById('contextUpdated').textContent = new Date(this.state.lastUpdate).toLocaleTimeString();
+            this.element.querySelector('#contextStatus').textContent = status.toUpperCase();
+            this.element.querySelector('#contextUpdated').textContent = new Date(this.state.lastUpdate).toLocaleTimeString();
         }
     }
 
@@ -161,7 +161,13 @@ class BaseModuleController {
     }
 
     openSettings() {
-        alert('Module settings coming soon');
+        if (typeof AppModal !== 'undefined' && AppModal && AppModal.alert) {
+            AppModal.alert('Module settings', 'Module settings coming soon.');
+        } else if (typeof AppToast !== 'undefined' && AppToast && AppToast.info) {
+            AppToast.info('Module settings coming soon');
+        } else {
+            console.warn('[base-module-controller] Module settings UI not available');
+        }
     }
 
     async loadData() {

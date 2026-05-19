@@ -23,7 +23,6 @@ import { AlertCard } from '../components/alert-card.js';
 import { ActionCard } from '../components/action-card.js';
 import { EngineCard } from '../components/engine-card.js';
 import { ModuleCard } from '../components/module-card.js';
-import { LoadingSpinner } from '../components/loading-spinner.js';
 import { debounce } from '../core/utils.js';
 
 // ============================================================
@@ -71,19 +70,25 @@ function updateConnectionStatus(state) {
 }
 
 // Monitor socket connection events
-Socket.socket.on('connect', () => {
+Socket.on('connect', () => {
     updateConnectionStatus('connected');
     console.log('%c[Monitor] Socket connected', 'color:#10b981;font-weight:bold;');
 });
 
-Socket.socket.on('disconnect', () => {
+Socket.on('disconnect', () => {
     updateConnectionStatus('disconnected');
     console.warn('[Monitor] Socket disconnected');
 });
 
-Socket.socket.on('connect_error', (error) => {
+Socket.on('connect_error', (error) => {
     console.error('[Monitor] Connection error:', error);
     AppToast.warning('Connection issue — reconnecting…');
+});
+
+GlobalState.subscribe('socket', (state) => {
+    if (state && typeof state.connected === 'boolean') {
+        updateConnectionStatus(state.connected ? 'connected' : 'disconnected');
+    }
 });
 
 // Initial state

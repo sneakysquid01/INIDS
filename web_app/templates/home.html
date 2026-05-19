@@ -22,6 +22,8 @@
 
 .home-tile {
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
 }
 
 .home-tile:hover {
@@ -104,7 +106,7 @@
       <!-- NAVIGATION GRID -->
       <div class="home-grid">
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/dashboard'">
+        <a href="/dashboard" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">DB</div>
             <strong>View Full Ops Dashboard</strong>
@@ -112,9 +114,9 @@
               Live analytics, alerts, prevention actions, and system state.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/monitor'">
+        <a href="/monitor" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">MN</div>
             <strong>Monitor</strong>
@@ -122,9 +124,9 @@
               Real‑time threat monitoring and operational oversight.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/respond'">
+        <a href="/respond" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">RS</div>
             <strong>Respond</strong>
@@ -132,9 +134,9 @@
               Approve, reject, and execute threat response actions.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/realtime'">
+        <a href="/realtime" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">RT</div>
             <strong>Realtime</strong>
@@ -142,9 +144,9 @@
               Streaming detection events and live risk scoring.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/models'">
+        <a href="/models" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">ML</div>
             <strong>Models</strong>
@@ -152,9 +154,9 @@
               Compare ML models and review registry history.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/threat_intel'">
+        <a href="/threat-intel" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">TI</div>
             <strong>Threat Intel</strong>
@@ -162,9 +164,9 @@
               Reputation lookup, threat feeds, and intelligence correlation.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/policy'">
+        <a href="/policy" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">PL</div>
             <strong>Policy</strong>
@@ -172,9 +174,9 @@
               Configure detection, prevention, and escalation rules.
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="ds-card layer-panel home-tile" onclick="location.href='/capture'">
+        <a href="/capture" class="ds-card layer-panel home-tile">
           <div class="ds-card-body">
             <div class="tile-icon">CP</div>
             <strong>Capture</strong>
@@ -182,7 +184,7 @@
               Live network traffic capture and ingestion tooling.
             </div>
           </div>
-        </div>
+        </a>
 
       </div>
 

@@ -1,315 +1,302 @@
 {% extends "base.html" %}
 
-{% block title %}Respond — INIDS 3.0{% endblock %}
+{% block title %}Respond — IDPS{% endblock %}
 {% block page_title %}Respond{% endblock %}
 
-{% block content %}
-<div class="flex flex-col h-screen bg-[#0a0c10]">
-    <!-- PAGE HEADER -->
-    <div class="mb-6">
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-3xl font-bold text-white font-syne">Respond</h1>
-                <p class="text-[#8f9099] text-sm mt-1">Automated response orchestration and playbooks</p>
-            </div>
-            <button id="new-playbook-btn" class="px-4 py-2 bg-[#10b981] hover:bg-[#059669] text-white rounded font-medium text-sm transition-colors">
-                + New Playbook
-            </button>
-        </div>
-    </div>
-
-    <!-- STATS -->
-    <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Total Playbooks</div>
-            <div id="stat-playbooks" class="text-2xl font-bold text-white mt-1">0</div>
-        </div>
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Active</div>
-            <div id="stat-active" class="text-2xl font-bold text-[#10b981] mt-1">0</div>
-        </div>
-        <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg px-4 py-3">
-            <div class="text-[#8f9099] text-xs uppercase tracking-wider">Executions</div>
-            <div id="stat-executions" class="text-2xl font-bold text-[#3b82f6] mt-1">0</div>
-        </div>
-    </div>
-
-    <!-- FILTER BAR -->
-    <div class="bg-[#151922] border border-[#1a1f2e] rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-2 gap-4">
-            <!-- STATUS FILTERS -->
-            <div>
-                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Status</div>
-                <div class="flex flex-wrap gap-2">
-                    <button class="status-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-status="all">All</button>
-                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="enabled">Enabled</button>
-                    <button class="status-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-status="disabled">Disabled</button>
-                </div>
-            </div>
-
-            <!-- TYPE FILTERS -->
-            <div>
-                <div class="text-xs font-semibold text-[#8f9099] uppercase tracking-wider mb-3">Type</div>
-                <div class="flex flex-wrap gap-2">
-                    <button class="type-filter px-3 py-1.5 bg-[#3b82f6] text-white rounded text-sm font-medium" data-type="all">All</button>
-                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="block">Block</button>
-                    <button class="type-filter px-3 py-1.5 bg-[#0a0c10] border border-[#1a1f2e] text-white rounded text-sm font-medium" data-type="alert">Alert</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- SEARCH INPUT -->
-        <div class="mt-4">
-            <input 
-                id="search-playbooks" 
-                type="text" 
-                placeholder="Search by name or description..."
-                class="w-full px-3 py-2 bg-[#0a0c10] border border-[#1a1f2e] rounded text-white text-sm placeholder-[#6b7280] focus:outline-none focus:border-[#3b82f6]"
-            />
-        </div>
-    </div>
-
-    <!-- PLAYBOOKS GRID -->
-    <div class="flex-1 overflow-y-auto">
-        <div id="playbooks-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-6">
-            <!-- Playbook cards mount here -->
-        </div>
-    </div>
-</div>
-
-<script type="module" src="{{ url_for('static', filename='js/pages/respond.page.js') }}"></script>
-{% endblock %}
+{% block extra_css %}
 <style>
-/* ==========================================================
-   RESPOND — SOC STANDARD
-========================================================== */
+.sev-critical { background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.35); }
+.sev-high     { background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.35); }
+.sev-medium   { background:rgba(59,130,246,.15);  color:#60a5fa; border:1px solid rgba(59,130,246,.35); }
+.sev-low      { background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.35); }
 
-.respond-wrapper {
-  max-width: 1200px;
-  margin: 0 auto;
-}
+.sev-badge { border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; letter-spacing:.5px; }
 
-/* STATS */
-.respond-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
+.inc-status-open       { color:#f87171; }
+.inc-status-contained  { color:#fbbf24; }
+.inc-status-resolved   { color:#34d399; }
 
-.respond-stat {
-  text-align: center;
+.action-row-btn {
+    font-size:10px; padding:4px 10px; border-radius:5px; cursor:pointer;
+    font-family:'JetBrains Mono',monospace; font-weight:600; letter-spacing:.3px;
+    border:1px solid; transition:all .15s; white-space:nowrap;
 }
+.btn-block    { background:rgba(239,68,68,.1);  color:#f87171; border-color:rgba(239,68,68,.4); }
+.btn-block:hover { background:rgba(239,68,68,.25); }
+.btn-quarantine { background:rgba(245,158,11,.1); color:#fbbf24; border-color:rgba(245,158,11,.4); }
+.btn-quarantine:hover { background:rgba(245,158,11,.25); }
+.btn-resolve  { background:rgba(16,185,129,.1); color:#34d399; border-color:rgba(16,185,129,.4); }
+.btn-resolve:hover { background:rgba(16,185,129,.25); }
+.btn-escalate { background:rgba(168,85,247,.1);  color:#c084fc; border-color:rgba(168,85,247,.4); }
+.btn-escalate:hover { background:rgba(168,85,247,.25); }
 
-.respond-stat .label {
-  font-size: 10px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
+.playbook-step { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+.playbook-step:last-child { border-bottom:none; }
+.step-num { width:20px; height:20px; border-radius:50%; background:rgba(59,130,246,.2); color:#60a5fa;
+    display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0; }
+.step-text { font-size:12px; color:rgba(255,255,255,.7); line-height:1.5; }
 
-.respond-stat .value {
-  font-family: var(--mono);
-  font-size: 22px;
-  font-weight: 600;
-  margin-top: 4px;
-}
+.playbook-tab { padding:6px 14px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;
+    color:rgba(255,255,255,.45); background:transparent; border:1px solid transparent; transition:all .15s; }
+.playbook-tab.active { background:rgba(59,130,246,.15); color:#60a5fa; border-color:rgba(59,130,246,.35); }
+.playbook-tab:hover:not(.active) { color:rgba(255,255,255,.8); background:rgba(255,255,255,.05); }
 
-/* TABS */
-.respond-tabs {
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-}
+.respond-grid { display:grid; grid-template-columns:1fr 340px; gap:20px; }
+@media(max-width:900px){ .respond-grid { grid-template-columns:1fr; } }
 
-.respond-tab {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 8px 12px;
-  cursor: pointer;
-  color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-}
-
-.respond-tab.active {
-  color: var(--cyan);
-  border-bottom-color: var(--cyan);
-}
-
-/* ACTION ITEMS */
-.action-item {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: 6px;
-  padding: 14px;
-  margin-bottom: 12px;
-  background: var(--bg-card);
-}
-
-.action-item.pending { border-left-color: var(--blue); }
-.action-item.approved { border-left-color: var(--green); }
-.action-item.rejected { border-left-color: var(--red); }
-.action-item.executed { border-left-color: var(--amber); }
-
-.action-header {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.action-title {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-primary);
-}
-
-.action-subtitle {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-.action-badge {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.badge-pending {
-  background: rgba(59,130,246,0.15);
-  color: var(--blue);
-}
-.badge-approved {
-  background: rgba(39,201,122,0.15);
-  color: var(--green-lt);
-}
-.badge-rejected {
-  background: rgba(232,65,58,0.15);
-  color: var(--red-lt);
-}
-.badge-executed {
-  background: rgba(240,165,0,0.15);
-  color: var(--amber-lt);
-}
-
-.action-details {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 12px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.action-reasoning {
-  margin-top: 12px;
-  padding: 10px;
-  background: rgba(255,255,255,0.03);
-  border-left: 2px solid var(--border-bright);
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.action-buttons {
-  margin-top: 12px;
-  display: flex;
-  gap: 8px;
-}
-
-.action-buttons button {
-  font-size: 10px;
-  padding: 6px 10px;
-}
+.quick-action-row { display:flex; gap:8px; flex-wrap:wrap; }
 </style>
 {% endblock %}
 
 {% block content %}
-
 <!-- PAGE HEADER -->
 <div class="page-header">
-  <div>
-    <h1 class="page-title">Respond</h1>
-    <div class="page-subtitle">THREAT RESPONSE & APPROVAL QUEUE</div>
-  </div>
-  <div class="page-meta">
-    <div class="status-chip live">
-      <div class="sys-status-dot"></div>
-      IDS ONLINE
+    <div>
+        <h1 class="page-title">Respond</h1>
+        <div class="page-subtitle">INCIDENT RESPONSE &amp; THREAT CONTAINMENT</div>
     </div>
-    <span class="badge-info">RESPOND</span>
-  </div>
-</div>
-
-{% if metrics_snapshot is defined and metrics_snapshot.alerts_total > 0 %}
-<div class="ds-alert threat threat-active inids-mb-4">
-  <div class="pulse-dot"></div>
-  <div>
-    ACTIVE INCIDENT — RESPONSE ACTIONS REQUIRE CAREFUL REVIEW
-  </div>
-</div>
-{% endif %}
-
-<div class="ds-card layer-elevated interactive">
-  <div class="ds-card-body">
-    <div class="respond-wrapper">
-
-      <!-- STATS -->
-      <div class="respond-stats">
-        <div class="ds-card layer-panel respond-stat">
-          <div class="label">Pending</div>
-          <div class="value" id="stat-pending">3</div>
-        </div>
-        <div class="ds-card layer-panel respond-stat">
-          <div class="label">Approved</div>
-          <div class="value" id="stat-approved">12</div>
-        </div>
-        <div class="ds-card layer-panel respond-stat">
-          <div class="label">Executed</div>
-          <div class="value" id="stat-executed">11</div>
-        </div>
-        <div class="ds-card layer-panel respond-stat">
-          <div class="label">Rejected</div>
-          <div class="value" id="stat-rejected">1</div>
-        </div>
-      </div>
-
-      <!-- TABS -->
-      <div class="respond-tabs">
-        <div class="respond-tab active" onclick="switchTab('pending')">Pending</div>
-        <div class="respond-tab" onclick="switchTab('approved')">Approved</div>
-        <div class="respond-tab" onclick="switchTab('executed')">Executed</div>
-        <div class="respond-tab" onclick="switchTab('rejected')">Rejected</div>
-      </div>
-
-      <!-- QUEUES -->
-      <div id="pending-tab" class="tab-content">
-        <div id="pending-container"></div>
-      </div>
-
-      <div id="approved-tab" class="tab-content inids-hidden">
-        <div id="approved-container"></div>
-      </div>
-
-      <div id="executed-tab" class="tab-content inids-hidden">
-        <div id="executed-container"></div>
-      </div>
-
-      <div id="rejected-tab" class="tab-content inids-hidden">
-        <div id="rejected-container"></div>
-      </div>
-
+    <div class="page-meta">
+        <div class="status-chip live"><div class="sys-status-dot"></div>RESPONSE READY</div>
+        <span class="badge-threat">ACTIVE INCIDENTS: 3</span>
     </div>
-  </div>
 </div>
 
-{% endblock %}
+<!-- STAT TILES -->
+<div class="grid-dashboard inids-mb-6" style="margin-bottom:20px; margin-top:20px; grid-template-columns:repeat(4,1fr);">
+    <div class="stat-tile threat">
+        <div class="stat-icon threat"><i class="bi bi-exclamation-octagon-fill"></i></div>
+        <div class="stat-value" style="color:#f87171">3</div>
+        <div class="stat-label">Critical Open</div>
+    </div>
+    <div class="stat-tile warn">
+        <div class="stat-icon warn"><i class="bi bi-shield-exclamation"></i></div>
+        <div class="stat-value" style="color:#fbbf24">7</div>
+        <div class="stat-label">Contained</div>
+    </div>
+    <div class="stat-tile safe">
+        <div class="stat-icon safe"><i class="bi bi-check-circle-fill"></i></div>
+        <div class="stat-value" style="color:#34d399">24</div>
+        <div class="stat-label">Resolved (24h)</div>
+    </div>
+    <div class="stat-tile info">
+        <div class="stat-icon info"><i class="bi bi-clock-history"></i></div>
+        <div class="stat-value" style="color:#60a5fa">4m 12s</div>
+        <div class="stat-label">Avg Response Time</div>
+    </div>
+</div>
 
-{% block scripts %}
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<div class="respond-grid">
+    <!-- LEFT: INCIDENTS TABLE + QUICK ACTIONS -->
+    <div>
+        <!-- ACTIVE INCIDENTS -->
+        <div class="ds-card" style="margin-bottom:20px;">
+            <div class="ds-card-header">
+                <i class="bi bi-lightning-fill" style="color:#f87171"></i>
+                <span class="ds-card-title">Active Incidents</span>
+                <div class="pulse-dot" style="margin-left:auto"></div>
+            </div>
+            <div class="inids-overflow-x-auto">
+                <table class="ds-table" id="incidents-table">
+                    <thead>
+                        <tr>
+                            <th>Incident ID</th>
+                            <th>Timestamp (IST)</th>
+                            <th>Source IP</th>
+                            <th>Threat Type</th>
+                            <th>Severity</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="incidents-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- QUICK ACTIONS -->
+        <div class="ds-card">
+            <div class="ds-card-header">
+                <i class="bi bi-zap" style="color:#fbbf24"></i>
+                <span class="ds-card-title">Quick Actions</span>
+            </div>
+            <div class="ds-card-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <!-- Block IP -->
+                    <div>
+                        <label class="ds-label">Block IP Address</label>
+                        <div style="display:flex; gap:8px; margin-top:4px;">
+                            <input type="text" id="block-ip-input" class="ds-input" placeholder="e.g. 192.168.1.100" style="flex:1;">
+                            <button class="btn-primary" onclick="quickBlockIP()" style="white-space:nowrap; padding:9px 14px;">
+                                <i class="bi bi-slash-circle"></i> Block
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Kill Connection -->
+                    <div>
+                        <label class="ds-label">Kill Connection (Port)</label>
+                        <div style="display:flex; gap:8px; margin-top:4px;">
+                            <input type="text" id="kill-port-input" class="ds-input" placeholder="e.g. 4444" style="flex:1;">
+                            <button class="btn-danger" onclick="quickKillConn()" style="white-space:nowrap; padding:9px 14px;">
+                                <i class="bi bi-x-octagon"></i> Kill
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn-secondary" onclick="notifyAdmin()">
+                        <i class="bi bi-envelope-exclamation"></i> Notify Admin
+                    </button>
+                    <button class="btn-secondary" onclick="exportIncidents()">
+                        <i class="bi bi-download"></i> Export Incidents
+                    </button>
+                    <button class="btn-secondary" onclick="runPlaybook('ddos')">
+                        <i class="bi bi-play-circle"></i> Run DDoS Playbook
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: RESPONSE PLAYBOOK PANEL -->
+    <div>
+        <div class="ds-card" style="position:sticky; top:76px;">
+            <div class="ds-card-header">
+                <i class="bi bi-journal-bookmark-fill" style="color:#60a5fa"></i>
+                <span class="ds-card-title">Response Playbooks</span>
+            </div>
+            <div class="ds-card-body" style="padding-top:12px;">
+                <!-- Playbook type selector -->
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;" id="playbook-tabs">
+                    <button class="playbook-tab active" data-pb="ddos">DDoS</button>
+                    <button class="playbook-tab" data-pb="brute">Brute Force</button>
+                    <button class="playbook-tab" data-pb="portscan">Port Scan</button>
+                    <button class="playbook-tab" data-pb="malware">Malware</button>
+                </div>
+                <div id="playbook-steps"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="respond-toast" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:none;">
+    <div class="ds-alert info" style="min-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.5);">
+        <i class="bi bi-info-circle-fill"></i>
+        <span id="respond-toast-msg">Action executed.</span>
+    </div>
+</div>
+
+<script>
+const INCIDENTS = [
+    { id:'INC-2847', ts:'19 May 2026, 14:12:05', src:'185.220.101.47', type:'DDoS Flood',       sev:'critical', status:'open' },
+    { id:'INC-2846', ts:'19 May 2026, 13:58:31', src:'92.118.37.12',   type:'Brute Force SSH',  sev:'high',     status:'open' },
+    { id:'INC-2845', ts:'19 May 2026, 13:41:07', src:'45.142.212.34',  type:'Port Scanning',    sev:'medium',   status:'contained' },
+    { id:'INC-2844', ts:'19 May 2026, 12:29:55', src:'103.25.6.88',    type:'SQL Injection',    sev:'critical', status:'open' },
+    { id:'INC-2843', ts:'19 May 2026, 11:05:14', src:'194.165.16.172', type:'Malware C2',       sev:'high',     status:'contained' },
+    { id:'INC-2842', ts:'19 May 2026, 09:47:38', src:'77.83.34.9',     type:'XSS Attempt',      sev:'low',      status:'resolved' },
+];
+
+const PLAYBOOKS = {
+    ddos:    [
+        'Verify attack traffic signature via packet capture.',
+        'Apply rate-limiting rule on upstream firewall (≥5k req/s threshold).',
+        'Enable geo-blocking for known botnet ASNs.',
+        'Activate DDoS scrubbing via Cloudflare / upstream ISP.',
+        'Scale backend horizontally; monitor load every 2 min.',
+        'Notify NOC team and open war-room bridge.',
+        'Document timeline and root-cause after mitigation.'
+    ],
+    brute:   [
+        'Identify the targeted service (SSH, RDP, login portal).',
+        'Block source IP immediately at perimeter firewall.',
+        'Check account lockout policy; force-lock targeted accounts.',
+        'Rotate credentials for any accounts that may be compromised.',
+        'Enable 2FA / TOTP for targeted service.',
+        'Review auth logs for successful logins from same IP range.',
+        'Submit source IP to threat intel feeds.'
+    ],
+    portscan:[
+        'Capture raw scan fingerprint (nmap OS/version detection?).',
+        'Block source IP at perimeter; add to block-list for 24 h.',
+        'Assess which ports were found open — close unnecessary ones.',
+        'Verify IDS signature coverage for follow-on exploit attempts.',
+        'Correlate source IP with threat intel for known APT affiliation.',
+        'Alert asset owners of exposed services.',
+        'Log in SIEM and set alert rule for repeat scanning.'
+    ],
+    malware: [
+        'Immediately isolate affected host from network (quarantine VLAN).',
+        'Kill identified C2 outbound connections at firewall.',
+        'Capture memory dump and running process list before remediation.',
+        'Run EDR full scan; collect all detected artefacts.',
+        'Hash all suspicious files and upload to VirusTotal.',
+        'Wipe and reimage host from last known-good backup.',
+        'Conduct lateral-movement audit for all peers of infected host.',
+        'Update AV/EDR signatures; push to all endpoints.'
+    ]
+};
+
+function sevBadge(s) {
+    return `<span class="sev-badge sev-${s}">${s.toUpperCase()}</span>`;
+}
+function statusBadge(s) {
+    const map = { open:'badge-threat', contained:'badge-warn', resolved:'badge-safe' };
+    return `<span class="sev-badge ${map[s]||'badge-info'}">${s.toUpperCase()}</span>`;
+}
+
+function renderIncidents() {
+    const tbody = document.getElementById('incidents-body');
+    tbody.innerHTML = INCIDENTS.map(inc => `
+        <tr>
+            <td style="font-weight:600; color:rgba(255,255,255,.85)">${inc.id}</td>
+            <td style="color:rgba(255,255,255,.45); font-size:11px;">${inc.ts}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#60a5fa;">${inc.src}</td>
+            <td>${inc.type}</td>
+            <td>${sevBadge(inc.sev)}</td>
+            <td>${statusBadge(inc.status)}</td>
+            <td>
+                <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                    <button class="action-row-btn btn-block"      onclick="incidentAction('${inc.id}','Block IP')">Block IP</button>
+                    <button class="action-row-btn btn-quarantine" onclick="incidentAction('${inc.id}','Quarantine')">Quarantine</button>
+                    <button class="action-row-btn btn-resolve"    onclick="incidentAction('${inc.id}','Resolve')">Resolve</button>
+                    <button class="action-row-btn btn-escalate"   onclick="incidentAction('${inc.id}','Escalate')">Escalate</button>
+                </div>
+            </td>
+        </tr>`).join('');
+}
+
+function renderPlaybook(key) {
+    const steps = PLAYBOOKS[key] || [];
+    document.getElementById('playbook-steps').innerHTML = steps.map((s,i) =>
+        `<div class="playbook-step">
+            <div class="step-num">${i+1}</div>
+            <div class="step-text">${s}</div>
+        </div>`).join('');
+}
+
+document.getElementById('playbook-tabs').addEventListener('click', e => {
+    const btn = e.target.closest('.playbook-tab');
+    if (!btn) return;
+    document.querySelectorAll('.playbook-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderPlaybook(btn.dataset.pb);
+});
+
+function showToast(msg) {
+    const el = document.getElementById('respond-toast');
+    document.getElementById('respond-toast-msg').textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+function incidentAction(id, action) { showToast(`${action} triggered for ${id}`); }
+function quickBlockIP()  { const ip = document.getElementById('block-ip-input').value.trim(); if(ip) showToast(`IP ${ip} blocked at perimeter.`); }
+function quickKillConn() { const p  = document.getElementById('kill-port-input').value.trim(); if(p)  showToast(`Connection on port ${p} terminated.`); }
+function notifyAdmin()   { showToast('Admin notification sent via email.'); }
+function exportIncidents(){ showToast('Incident report exported to incidents_20260519.csv'); }
+function runPlaybook(k)  { showToast(`Running ${k.toUpperCase()} playbook…`); renderPlaybook(k); }
+
+renderIncidents();
+renderPlaybook('ddos');
+</script>
 {% endblock %}

@@ -1,0 +1,12 @@
+{
+  "name": "inids-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "tailwind:build": "tailwindcss -i ./web_app/static/css/tailwind.src.css -o ./web_app/static/css/tailwind.css --minify",
+    "tailwind:watch": "tailwindcss -i ./web_app/static/css/tailwind.src.css -o ./web_app/static/css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

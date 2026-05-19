@@ -165,7 +165,7 @@ severityFilters.forEach(btn => {
         currentFilter = btn.dataset.severity;
         
         // Force re-render by triggering GlobalState subscription
-        const currentAlerts = GlobalState.state.alerts || [];
+        const currentAlerts = GlobalState.data.alerts || [];
         GlobalState.set('alerts', currentAlerts);
     });
 });
@@ -177,7 +177,7 @@ searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
     
     // Force re-render
-    const currentAlerts = GlobalState.state.alerts || [];
+    const currentAlerts = GlobalState.data.alerts || [];
     GlobalState.set('alerts', currentAlerts);
 });
 
@@ -193,7 +193,7 @@ bulkBlockBtn.addEventListener('click', async () => {
     try {
         const blockRequests = Array.from(selectedAlerts).map(alertId => {
             // Find alert to get target IP
-            const alerts = GlobalState.state.alerts || [];
+            const alerts = GlobalState.data.alerts || [];
             const alert = alerts.find(a => a.id === alertId);
             if (!alert) return null;
             
@@ -282,7 +282,7 @@ Socket.on('alert.new', (data) => {
  */
 Socket.on('alert.dismissed', (data) => {
     console.log('[Socket] alert.dismissed:', data);
-    const alerts = GlobalState.state.alerts || [];
+    const alerts = GlobalState.data.alerts || [];
     const updated = alerts.filter(a => a.id !== data.alert_id);
     GlobalState.set('alerts', updated);
 });

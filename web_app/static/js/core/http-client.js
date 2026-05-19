@@ -46,7 +46,7 @@ class HttpClient {
         if (_refreshTimer) clearTimeout(_refreshTimer);
         const refreshDelay = Math.floor(expiresIn * 0.8) * 1000; // 80 % → ms
         _refreshTimer = setTimeout(() => this._proactiveRefresh(), refreshDelay);
-        console.log(`[HttpClient] Token stored; refresh scheduled in ${Math.round(refreshDelay / 1000)}s`);
+        if (window.__INIDS_DEBUG__) console.log(`[HttpClient] Token stored; refresh scheduled in ${Math.round(refreshDelay / 1000)}s`);
 
         // Trigger socket reconnect now that a token is available.
         if (window.Socket && typeof window.Socket.reconnectWithToken === "function") {
@@ -99,7 +99,7 @@ class HttpClient {
                 if (!res.ok) throw new Error(`Refresh returned ${res.status}`);
                 const data = await res.json();
                 this.setToken(data.token, data.expires_in || 3600);
-                console.log("[HttpClient] Token refreshed successfully");
+                if (window.__INIDS_DEBUG__) console.log("[HttpClient] Token refreshed successfully");
             } finally {
                 clearTimeout(tid);
                 _refreshInFlight = null;
@@ -364,4 +364,3 @@ export { HttpClient, HttpError, TimeoutError };
 window.HttpClient = HttpClient_Instance;
 Object.defineProperty(window.HttpClient, "_token", { get: () => _token });
 
-console.log("[HttpClient] Initialized");
