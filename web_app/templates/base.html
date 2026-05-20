@@ -135,6 +135,11 @@
 
             <div class="topbar-divider"></div>
 
+            <!-- Demo toolbar — mounted by DemoController.js -->
+            <div id="demo-toolbar" class="demo-toolbar"></div>
+
+            <div class="topbar-divider"></div>
+
             <div class="time-display" id="live-clock"></div>
 
             <div class="topbar-divider"></div>
@@ -163,6 +168,7 @@
     <!-- ── Scripts ── -->
     <!-- Core IDPS Modules -->
     <script type="module" src="/static/js/base-modules.js"></script>
+    <script type="module" src="/static/js/demo/DemoController.js"></script>
     <script src="{{ url_for('static', filename='js/base-ui.js') }}"></script>
     {% block scripts %}{% endblock %}
     

@@ -448,7 +448,7 @@ def about():
 @pages_bp.route("/realtime")
 @require_roles("viewer")
 def realtime():
-    return render_template("realtime.html")
+    return render_template("realtime.html", socketio_enabled=True)
 
 
 @pages_bp.route("/capture")

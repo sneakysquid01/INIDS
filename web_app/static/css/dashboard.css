@@ -1,5 +1,11 @@
 /* Minimal compatibility layer */
 
+.demo-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 /* Only keep if still used anywhere */
 .chart-container {
     border-radius: 6px;

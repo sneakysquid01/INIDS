@@ -12,13 +12,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadHealthData() {
     try {
-        // Load from API endpoints
-        const healthRes = await fetch('/api/health');
-        if (!healthRes.ok) {
-            throw new Error('Failed to fetch health data');
+        // Demo mode override — DemoController sets window.INIDS_DEMO_HEALTH
+        let healthData;
+        if (window.INIDS_DEMO_HEALTH) {
+            healthData = window.INIDS_DEMO_HEALTH;
+        } else {
+            const healthRes = await fetch('/api/health');
+            if (!healthRes.ok) throw new Error('Failed to fetch health data');
+            healthData = await healthRes.json();
         }
-
-        const healthData = await healthRes.json();
         // Optional: fetch text metrics and parse if needed
         // const metricsText = await (await fetch('/api/metrics')).text();
 

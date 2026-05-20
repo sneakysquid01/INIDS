@@ -27,6 +27,46 @@ function refreshMetrics(latestRisk) {
   }
 }
 
+// Demo injection surface — DemoController calls these when on the realtime page
+window.RealtimeFeed = {
+  addDetection(evt) {
+    detections += 1;
+    if (String(evt.prediction || "").toLowerCase() === "attack" || evt.suspicious) alerts += 1;
+    prepend(timeline,
+      "<span class='badge-soft'>detection</span> " + new Date().toLocaleTimeString() +
+      " src=" + (evt.source_ip || "unknown") +
+      " pred=" + (evt.prediction || "attack") +
+      " conf=" + (evt.confidence || "0.94")
+    );
+    refreshMetrics();
+  },
+  addAlert(evt) {
+    alerts += 1;
+    prepend(timeline,
+      "<span class='badge-soft' style='background:rgba(239,68,68,.2);color:#f87171'>alert</span> " +
+      new Date().toLocaleTimeString() + " " + (evt.message || evt.title || "Alert") +
+      (evt.source_ip ? " src=" + evt.source_ip : "")
+    );
+    refreshMetrics();
+  },
+  addAction(evt) {
+    if (String(evt.action || evt.type || "").toLowerCase().includes("block")) blocks += 1;
+    prepend(timeline,
+      "<span class='badge-soft' style='background:rgba(59,130,246,.2);color:#93c5fd'>action</span> " +
+      new Date().toLocaleTimeString() + " " + (evt.action || evt.type || "block") +
+      " target=" + (evt.target || "unknown")
+    );
+    refreshMetrics();
+  },
+  addRisk(score) {
+    prepend(riskFeed,
+      "<span class='badge-soft'>risk</span> " + new Date().toLocaleTimeString() +
+      " score=" + Number(score).toFixed(3)
+    );
+    refreshMetrics(score);
+  }
+};
+
 const socket = io("/events", { transports: ["websocket", "polling"] });
 
 socket.on("connect", () => {

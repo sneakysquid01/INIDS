@@ -33,10 +33,15 @@ export const GlobalState = {
         
         // Honeypot
         honeypot: {},
-        
-        // Investigations
+        honeypots: [],
+
+        // Investigations & Response
         investigations: [],
-        
+        playbooks: [],
+
+        // Threat Intelligence (page uses this key)
+        threat_intel: [],
+
         // Connection status
         socket: {
             connected: false,
@@ -197,7 +202,10 @@ export const GlobalState = {
             modules: [],
             engines: [],
             investigations: [],
-            honeypot: {}
+            playbooks: [],
+            honeypot: {},
+            honeypots: [],
+            threat_intel: [],
         };
 
         this.data[key] = initialValues[key] || null;

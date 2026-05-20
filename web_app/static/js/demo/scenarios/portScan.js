@@ -1,0 +1,106 @@
+// Port Scan scenario — ~30 second reconnaissance story
+// Attacker IP: 45.133.1.22
+export const portScan = {
+    id: 'portScan',
+    name: 'Port Scan',
+    duration: 30000,
+    timeline: [
+        {
+            at: 0,
+            type: 'traffic_spike',
+            payload: { flows_per_second: 90, alerts_per_minute: 0 },
+        },
+        {
+            at: 3000,
+            type: 'alert',
+            payload: {
+                id: 'demo-ps-1',
+                severity: 'medium',
+                classification: 'Port scan detected',
+                prediction: 'Attack',
+                source_ip: '45.133.1.22',
+                target_ip: '192.168.1.1',
+                message: 'Port scan detected from 45.133.1.22',
+            },
+        },
+        {
+            at: 6000,
+            type: 'log_entry',
+            payload: {
+                id: 'demo-ps-log-1',
+                title: 'SYN packets to ports 22, 80, 443, 3306, 5432',
+                description: 'Multiple SYN packets from 45.133.1.22 — sequential port probe',
+                severity: 'medium',
+                source_ip: '45.133.1.22',
+                status: 'open',
+                investigator: 'Auto-IDPS',
+                evidence_count: 1,
+            },
+        },
+        {
+            at: 9000,
+            type: 'threat_lookup',
+            payload: {
+                id: 'demo-ps-ti-1',
+                name: '45.133.1.22',
+                type: 'ip',
+                severity: 'medium',
+                description: 'Suspicious — known port scanner',
+                confidence: 72,
+                source: 'AbuseIPDB',
+                updated: null,
+                indicators: ['45.133.1.22'],
+            },
+        },
+        {
+            at: 14000,
+            type: 'alert',
+            payload: {
+                id: 'demo-ps-2',
+                severity: 'medium',
+                classification: 'Sequential port probe',
+                prediction: 'Attack',
+                source_ip: '45.133.1.22',
+                target_ip: '192.168.1.1',
+                message: 'Sequential port probe — 12 ports scanned',
+            },
+        },
+        {
+            at: 18000,
+            type: 'honeypot_hit',
+            payload: { source_ip: '45.133.1.22', port: 22, protocol: 'TCP' },
+        },
+        {
+            at: 22000,
+            type: 'auto_block',
+            payload: {
+                id: 'demo-ps-act-1',
+                type: 'block',
+                action: 'block',
+                status: 'success',
+                target: '45.133.1.22',
+                reason: 'Reconnaissance — port scan',
+                executor: 'auto',
+            },
+        },
+        {
+            at: 26000,
+            type: 'incident_created',
+            payload: {
+                id: 'INC-201',
+                title: 'Port scan from 45.133.1.22',
+                description: 'Sequential port scan — 12+ ports probed. Attacker blocked.',
+                severity: 'medium',
+                status: 'open',
+                investigator: 'Auto-IDPS',
+                evidence_count: 3,
+                created_date: null,
+            },
+        },
+        {
+            at: 30000,
+            type: 'traffic_spike',
+            payload: { flows_per_second: 88, alerts_per_minute: 0 },
+        },
+    ],
+};
